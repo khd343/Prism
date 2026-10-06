@@ -1,0 +1,50 @@
+# 🎯 Scans — refresh the records from the PRISM Archive (ui/scan_records_job.py).
+# Weekly, plus a manual "Run workflow" button. Commits ui/scan_records.json ONLY when a measured value
+# changed; a failed run (missing secret, unreadable archive, a recipe changed since its design-period
+# record) fails visibly and GitHub emails the repository owner.
+name: Scan records
+
+on:
+  schedule:
+    - cron: "30 3 * * 1"      # Mondays 03:30 UTC = 09:00 IST
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: scan-records
+  cancel-in-progress: false
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install the pinned engine
+        run: pip install -r requirements.txt
+
+      - name: Measure the scans on the archive
+        env:
+          ARCHIVE_INDEX_SHEET_ID: ${{ secrets.ARCHIVE_INDEX_SHEET_ID }}
+          PYTHONUTF8: "1"
+        run: python -m ui.scan_records_job
+
+      - name: Commit the records if they changed
+        run: |
+          if git diff --quiet -- ui/scan_records.json; then
+            echo "No measured value changed."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ui/scan_records.json
+          git commit -m "chore: 🎯 scan records refreshed from the PRISM Archive"
+          git push

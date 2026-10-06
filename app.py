@@ -93,6 +93,7 @@ from ui.ui_tearsheet import _FLAG_DISPLAY, _FW_META
 from ui.ui_scans import (SCANS, CANDIDATES as SCAN_CANDIDATES, LIQUIDITY_STEPS as SCAN_LIQUIDITY_STEPS,
                          TABLE_COLUMNS as SCAN_TABLE_COLUMNS, card_html as scan_card_html,
                          latest_label as scan_latest_label, load_records as load_scan_records,
+                         members_label as scan_members_label,
                          record_state as scan_record_state, scan_table, table_config as scan_table_config)
 from config import (COLORS, TIER_COLORS, CONVICTION_TIERS, UI, HARD_GATES,
                     QUALITY_WEIGHTS, MOMENTUM_WEIGHTS, COMPOSITE_WEIGHTS,
@@ -646,7 +647,8 @@ with tabs[1]:
     if st.session_state.get("scan_sel") not in _sc_keys:
         st.session_state["scan_sel"] = _sc_keys[0]
     _sc_sel = next(s for s in SCANS if s["key"] == st.session_state["scan_sel"])
-    _sc_latest = scan_latest_label(_sc_recs)
+    _sc_latest = scan_latest_label(_sc_recs)       # the design-period record's last snapshot
+    _sc_new_label = scan_members_label(_sc_recs)   # the month-end copy 🆕 compares against
     _sc_counts = {s["key"]: int(s["mask"](df).sum()) for s in SCANS}
     st.markdown(
         "<div class='sec-cap'>Stock lists PRISM has measured. Each card shows how its stocks did against "
@@ -683,12 +685,13 @@ with tabs[1]:
                 f"None of the {_sc_total:,} matches clears the traded-value floor — choose a lower one.")
     else:
         _sc_of = f" of {_sc_total:,}" if len(_sc_tbl) < _sc_total else ""
-        _sc_new = f" · 🆕 = not in the scan on {_sc_latest}" if _sc_members is not None and _sc_latest else ""
+        _sc_new = (f" · 🆕 = not in the scan on {_sc_new_label}"
+                   if _sc_members is not None and _sc_new_label else "")
         st.caption(f"{len(_sc_tbl):,}{_sc_of} stocks · sorted by PRISM Rank for reading (inside this scan the "
                    f"top of the Rank showed no edge over the rest, so every match is the scan){_sc_new} · "
                    f"click a row to open its Tear-Sheet")
         _sc_pick = st.dataframe(
-            _sc_tbl, column_config=scan_table_config(_sc_latest), column_order=list(SCAN_TABLE_COLUMNS),
+            _sc_tbl, column_config=scan_table_config(_sc_new_label), column_order=list(SCAN_TABLE_COLUMNS),
             hide_index=True, width="stretch", height=min(560, 38 + 35 * len(_sc_tbl)),
             on_select="rerun", selection_mode="single-row",
             key=f"scan_tbl_{_sc_sel['key']}_{_sc_min}")

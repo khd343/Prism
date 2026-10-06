@@ -25,7 +25,7 @@ import html
 import inspect
 import json
 import textwrap
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -33,11 +33,15 @@ import pandas as pd
 import streamlit as st
 
 from config import COLORS
+from core.forward_returns import MIN_HORIZON_DAYS
 from core.scoring_engine import strong_quarter
 from ui.ui_group_views import group_measures
 
 RECORDS_PATH = Path(__file__).with_name("scan_records.json")
-RECORD_VERSION = 1
+RECORD_VERSION = 2
+# The day the recipes were chosen. Every window that STARTS on or after it is out of sample: data
+# nobody looked at while choosing. Windows before it are the design-period record (in sample).
+DESIGNED_ON = "2026-10-06"
 
 
 def _num(df: pd.DataFrame, col: str) -> pd.Series:
@@ -195,11 +199,12 @@ def scan_table(df: pd.DataFrame, scan: dict, members_at_latest=None, min_cr=None
     return out[[*TABLE_COLUMNS, "company_id"]].reset_index(drop=True)
 
 
-def table_config(latest_label: str) -> dict:
+def table_config(members_date_label: str) -> dict:
     """Column headers — the same header each column carries in the Deep Scanner — widths and tips."""
     w = TABLE_WIDTHS
     cc = st.column_config
-    since = f"on {latest_label}" if latest_label else "on the last measured snapshot"
+    since = (f"on {members_date_label}, the last archived month-end copy" if members_date_label
+             else "on the last archived month-end copy")
     return {
         "rank": cc.NumberColumn("Rank", format="%.0f", width=w["rank"],
                                 help="PRISM's overall rank. The list is sorted by it for reading only: inside "
@@ -241,10 +246,37 @@ def _range(vals, fmt) -> str:
     return fmt.format(lo) if lo == hi else f"{fmt.format(lo)}–{fmt.format(hi)}"
 
 
+def _bars(ws, c, esc) -> str:
+    """One bar per window: height by size (12 points fills it), green above the median, red below."""
+    out = ""
+    for w in ws:
+        v = float(w["median_excess_pp"])
+        h = 6 + round(28 * min(abs(v) / 12.0, 1.0))
+        col = c["green"] if v > 0 else c["red"]
+        out += (f'<div style="display:flex;flex-direction:column;align-items:center;justify-content:flex-end;'
+                f'min-width:46px;" title="{esc(w["start"])} → {esc(w["end"])}, {int(w["days"])} days, '
+                f'{int(w["n"])} stocks">'
+                f'<div style="width:14px;height:{h}px;background:{col};border-radius:3px;"></div>'
+                f'<div style="font-size:0.78rem;font-weight:800;color:{col};margin-top:3px;">{v:+.1f}</div>'
+                f'<div style="font-size:0.6rem;color:{c["text_muted"]};">{_month_span(w)}</div></div>')
+    return out
+
+
+def _first_unseen_due() -> str:
+    """When the first unseen window can exist: a start must be a month-end copy taken after
+    DESIGNED_ON, and a window needs MIN_HORIZON_DAYS — so about that many days after the end of the
+    month the recipes were chosen in."""
+    d = date.fromisoformat(DESIGNED_ON)
+    month_end = (date(d.year + d.month // 12, d.month % 12 + 1, 1) - timedelta(days=1))
+    return f"{month_end + timedelta(days=MIN_HORIZON_DAYS):%d %b}"
+
+
 def card_html(scan: dict, n_now: int, state: str, rec, selected: bool, latest: str) -> str:
-    """One scan card: name, today's count, the recipe in words, and its record — one bar per test
-    window, the share of matches that beat the market, the sample size, and "provisional". A stale or
-    missing record shows no numbers."""
+    """One scan card: name, today's count, the recipe in words, and two records — the DESIGN-PERIOD
+    one (windows studied while the recipe was chosen: in-sample, frozen) and the UNSEEN one (windows
+    that start after DESIGNED_ON, measured automatically from the PRISM Archive). Each shows one bar
+    per window, the share of matches that beat the market, the sample size and "provisional". A stale
+    or missing record shows no numbers at all."""
     c = COLORS
     esc = html.escape
     border = c["gold"] if selected else c["border"]
@@ -257,26 +289,30 @@ def card_html(scan: dict, n_now: int, state: str, rec, selected: bool, latest: s
             f'{esc(scan["recipe"])}</div>')
     if state == "measured" and rec and rec.get("windows"):
         ws = rec["windows"]
-        bars = ""
-        for w in ws:
-            v = float(w["median_excess_pp"])
-            h = 6 + round(28 * min(abs(v) / 12.0, 1.0))
-            col = c["green"] if v > 0 else c["red"]
-            bars += (f'<div style="display:flex;flex-direction:column;align-items:center;justify-content:flex-end;'
-                     f'min-width:46px;" title="{esc(w["start"])} → {esc(w["end"])}, {int(w["days"])} days, '
-                     f'{int(w["n"])} stocks">'
-                     f'<div style="width:14px;height:{h}px;background:{col};border-radius:3px;"></div>'
-                     f'<div style="font-size:0.78rem;font-weight:800;color:{col};margin-top:3px;">{v:+.1f}</div>'
-                     f'<div style="font-size:0.6rem;color:{c["text_muted"]};">{_month_span(w)}</div></div>')
         beat = _range([int(w["beat_pct"]) for w in ws], "{}") + "%"
         n = _range([int(w["n"]) for w in ws], "{}")
-        body = (f'<div style="font-size:0.66rem;color:{c["text_muted"]};margin-bottom:4px;">Record — points '
-                f'above the market median, per test window</div>'
-                f'<div style="display:flex;gap:6px;align-items:flex-end;min-height:56px;">{bars}</div>'
+        body = (f'<div style="font-size:0.66rem;color:{c["text_muted"]};margin-bottom:4px;">Design-period '
+                f'record — studied while choosing the recipe · points above the market median</div>'
+                f'<div style="display:flex;gap:6px;align-items:flex-end;min-height:56px;">{_bars(ws, c, esc)}</div>'
                 f'<div style="font-size:0.74rem;color:{c["text_secondary"]};margin-top:8px;">'
                 f'{beat} of matches beat the market · {n} stocks per window</div>'
                 f'<div style="font-size:0.66rem;color:{c["text_muted"]};margin-top:3px;">provisional · '
                 f'{len(ws)} short windows{f" · measured to {esc(latest)}" if latest else ""}</div>')
+        unseen = rec.get("out_of_sample") or []
+        built = f"{date.fromisoformat(DESIGNED_ON):%d %b}"
+        if unseen:
+            u_beat = _range([int(w["beat_pct"]) for w in unseen], "{}") + "%"
+            body += (f'<div style="border-top:1px solid {c["border"]};margin-top:9px;padding-top:7px;'
+                     f'font-size:0.66rem;color:{c["text_muted"]};">Since it was built ({built}) — '
+                     f'windows it never saw</div>'
+                     f'<div style="display:flex;gap:6px;align-items:flex-end;min-height:56px;">'
+                     f'{_bars(unseen, c, esc)}</div>'
+                     f'<div style="font-size:0.74rem;color:{c["text_secondary"]};margin-top:6px;">'
+                     f'{u_beat} of matches beat the market · the most trustworthy record</div>')
+        else:
+            body += (f'<div style="border-top:1px solid {c["border"]};margin-top:9px;padding-top:7px;'
+                     f'font-size:0.7rem;color:{c["text_muted"]};">Since it was built ({built}): no unseen '
+                     f'window yet — the first is due about {_first_unseen_due()}.</div>')
     elif state == "stale":
         body = (f'<div style="font-size:0.74rem;color:{c["gold"]};">The recipe changed since its record was '
                 f'measured — no record is shown until it is re-measured.</div>')
@@ -284,6 +320,15 @@ def card_html(scan: dict, n_now: int, state: str, rec, selected: bool, latest: s
         body = f'<div style="font-size:0.74rem;color:{c["text_muted"]};">Not yet measured.</div>'
     return (f'<div style="background:{c["bg_secondary"]};border:1px solid {border};border-radius:10px;'
             f'padding:12px 14px;min-height:205px;">{head}{body}</div>')
+
+
+def members_label(records: dict) -> str:
+    """'30 Sep' — the archived month-end copy the 🆕 marks compare against; '' without one."""
+    d = records.get("members_date") if records else None
+    try:
+        return f"{date.fromisoformat(d):%d %b}"
+    except (TypeError, ValueError):
+        return ""
 
 
 def latest_label(records: dict) -> str:
