@@ -628,6 +628,145 @@ with tabs[0]:
             )
 
 
+# ── Shared filter row (Market Pulse lenses AND 🎯 Scans) ─────────────────────────────────────────
+# Hoisted out of _render_market_pulse on 2026-10-06, unchanged but for the indent, so 🎯 Scans calls
+# the SAME cascade-safe row the QGLP / MOSL / Wealth / Movers lenses use: one dialect, one definition.
+# Called inside the Market Pulse fragment its widgets still belong to that fragment.
+_WT_ORDER = ["BUY★", "BUY", "WATCH★", "WATCH", "AVOID", "N/A"]
+_MP_CAP_ORDER = ["Mega Cap", "Large Cap", "Mid Cap", "Small Cap", "Micro Cap", "Nano Cap"]
+_MP_CATALYSTS = {   # MUST mirror ui_discovery's _CATALYSTS — pinned by test_market_pulse_tabs
+    "🔥 Capacity Explosion": "cat_capacity",
+    "🔥 OpLev Inflection":    "cat_oplev",
+    "🔥 Deleveraging":         "cat_deleveraging",
+    "🔥 Lynch Dream":          "cat_lynch_dream",
+    "🔥 Inst Discovery":       "cat_inst_discovery",
+    "🔥 Strong Quarter":       "cat_strong_quarter",
+}
+
+def _mp_clear_lens(defaults):
+    """Reset controls by SETTING each key to ITS OWN default — never `del`: deleting an
+    instantiated widget's key lets the frontend resurrect the stale value on the next rerun
+    (the Steel bug class; see ui_discovery.clear_all_filters). A MAPPING, not a key list:
+    "All" is not a universal default (the Sectors size dial defaults to 5)."""
+    for k, v in defaults.items():
+        st.session_state[k] = v
+
+def _mp_ms(slot, label, options, key, help_text, counts):
+    """THE ONE cascade-safe multiselect used by every Market Pulse filter row (lens rows,
+    Sectors, Industry) — one dialect, not three. Mirrors ui_discovery._ms_cascade: state is
+    managed here (no `default=` arg, which would trigger Streamlit's default-plus-state
+    warning) and a stored pick the cascade has narrowed out is KEPT in the option list with its
+    honest count of 0 (ui_discovery.keep_selected — ONE rule for both filter surfaces). It was
+    PRUNED until 2026-09-02, which switched the filter off and WIDENED the result: Wealth
+    Tier=BUY★ + a sector holding no BUY★ showed the whole sector instead of 0. Keeping the
+    value in the options is what stops a keyed widget raising; applying it is what keeps the
+    answer honest.
+
+    `counts` maps option -> live count in the CURRENT (already narrowed) frame. DISPLAY only:
+    never bake a volatile number into an option VALUE or the pruning stops matching. The UNIT
+    of that count differs by filter kind and the caller decides it — a re-aggregating filter
+    counts STOCKS (they are what gets re-averaged), a row filter counts the ROWS it hides
+    (sectors / industries). Mixing the two silently would be the units trap this row layout
+    was deliberately held back for."""
+    stored = list(st.session_state.get(key, []))
+    st.session_state[key] = stored
+    options = keep_selected(options, stored)
+    with slot:
+        return st.multiselect(
+            label, options, key=key, help=help_text,
+            format_func=lambda v, _c=counts: f"{v}  ·  {_c.get(v, 0)}",
+        )
+
+def _mp_lens_row(frame, prefix, extra_keys=(), with_tier=True):
+    """The lens-filter row: Sector · [Wealth Tier ·] Market Cap · Catalyst · Clear.
+
+    MULTI-SELECT AND CASCADING (2026-08-30). Each control takes SEVERAL values (OR within a
+    control, AND across controls), and every control's options AND live counts are computed
+    from the frame already narrowed by the controls to its LEFT — so picking a sector
+    immediately reshapes the tier list and its numbers, and a dead-end combination cannot be
+    selected. Mirrors ui_discovery._ms_cascade rather than inventing a second dialect:
+    session_state is managed here (never a `default=` arg, which triggers Streamlit's
+    default-plus-state warning) and any stored selection is PRUNED to the current options
+    every run — mandatory, not optional, because cascading removes options and a keyed widget
+    whose stored value is absent from its options raises.
+
+    Measured before building (local CSVs): cascading narrows materially on the small cohorts —
+    QGLP 325 stocks, Sector=Auto Ancillaries takes tiers 6 to 4 and catalysts 5 to 4;
+    IT-Software takes catalysts 5 to 3 — moderately on MOSL, and barely on Wealth (the whole
+    universe, so most sectors still hold every tier). The counts earn their place on all three.
+
+    Returns (filtered_frame, n_active). The 🧹 button materializes ONLY when a filter is
+    active, in a FIXED last slot — zero furniture when idle, zero layout jump when it appears.
+    """
+    # `extra_keys` are controls the TAB owns OUTSIDE this row (the Wealth tab keeps its own
+    # Tier control above the table). They filter nothing here — the tab already applied them —
+    # but they must count as active and must be reset by the 🧹, or a Clear sitting on screen
+    # would visibly clear the row and silently leave another filter running.
+    keys = ([f"mp_{prefix}_sec"] + ([f"mp_{prefix}_wt"] if with_tier else [])
+            + [f"mp_{prefix}_cap", f"mp_{prefix}_cat"] + list(extra_keys))
+    slots = st.columns([2.6, 1.9, 1.9, 2.0, 1.0] if with_tier
+                       else [3.0, 2.2, 2.4, 1.1])
+    _cf = frame                      # progressively narrowed cascade frame
+
+    # 1 ── Sector (widest funnel first, so every later count reflects it)
+    _sec_opts = (sorted(_cf["sector"].dropna().astype(str).unique().tolist())
+                 if "sector" in _cf.columns else [])
+    _sec_n = _cf["sector"].astype(str).value_counts().to_dict() if _sec_opts else {}
+    sel_sec = _mp_ms(slots[0], "Sector", _sec_opts, f"mp_{prefix}_sec",
+                    "Show only these sectors. Pick several — a stock matching ANY of them "
+                    "qualifies. Counts are live in this lens's cohort.", _sec_n)
+    if sel_sec:
+        _cf = _cf[_cf["sector"].astype(str).isin(sel_sec)]
+
+    _i = 1
+    # 2 ── Wealth tier (counted AFTER the sector narrowing — the cascade)
+    if with_tier:
+        _wt_opts = [t for t in _WT_ORDER
+                    if "wealth_tier" in _cf.columns and (_cf["wealth_tier"] == t).any()]
+        _wt_n = _cf["wealth_tier"].astype(str).value_counts().to_dict() if _wt_opts else {}
+        sel_wt = _mp_ms(slots[_i], "Wealth tier", _wt_opts, f"mp_{prefix}_wt",
+                       "Cross-lens: this framework's passers x the wealth engine's tier. Pick "
+                       "several (e.g. BUY★ and BUY together). Counts reflect the sector "
+                       "filter above.", _wt_n)
+        if sel_wt:
+            _cf = _cf[_cf["wealth_tier"].isin(sel_wt)]
+        _i += 1
+
+    # 3 ── Market cap
+    _cap_opts = [c for c in _MP_CAP_ORDER
+                 if "market_category" in _cf.columns and (_cf["market_category"] == c).any()]
+    _cap_n = _cf["market_category"].astype(str).value_counts().to_dict() if _cap_opts else {}
+    sel_cap = _mp_ms(slots[_i], "Market cap", _cap_opts, f"mp_{prefix}_cap",
+                    "Market-cap tiers (the sheet's Market Category). Pick several; counts "
+                    "reflect every filter to the left.", _cap_n)
+    if sel_cap:
+        _cf = _cf[_cf["market_category"].isin(sel_cap)]
+
+    # 4 ── Catalyst (OR across the flags — a stock firing ANY selected catalyst qualifies)
+    _cat_n = {l: int(_cf[c].fillna(0).sum()) for l, c in _MP_CATALYSTS.items() if c in _cf.columns}
+    _cat_opts = [l for l in _MP_CATALYSTS if _cat_n.get(l, 0) > 0]
+    sel_cat = _mp_ms(slots[_i + 1], "Catalyst", _cat_opts, f"mp_{prefix}_cat",
+                    "Fast-moving inflections firing right now. Pick several — ANY of them "
+                    "qualifies. Only catalysts alive in this cohort are offered.", _cat_n)
+    if sel_cat:
+        _hit = None
+        for _l in sel_cat:
+            _m = _cf[_MP_CATALYSTS[_l]].fillna(0) == 1
+            _hit = _m if _hit is None else (_hit | _m)
+        _cf = _cf[_hit]
+
+    # Reset value for a multiselect is [] — never "All", and never `del` (deleting an
+    # instantiated widget's key lets the frontend resurrect the stale value: the Steel bug).
+    _defaults = {k: [] for k in keys}
+    _n_active = sum(1 for k in keys if st.session_state.get(k))
+    with slots[-1]:
+        st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
+        if _n_active:
+            st.button("🧹 Clear", key=f"mp_{prefix}_clear", width="stretch",
+                      on_click=_mp_clear_lens, args=(_defaults,))
+    return _cf, _n_active
+
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # TAB 2: SCANS
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -666,35 +805,73 @@ with tabs[1]:
     with st.expander(f"🔬 Being measured ({len(SCAN_CANDIDATES)}) — not scans yet; December's review decides",
                      expanded=False):
         st.markdown("\n".join(f"- **{_n}** — {_r}" for _n, _r in SCAN_CANDIDATES))
-    _sc_lc, _ = st.columns([2, 5])
+    # ONE FUNNEL, TOP DOWN (2026-10-06). The card's recipe ranks the WHOLE market, so every listed stock
+    # is exactly the match its record measured. Then the traded-value floor and — only while the
+    # sidebar actually narrows the market — the same 🎯 opt-in Market Pulse uses; then the shared lens
+    # row (Sector · Wealth tier · Market cap · Catalyst, live counts, 🧹 Clear). Every control narrows
+    # the FINISHED list, never the recipe: ranking inside a filtered slice would be a different scan
+    # with no record (tests/test_scans.py).
+    _sc_narrowed = 0 < len(filt) < len(df)
+    _sc_lc, _sc_rc = st.columns([2, 3])
     with _sc_lc:
         _sc_min = st.selectbox(
             "Min. average daily traded value", SCAN_LIQUIDITY_STEPS, key="scan_liq",
             format_func=lambda v: "Any" if v is None else f"₹{v:g} Cr a day",
             help="Your preference, not part of the record: the record counts every match. "
                  "Average daily traded value over 20 days (average volume × price).")
-    if len(filt) < len(df):
-        st.caption("Scans read the whole market, not your sidebar filters, so each list is exactly what "
-                   "its record measured.")
+    with _sc_rc:
+        if _sc_narrowed:
+            st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
+            st.checkbox(
+                f"🎯 Show only my filtered stocks — {len(filt):,} of {len(df):,}", key="scan_use_sidebar",
+                help="Narrows this list to the stocks your sidebar filters kept. The recipe still ranks the "
+                     "whole market, so every stock shown is the same match it would be unfiltered, and the "
+                     "record still describes the whole scan.")
+    _sc_scoped = _sc_narrowed and bool(st.session_state.get("scan_use_sidebar", False))
     _sc_state_sel, _sc_rec_sel = scan_record_state(_sc_recs, _sc_sel)
     _sc_members = _sc_rec_sel.get("members_at_latest") if _sc_state_sel == "measured" else None
-    _sc_tbl = scan_table(df, _sc_sel, members_at_latest=_sc_members, min_cr=_sc_min)
+    # 📄 window = the days from the 🆕 baseline to the data's own date (the Movers rule): a result
+    # declared inside it arrived after the baseline copy was taken.
+    _sc_base_day = _sc_recs.get("members_date") if _sc_recs else None
+    _sc_data_day = _fresh.data_date if _fresh.is_known else _date.today()
+    _sc_window = (_sc_data_day - _date.fromisoformat(_sc_base_day)).days if _sc_base_day else None
+    _sc_base = scan_table(df, _sc_sel, min_cr=_sc_min,
+                          keep_ids=set(filt['company_id'].astype(str)) if _sc_scoped else None)
+    _sc_lens, _sc_lens_n = _mp_lens_row(df[df["company_id"].astype(str).isin(set(_sc_base["company_id"]))],
+                                        "scan")
+    _sc_tbl = scan_table(df, _sc_sel, members_at_latest=_sc_members, min_cr=_sc_min,
+                         keep_ids=set(_sc_lens["company_id"].astype(str)), result_window_days=_sc_window)
     _sc_total = _sc_counts[_sc_sel["key"]]
     if _sc_tbl.empty:
-        st.info("No stock matches this scan today." if _sc_total == 0 else
-                f"None of the {_sc_total:,} matches clears the traded-value floor — choose a lower one.")
+        if _sc_total == 0:
+            st.info("No stock matches this scan today.")
+        elif _sc_base.empty and _sc_scoped:
+            st.info(f"None of the {_sc_total:,} matches is among your {len(filt):,} filtered stocks"
+                    f"{' at this traded-value floor' if _sc_min else ''} — untick 🎯 to see the whole scan.")
+        elif _sc_base.empty:
+            st.info(f"None of the {_sc_total:,} matches clears the traded-value floor — choose a lower one.")
+        else:
+            st.info(f"None of these {len(_sc_base):,} stocks passes the filters in the row above — "
+                    f"🧹 Clear resets them.")
     else:
-        _sc_of = f" of {_sc_total:,}" if len(_sc_tbl) < _sc_total else ""
-        _sc_new = (f" · 🆕 = not in the scan on {_sc_new_label}"
+        _sc_why = " · ".join(w for w in ("your filters" if _sc_scoped else "",
+                                         f"₹{_sc_min:g} Cr+ a day" if _sc_min else "",
+                                         f"{_sc_lens_n} filter{'s' if _sc_lens_n > 1 else ''} above"
+                                         if _sc_lens_n else "") if w)
+        _sc_of = (f" of {_sc_total:,} stocks" + (f" ({_sc_why})" if _sc_why else "")
+                  if len(_sc_tbl) < _sc_total else " stocks")
+        _sc_new = (f" · 🆕 new since {_sc_new_label} · 📄 result declared since then"
                    if _sc_members is not None and _sc_new_label else "")
-        st.caption(f"{len(_sc_tbl):,}{_sc_of} stocks · sorted by PRISM Rank for reading (inside this scan the "
-                   f"top of the Rank showed no edge over the rest, so every match is the scan){_sc_new} · "
-                   f"click a row to open its Tear-Sheet")
+        st.caption(f"{len(_sc_tbl):,}{_sc_of} · sorted by Rank{_sc_new} · click a row to open its "
+                   f"Tear-Sheet")
+        # The key follows the VISIBLE list: when any control changes it, the table is a new widget and
+        # an old row pick cannot point at a different stock.
+        _sc_ids = universe_signature(_sc_tbl["company_id"])
         _sc_pick = st.dataframe(
             _sc_tbl, column_config=scan_table_config(_sc_new_label), column_order=list(SCAN_TABLE_COLUMNS),
             hide_index=True, width="stretch", height=min(560, 38 + 35 * len(_sc_tbl)),
             on_select="rerun", selection_mode="single-row",
-            key=f"scan_tbl_{_sc_sel['key']}_{_sc_min}")
+            key=f"scan_tbl_{_sc_sel['key']}_{_sc_ids}")
         _sc_rows = _sc_pick.selection.rows if _sc_pick and hasattr(_sc_pick, "selection") else []
         if _sc_rows:
             _sc_name = _sc_tbl.iloc[_sc_rows[0]]["name"]
@@ -703,7 +880,7 @@ with tabs[1]:
             # rendered AFTER that widget; here the staged key is consumed further down the script, so it
             # would rerun forever. Set only when the pick CHANGES, so a row left selected never overrides
             # a stock chosen later in the Tear-Sheet itself (tests/test_scans.py).
-            _sc_sig = f"{_sc_sel['key']}|{_sc_min}|{_sc_name}"
+            _sc_sig = f"{_sc_sel['key']}|{_sc_ids}|{_sc_name}"
             if st.session_state.get("_scan_last_pick") != _sc_sig:
                 st.session_state["_scan_last_pick"] = _sc_sig
                 st.session_state["xray_stock"] = _sc_name
@@ -1672,139 +1849,6 @@ def _render_market_pulse():
     # "stay true", which the 🎯 scope checkbox makes conditional — the captions now derive
     # that sentence from _mp_scope_cap(). The fragment scopes every control to this tab, so
     # each rerun costs ~nothing.
-    _WT_ORDER = ["BUY★", "BUY", "WATCH★", "WATCH", "AVOID", "N/A"]
-    _MP_CAP_ORDER = ["Mega Cap", "Large Cap", "Mid Cap", "Small Cap", "Micro Cap", "Nano Cap"]
-    _MP_CATALYSTS = {   # MUST mirror ui_discovery's _CATALYSTS — pinned by test_market_pulse_tabs
-        "🔥 Capacity Explosion": "cat_capacity",
-        "🔥 OpLev Inflection":    "cat_oplev",
-        "🔥 Deleveraging":         "cat_deleveraging",
-        "🔥 Lynch Dream":          "cat_lynch_dream",
-        "🔥 Inst Discovery":       "cat_inst_discovery",
-        "🔥 Strong Quarter":       "cat_strong_quarter",
-    }
-
-    def _mp_clear_lens(defaults):
-        """Reset controls by SETTING each key to ITS OWN default — never `del`: deleting an
-        instantiated widget's key lets the frontend resurrect the stale value on the next rerun
-        (the Steel bug class; see ui_discovery.clear_all_filters). A MAPPING, not a key list:
-        "All" is not a universal default (the Sectors size dial defaults to 5)."""
-        for k, v in defaults.items():
-            st.session_state[k] = v
-
-    def _mp_ms(slot, label, options, key, help_text, counts):
-        """THE ONE cascade-safe multiselect used by every Market Pulse filter row (lens rows,
-        Sectors, Industry) — one dialect, not three. Mirrors ui_discovery._ms_cascade: state is
-        managed here (no `default=` arg, which would trigger Streamlit's default-plus-state
-        warning) and a stored pick the cascade has narrowed out is KEPT in the option list with its
-        honest count of 0 (ui_discovery.keep_selected — ONE rule for both filter surfaces). It was
-        PRUNED until 2026-09-02, which switched the filter off and WIDENED the result: Wealth
-        Tier=BUY★ + a sector holding no BUY★ showed the whole sector instead of 0. Keeping the
-        value in the options is what stops a keyed widget raising; applying it is what keeps the
-        answer honest.
-
-        `counts` maps option -> live count in the CURRENT (already narrowed) frame. DISPLAY only:
-        never bake a volatile number into an option VALUE or the pruning stops matching. The UNIT
-        of that count differs by filter kind and the caller decides it — a re-aggregating filter
-        counts STOCKS (they are what gets re-averaged), a row filter counts the ROWS it hides
-        (sectors / industries). Mixing the two silently would be the units trap this row layout
-        was deliberately held back for."""
-        stored = list(st.session_state.get(key, []))
-        st.session_state[key] = stored
-        options = keep_selected(options, stored)
-        with slot:
-            return st.multiselect(
-                label, options, key=key, help=help_text,
-                format_func=lambda v, _c=counts: f"{v}  ·  {_c.get(v, 0)}",
-            )
-
-    def _mp_lens_row(frame, prefix, extra_keys=(), with_tier=True):
-        """The lens-filter row: Sector · [Wealth Tier ·] Market Cap · Catalyst · Clear.
-
-        MULTI-SELECT AND CASCADING (2026-08-30). Each control takes SEVERAL values (OR within a
-        control, AND across controls), and every control's options AND live counts are computed
-        from the frame already narrowed by the controls to its LEFT — so picking a sector
-        immediately reshapes the tier list and its numbers, and a dead-end combination cannot be
-        selected. Mirrors ui_discovery._ms_cascade rather than inventing a second dialect:
-        session_state is managed here (never a `default=` arg, which triggers Streamlit's
-        default-plus-state warning) and any stored selection is PRUNED to the current options
-        every run — mandatory, not optional, because cascading removes options and a keyed widget
-        whose stored value is absent from its options raises.
-
-        Measured before building (local CSVs): cascading narrows materially on the small cohorts —
-        QGLP 325 stocks, Sector=Auto Ancillaries takes tiers 6 to 4 and catalysts 5 to 4;
-        IT-Software takes catalysts 5 to 3 — moderately on MOSL, and barely on Wealth (the whole
-        universe, so most sectors still hold every tier). The counts earn their place on all three.
-
-        Returns (filtered_frame, n_active). The 🧹 button materializes ONLY when a filter is
-        active, in a FIXED last slot — zero furniture when idle, zero layout jump when it appears.
-        """
-        # `extra_keys` are controls the TAB owns OUTSIDE this row (the Wealth tab keeps its own
-        # Tier control above the table). They filter nothing here — the tab already applied them —
-        # but they must count as active and must be reset by the 🧹, or a Clear sitting on screen
-        # would visibly clear the row and silently leave another filter running.
-        keys = ([f"mp_{prefix}_sec"] + ([f"mp_{prefix}_wt"] if with_tier else [])
-                + [f"mp_{prefix}_cap", f"mp_{prefix}_cat"] + list(extra_keys))
-        slots = st.columns([2.6, 1.9, 1.9, 2.0, 1.0] if with_tier
-                           else [3.0, 2.2, 2.4, 1.1])
-        _cf = frame                      # progressively narrowed cascade frame
-
-        # 1 ── Sector (widest funnel first, so every later count reflects it)
-        _sec_opts = (sorted(_cf["sector"].dropna().astype(str).unique().tolist())
-                     if "sector" in _cf.columns else [])
-        _sec_n = _cf["sector"].astype(str).value_counts().to_dict() if _sec_opts else {}
-        sel_sec = _mp_ms(slots[0], "Sector", _sec_opts, f"mp_{prefix}_sec",
-                        "Show only these sectors. Pick several — a stock matching ANY of them "
-                        "qualifies. Counts are live in this lens's cohort.", _sec_n)
-        if sel_sec:
-            _cf = _cf[_cf["sector"].astype(str).isin(sel_sec)]
-
-        _i = 1
-        # 2 ── Wealth tier (counted AFTER the sector narrowing — the cascade)
-        if with_tier:
-            _wt_opts = [t for t in _WT_ORDER
-                        if "wealth_tier" in _cf.columns and (_cf["wealth_tier"] == t).any()]
-            _wt_n = _cf["wealth_tier"].astype(str).value_counts().to_dict() if _wt_opts else {}
-            sel_wt = _mp_ms(slots[_i], "Wealth tier", _wt_opts, f"mp_{prefix}_wt",
-                           "Cross-lens: this framework's passers x the wealth engine's tier. Pick "
-                           "several (e.g. BUY★ and BUY together). Counts reflect the sector "
-                           "filter above.", _wt_n)
-            if sel_wt:
-                _cf = _cf[_cf["wealth_tier"].isin(sel_wt)]
-            _i += 1
-
-        # 3 ── Market cap
-        _cap_opts = [c for c in _MP_CAP_ORDER
-                     if "market_category" in _cf.columns and (_cf["market_category"] == c).any()]
-        _cap_n = _cf["market_category"].astype(str).value_counts().to_dict() if _cap_opts else {}
-        sel_cap = _mp_ms(slots[_i], "Market cap", _cap_opts, f"mp_{prefix}_cap",
-                        "Market-cap tiers (the sheet's Market Category). Pick several; counts "
-                        "reflect every filter to the left.", _cap_n)
-        if sel_cap:
-            _cf = _cf[_cf["market_category"].isin(sel_cap)]
-
-        # 4 ── Catalyst (OR across the flags — a stock firing ANY selected catalyst qualifies)
-        _cat_n = {l: int(_cf[c].fillna(0).sum()) for l, c in _MP_CATALYSTS.items() if c in _cf.columns}
-        _cat_opts = [l for l in _MP_CATALYSTS if _cat_n.get(l, 0) > 0]
-        sel_cat = _mp_ms(slots[_i + 1], "Catalyst", _cat_opts, f"mp_{prefix}_cat",
-                        "Fast-moving inflections firing right now. Pick several — ANY of them "
-                        "qualifies. Only catalysts alive in this cohort are offered.", _cat_n)
-        if sel_cat:
-            _hit = None
-            for _l in sel_cat:
-                _m = _cf[_MP_CATALYSTS[_l]].fillna(0) == 1
-                _hit = _m if _hit is None else (_hit | _m)
-            _cf = _cf[_hit]
-
-        # Reset value for a multiselect is [] — never "All", and never `del` (deleting an
-        # instantiated widget's key lets the frontend resurrect the stale value: the Steel bug).
-        _defaults = {k: [] for k in keys}
-        _n_active = sum(1 for k in keys if st.session_state.get(k))
-        with slots[-1]:
-            st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
-            if _n_active:
-                st.button("🧹 Clear", key=f"mp_{prefix}_clear", width="stretch",
-                          on_click=_mp_clear_lens, args=(_defaults,))
-        return _cf, _n_active
 
     # ── Inner navigation tabs ──────────────────────────────────────
     _mp_tabs = st.tabs([

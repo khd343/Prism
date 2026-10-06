@@ -252,6 +252,82 @@ def test_the_recipe_sees_the_whole_market_not_the_liquid_slice():
     assert t["company_id"].tolist() == ["NSE:S08"]
 
 
+def test_sidebar_filters_narrow_the_finished_list_not_the_recipe():
+    """🎯 Show only my filtered stocks (2026-10-06): the sidebar narrows the LIST; the recipe still
+    ranks the whole market. Stock 8 is a whole-market match; kept alone with stock 9, re-ranking inside
+    those two would drop it below the top third — it must stay a match."""
+    df = _universe()
+    strong = {"rev_lq": 130.0, "pat_lq": 15.0, "ebitda_lq": 26.0, "dist_to_vstop": 5.0}
+    for c, v in strong.items():
+        df.loc[8, c] = v
+    t = S.scan_table(df, S.SCANS[0], keep_ids={"NSE:S08", "NSE:S09"})
+    assert t["company_id"].tolist() == ["NSE:S08"]
+    assert len(S.scan_table(df, S.SCANS[0], keep_ids=set())) == 0
+    assert sorted(S.scan_table(df, S.SCANS[0])["company_id"]) == ["NSE:S08", "NSE:S11"], (
+        "no keep_ids = every match")
+
+
+def test_the_scope_checkbox_mirrors_market_pulse_and_never_feeds_the_recipe():
+    tree = ast.parse(_APP)
+    block = next(n for n in tree.body if isinstance(n, ast.With)
+                 and ast.unparse(n.items[0].context_expr) == "tabs[1]")
+    src = ast.unparse(block)
+    assert "_sc_narrowed = 0 < len(filt) < len(df)" in src, (
+        "the checkbox appears only while the sidebar actually narrows the market (the Market Pulse rule)")
+    boxes = [n for n in ast.walk(block) if isinstance(n, ast.Call) and ast.unparse(n.func) == "st.checkbox"]
+    assert len(boxes) == 1 and any(k.arg == "key" and ast.unparse(k.value) == "'scan_use_sidebar'"
+                                   for k in boxes[0].keywords)
+    assert "🎯 Show only my filtered stocks" in ast.unparse(boxes[0])
+    guard = next(n for n in ast.walk(block) if isinstance(n, ast.If) and boxes[0] in ast.walk(n))
+    assert ast.unparse(guard.test) == "_sc_narrowed"
+    assert "keep_ids=set(filt['company_id'].astype(str)) if _sc_scoped else None" in src
+    key = next(k for n in ast.walk(block) if isinstance(n, ast.Call) and ast.unparse(n.func) == "st.dataframe"
+               for k in n.keywords if k.arg == "key")
+    assert "_sc_ids" in ast.unparse(key.value), (
+        "the table key follows the visible list: a narrowed list is a new table, so an old row pick "
+        "cannot point at a different stock")
+    assert "_sc_ids = universe_signature(_sc_tbl['company_id'])" in src
+
+
+def test_the_tab_reuses_the_market_pulse_filter_row():
+    """One dialect: the Scans filters ARE the QGLP / MOSL / Wealth lens row (Sector · Wealth tier ·
+    Market cap · Catalyst · 🧹), hoisted to module level on 2026-10-06 rather than copied."""
+    tree = ast.parse(_APP)
+    defs = [n.name for n in tree.body if isinstance(n, ast.FunctionDef)]
+    assert {"_mp_lens_row", "_mp_ms", "_mp_clear_lens"} <= set(defs), "the lens row must be module level"
+    block = next(n for n in tree.body if isinstance(n, ast.With)
+                 and ast.unparse(n.items[0].context_expr) == "tabs[1]")
+    calls = [n for n in ast.walk(block) if isinstance(n, ast.Call) and ast.unparse(n.func) == "_mp_lens_row"]
+    assert len(calls) == 1 and ast.unparse(calls[0].args[1]) == "'scan'"
+    assert "_mp_lens_row(_mp_qglp, \"qglp\")" in _APP, "Market Pulse still calls the same row"
+
+
+# ── 📄 the fundamental clock ─────────────────────────────────────────────────────────────────────────
+def test_a_result_declared_since_the_baseline_is_marked():
+    """📄 = a quarterly result declared inside the window (days since the 🆕 baseline). result_age_days
+    is negative for a result only SCHEDULED, which is not news yet."""
+    df = _universe()
+    df["result_age_days"] = [3, 5, 40, -2, np.nan, 0, 6, 6, 6, 6, 6, 6]
+    every = {"key": "all", "mask": lambda d: pd.Series(True, index=d.index)}
+    t = S.scan_table(df, every, members_at_latest={"NSE:S01", "NSE:S02", "NSE:S03", "NSE:S04", "NSE:S05"},
+                     result_window_days=6)
+    mark = dict(zip(t["company_id"], t["_new"]))
+    assert mark["NSE:S00"] == "🆕 📄", "new AND a fresh result: it entered on the result"
+    assert mark["NSE:S01"] == "📄", "already in the scan, result fresh"
+    assert mark["NSE:S02"] == "", "result older than the baseline"
+    assert mark["NSE:S03"] == "", "a scheduled (not declared) result is not news"
+    assert mark["NSE:S04"] == "", "no result date: not judged"
+    assert mark["NSE:S05"] == "📄", "declared on the data's own day"
+    assert mark["NSE:S06"] == "🆕", "age 6 is outside a 6-day window: new on price, not on a result"
+
+
+def test_no_result_mark_without_a_window():
+    df = _universe()
+    df["result_age_days"] = 1
+    t = S.scan_table(df, {"key": "all", "mask": lambda d: pd.Series(True, index=d.index)})
+    assert (t["_new"] == "").all()
+
+
 def test_the_table_fits_a_laptop_screen_with_one_header_each():
     cols = S.TABLE_COLUMNS
     assert sum(S.TABLE_WIDTHS[c] for c in cols) + 44 <= 1074

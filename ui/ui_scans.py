@@ -169,28 +169,39 @@ TABLE_COLUMNS = ("rank", "_new", "name", "sector", "composite_score", "momentum_
                  "improvement_score", "_strong_q", "_measured_flags", "weinstein_stage", "_liq_cr")
 # Set widths (an auto-sized text column grows to its longest cell): 1,025px, inside the 1,030px a
 # 1536px laptop leaves after the 44px row-selection column (the Deep Scanner's measured budget).
-TABLE_WIDTHS = {"rank": 55, "_new": 40, "name": 170, "sector": 110, "composite_score": 105,
+TABLE_WIDTHS = {"rank": 55, "_new": 55, "name": 170, "sector": 95, "composite_score": 105,
                 "momentum_score": 85, "improvement_score": 100, "_strong_q": 40,
                 "_measured_flags": 140, "weinstein_stage": 100, "_liq_cr": 80}
 
 
-def scan_table(df: pd.DataFrame, scan: dict, members_at_latest=None, min_cr=None) -> pd.DataFrame:
+def scan_table(df: pd.DataFrame, scan: dict, members_at_latest=None, min_cr=None,
+               keep_ids=None, result_window_days=None) -> pd.DataFrame:
     """The scan's stocks, sorted by PRISM Rank. The recipe runs on the frame given (the whole market);
-    the liquidity floor only narrows the finished list, and a stock with no traded value cannot clear
+    the liquidity floor and the sidebar's kept stocks (keep_ids) only narrow the FINISHED list, so a
+    listed stock is exactly the match its record measured. A stock with no traded value cannot clear
     a floor. Flagged stocks stay, with their measured flags named. 🆕 marks a stock that was not in the
-    scan on the last measured snapshot (no record = no baseline = nothing marked)."""
+    scan on the 🆕 baseline (the last archived month-end copy; no baseline = nothing marked). 📄 marks
+    a stock whose quarterly result was DECLARED inside the last `result_window_days` (the days since that
+    baseline): result_age_days counts days since the last declared result and is negative for one only
+    scheduled, so 0 <= age < window is "declared since the baseline" — the rule Movers uses. The two
+    clocks differ on purpose: technical legs move daily, fundamentals only when a result lands, so 🆕 + 📄
+    together means the stock entered on a fresh result."""
     out = df.loc[scan["mask"](df)].copy()
     out["_liq_cr"] = _num(out, "vol_sma_20d") * _num(out, "close_price") / 1e7
     if min_cr is not None:
         out = out[out["_liq_cr"] >= min_cr]
+    if keep_ids is not None:
+        out = out[out["company_id"].astype(str).isin(keep_ids)]
     named = pd.Series("", index=out.index, dtype=object)
     for col, lab in MEASURED_FLAGS.items():                 # three columns, never a loop over rows
         named = named.where(~(_num(out, col) == 1), np.where(named == "", lab, named + " · " + lab))
     out["_measured_flags"] = named
-    if members_at_latest is None:
-        out["_new"] = ""
-    else:
-        out["_new"] = np.where(out["company_id"].astype(str).isin(set(members_at_latest)), "", "🆕")
+    new = (pd.Series(False, index=out.index) if members_at_latest is None
+           else ~out["company_id"].astype(str).isin(set(members_at_latest)))
+    age = _num(out, "result_age_days")
+    fresh = ((age >= 0) & (age < result_window_days) if result_window_days
+             else pd.Series(False, index=out.index))
+    out["_new"] = np.select([new & fresh, new, fresh], ["🆕 📄", "🆕", "📄"], default="")
     out["_strong_q"] = np.where(strong_quarter(out) == 1, "✓", "")
     out = out.sort_values("rank", kind="mergesort")
     for c in TABLE_COLUMNS:
@@ -210,7 +221,12 @@ def table_config(members_date_label: str) -> dict:
                                 help="PRISM's overall rank. The list is sorted by it for reading only: inside "
                                      "this scan the top of the Rank did not beat the rest in the 2026-10-06 "
                                      "test, so every match is the scan."),
-        "_new": cc.TextColumn("🆕", width=w["_new"], help=f"Not in this scan {since}."),
+        "_new": cc.TextColumn("New", width=w["_new"],
+                              help=f"🆕 = not in this scan {since}. 📄 = its quarterly result was declared "
+                                   f"since then, so its Strong Quarter and Improvement readings are fresh. "
+                                   f"🆕 📄 together = it entered on a new result; 🆕 alone = it entered on "
+                                   f"price movement (technical legs move daily — check it is not flickering "
+                                   f"across the line)."),
         "name": cc.TextColumn("Stock", width=w["name"]),
         "sector": cc.TextColumn("Sector", width=w["sector"]),
         "composite_score": cc.ProgressColumn("Score", min_value=0, max_value=100, format="%.0f",

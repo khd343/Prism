@@ -361,7 +361,8 @@ def test_lens_row_seeds_and_stale_guards_every_key():
     # the cascade mechanics live in the hoisted _mp_ms helper (shared by every Market Pulse row
     # since Phase 2 — one dialect, not three); the lens row is one of its callers.
     i = src.index("def _mp_ms(")
-    fn = src[i:src.index("    def _mp_lens_row(")]
+    # module level since 2026-10-06 (shared with 🎯 Scans)
+    fn = src[i:src.index("def _mp_lens_row(")]
     assert "if v in options]" not in fn, "the cascade prunes stored selections again — the widening class"
     keep = "options = keep_selected(options, stored)"
     assert keep in fn, "_mp_ms does not route through the shared keep_selected rule"
@@ -387,9 +388,12 @@ def test_lens_row_is_multiselect_and_cascades():
     catalysts 5 -> 4. A row that computed all four option lists from the unfiltered frame (the
     pre-2026-08-30 behaviour) would show tiers that return zero rows."""
     src = _app_src()
-    i = src.index("def _mp_lens_row(")
-    fn = src[i:src.index("    # ── Inner navigation tabs")]
-    helper = src[src.index("def _mp_ms("):src.index("    def _mp_lens_row(")]
+    # the function body alone — since 2026-10-06 it is module level, so a slice to the next
+    # Market Pulse landmark would also swallow the 🎯 Scans tab between them
+    fn = next(ast.get_source_segment(src, n) for n in ast.parse(src).body
+              if isinstance(n, ast.FunctionDef) and n.name == "_mp_lens_row")
+    # module level since 2026-10-06 (shared with 🎯 Scans)
+    helper = src[src.index("def _mp_ms("):src.index("def _mp_lens_row(")]
     assert "st.selectbox" not in fn, "a single-select control is back in the lens row"
     assert "st.multiselect" in helper and "_mp_ms(" in fn, (
         "the lens row no longer routes through the shared _mp_ms cascade helper")
@@ -407,8 +411,10 @@ def test_lens_reset_value_is_empty_list_not_all():
     """A multi-select resets to [] — "All" was the SINGLE-select sentinel and would be a stale
     value the pruning immediately strips, leaving the Clear button unable to clear."""
     src = _app_src()
-    i = src.index("def _mp_lens_row(")
-    fn = src[i:src.index("    # ── Inner navigation tabs")]
+    # the function body alone — since 2026-10-06 it is module level, so a slice to the next
+    # Market Pulse landmark would also swallow the 🎯 Scans tab between them
+    fn = next(ast.get_source_segment(src, n) for n in ast.parse(src).body
+              if isinstance(n, ast.FunctionDef) and n.name == "_mp_lens_row")
     assert "_defaults = {k: [] for k in keys}" in fn, "the lens reset no longer resets to []"
     assert '{k: "All" for k in keys}' not in fn, "the single-select sentinel is back"
 
