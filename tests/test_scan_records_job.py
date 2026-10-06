@@ -127,6 +127,28 @@ def test_the_committed_records_carry_the_baseline_and_the_unseen_section():
         assert r["members_at_latest"], f"{scan['key']}: no 🆕 baseline"
 
 
+# ── 4b. The secret is read however it was pasted ───────────────────────────────────────────────────
+_ID = "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-abcde"
+
+
+@pytest.mark.parametrize("pasted", [
+    _ID,                                                              # the bare id
+    f'"{_ID}"', f"'{_ID}'", f"  {_ID}\n",                             # quoted, or with whitespace
+    f'ARCHIVE_INDEX_SHEET_ID = "{_ID}"',                              # the whole Streamlit line
+    f"https://docs.google.com/spreadsheets/d/{_ID}/edit?gid=0#gid=0",  # the sheet's address
+])
+def test_the_archive_index_id_is_read_however_it_was_pasted(pasted):
+    """Found on the first live run (2026-10-06): the secret reached Google as pasted and came back
+    HTTP 400 Bad Request — a Streamlit secret is written with quotes, and pasting the same text into
+    GitHub carries them along."""
+    assert J.sheet_id_from_secret(pasted) == _ID
+
+
+def test_a_secret_with_no_sheet_id_in_it_is_rejected():
+    for bad in ("", "   ", "ARCHIVE_INDEX_SHEET_ID", "15YwCtTSHSW4"):
+        assert J.sheet_id_from_secret(bad) == ""
+
+
 # ── 5. The workflow does exactly this ─────────────────────────────────────────────────────────────
 _WF = (ROOT / ".github" / "workflows" / "scan-records.yml").read_text(encoding="utf-8")
 

@@ -21,6 +21,7 @@ The file is rewritten only when a measured value changed, so a quiet week makes 
 """
 import json
 import os
+import re
 import subprocess
 import sys
 from datetime import date
@@ -121,6 +122,20 @@ def write(records: dict, path=S.RECORDS_PATH) -> None:
     os.replace(tmp, path)
 
 
+def sheet_id_from_secret(raw: str) -> str:
+    """The spreadsheet id inside whatever was pasted into the secret: a bare id, the id in quotes, the
+    whole Streamlit line (ARCHIVE_INDEX_SHEET_ID = "…") or the sheet's address. '' when none is there.
+    The first live run (2026-10-06) failed HTTP 400 on exactly this: the value reached Google as pasted."""
+    raw = raw or ""
+    for pattern in (r"/spreadsheets/d/([A-Za-z0-9_-]{25,})",     # the sheet's address
+                    r"[\"']([A-Za-z0-9_-]{25,})[\"']",            # a quoted id, alone or in a line
+                    r"(?<![A-Za-z0-9_-])([A-Za-z0-9_-]{25,})(?![A-Za-z0-9_-])"):   # a bare id
+        m = re.search(pattern, raw)
+        if m:
+            return m.group(1)
+    return ""
+
+
 def engine_version() -> str:
     try:
         return subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True,
@@ -132,9 +147,15 @@ def engine_version() -> str:
 # ── The run ──────────────────────────────────────────────────────────────────────────────────────
 def main() -> int:
     from ui.ui_movers import load_index
-    index_id = os.environ.get("ARCHIVE_INDEX_SHEET_ID", "").strip()
+    raw = os.environ.get("ARCHIVE_INDEX_SHEET_ID", "")
+    index_id = sheet_id_from_secret(raw)
+    # Shape only, never the value: enough to tell a quoted id, a pasted line or an address apart.
+    print(f"secret: {len(raw.strip())} chars{', quoted' if any(q in raw for q in chr(34) + chr(39)) else ''}"
+          f"{', a full line' if '=' in raw else ''}{', an address' if '/' in raw else ''}"
+          f" -> sheet id of {len(index_id)} chars")
     if not index_id:
-        raise SystemExit("ARCHIVE_INDEX_SHEET_ID is not set (a GitHub repository secret).")
+        raise SystemExit("ARCHIVE_INDEX_SHEET_ID holds no spreadsheet id — paste the 'PRISM Archive Index' "
+                         "sheet's id (the part of its address between /d/ and /edit).")
     existing = S.load_records()
     if not existing:
         raise SystemExit(f"{S.RECORDS_PATH.name} is missing or unreadable — run tools/scan_records.py first.")
