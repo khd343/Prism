@@ -190,6 +190,10 @@ SCANS = (
     # unseen windows are 12 months long (`horizon_days`) and start after its own design date.
     dict(key="compounder", emoji="🌱", name="Compounder Candidates", mask=compounder_candidates,
          uses=(revenue_led, _growth, _num), designed_on="2026-10-07", horizon_days=365,
+         # One unseen window a YEAR, starting each October (2026-10-07): annual results are public by
+         # then, as in the yearly backtest. A window from every month-end would put ~12 bars on the card
+         # by 2028 that overlap by 11 months — one year of evidence that looks like twelve.
+         start_month=10,
          # "Cycle ↓" (2026-10-07): a reading aid, not part of the recipe or record; its 60px come from
          # Stock, Sector and Score so the table keeps the laptop budget.
          extra=("_cycle",), widths={"name": 155, "sector": 95, "composite_score": 75},
@@ -207,6 +211,15 @@ def scan_designed_on(scan: dict) -> str:
 def scan_horizon(scan: dict) -> int:
     """The shortest window that counts as evidence for this scan, in days."""
     return int(scan.get("horizon_days", MIN_HORIZON_DAYS))
+
+
+def scan_start_month(scan: dict):
+    """The one calendar month this scan's unseen windows start in (1-12), or None: every month-end."""
+    return scan.get("start_month")
+
+
+def _month_end(year: int, month: int) -> date:
+    return date(year + month // 12, month % 12 + 1, 1) - timedelta(days=1)
 
 # Recorded in tools/validate.py; December decides (docs/december-2026-plan.md, sections 2d and 8).
 CANDIDATES = (
@@ -514,11 +527,18 @@ def _bars(ws, c, esc) -> str:
 
 def _first_unseen_due(scan: dict = None) -> str:
     """When the first unseen window can exist: a start must be a month-end copy taken after the scan's
-    design date, and a window needs the scan's horizon — so about that many days after the end of the
-    month its recipe was chosen in. The year is shown when it differs from the design year."""
-    d = date.fromisoformat(scan_designed_on(scan or {}))
-    month_end = (date(d.year + d.month // 12, d.month % 12 + 1, 1) - timedelta(days=1))
-    due = month_end + timedelta(days=scan_horizon(scan or {}))
+    design date (in the scan's start month, if it has one), and a window needs the scan's horizon — so
+    about that many days after that first start. The year is shown when it differs from the design
+    year."""
+    scan = scan or {}
+    d = date.fromisoformat(scan_designed_on(scan))
+    m = scan_start_month(scan)
+    start = _month_end(d.year, d.month)
+    if m is not None:
+        start = _month_end(d.year, m)
+        if start <= d:
+            start = _month_end(d.year + 1, m)
+    due = start + timedelta(days=scan_horizon(scan))
     return f"{due:%d %b %Y}" if due.year != d.year else f"{due:%d %b}"
 
 
@@ -660,8 +680,10 @@ def _study_body(scan: dict, rec: dict, c: dict, esc) -> str:
     else:
         body += (f'<div style="border-top:1px solid {c["border"]};margin-top:8px;padding-top:7px;{muted}">'
                  f'<b style="color:{c["text_secondary"]};">Out-of-sample: pending</b> — this list is judged '
-                 f'on {span} windows that start after it was built ({built}); the first is due about '
-                 f'{_first_unseen_due(scan)}.</div>')
+                 + (f'on one {span} window a year, each starting at the end of '
+                    f'{date(2000, scan_start_month(scan), 1):%B}, after it was built ({built})'
+                    if scan_start_month(scan) else f'on {span} windows that start after it was built ({built})')
+                 + f'; the first is due about {_first_unseen_due(scan)}.</div>')
     return body
 
 
