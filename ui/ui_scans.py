@@ -110,25 +110,29 @@ def _growth(df: pd.DataFrame, now: str, prev: str) -> pd.Series:
     return (a / b - 1.0).where((a > 0) & (b > 0))
 
 
-def compounder_candidates(df: pd.DataFrame) -> pd.Series:
-    """Profit growth AND margin widening over the last year, each in the top 40% of the stocks that can
-    be judged on it (whole market). From the 3-year study in docs/december-2026-plan.md section 1:
-    stocks with these traits at the start (Oct 2023) compounded +10.9%/yr against +4.3%/yr for the
-    rest over the next three years; in a falling year (Oct 2025 -> Oct 2026) -0.6% against -13.9%.
-    The study measured the two changes over FY21 -> FY23; this list uses the last year, which
-    measured better for every measure in PRISM's improvement score (2026-10-03)."""
-    profit = _growth(df, "pat", "pat_1yb")
-    margin = _num(df, "opm") - _num(df, "opm_1yb")
-    # Top 40% = percentile rank ABOVE 0.6: of 10 stocks, ranks 7-10 (rank 6 sits at exactly 0.6).
-    return ((profit.rank(pct=True) > 0.6) & (margin.rank(pct=True) > 0.6)).fillna(False).astype(bool)
-
-
 def revenue_led(df: pd.DataFrame) -> pd.Series:
     """Sales up more than 10% over the last year AND profit growing faster than sales: margin expansion
-    the business earned by selling more. A visible narrowing of the 🌱 list, not part of its record
-    (docs/december-2026-plan.md section 7: leverage paid only when revenue-led)."""
+    the business earned by selling more, not by cutting costs on a shrinking business."""
     sales, profit = _growth(df, "revenue", "revenue_1yb"), _growth(df, "pat", "pat_1yb")
     return ((sales > 0.10) & (profit > sales)).fillna(False).astype(bool)
+
+
+def compounder_candidates(df: pd.DataFrame) -> pd.Series:
+    """Profit growth AND margin widening over the last year, each in the top 40% of the stocks that can
+    be judged on it (whole market), AND revenue-led (sales up more than 10%, profit growing faster).
+
+    Backtest of 2026-10-07 (PRISM's export of 2026-10-06 for the fiscal history, joined to StockScans
+    returns, 2,712 stocks; traits as they stood in FY23, public by mid-2023): matches compounded
+    +20.4%/yr against +4.4%/yr for the rest from Oct 2023 to Oct 2026. In a falling year (Oct 2025 to
+    Oct 2026), profit and sales legs only, +14.8% against -12.2%. The same data reproduces the study in
+    docs/december-2026-plan.md section 1 to the stock (358 vs 1,102 matches), and without the
+    revenue-led leg the edge all but vanishes, so it is part of the recipe, not an option."""
+    profit = _growth(df, "pat", "pat_1yb")
+    margin = _num(df, "opm") - _num(df, "opm_1yb")
+    # Top 40% = percentile rank ABOVE 0.6: of 10 stocks, ranks 7-10 (rank 6 sits at exactly 0.6). The
+    # percentiles rank the whole market BEFORE the revenue-led leg narrows it, as in the backtest.
+    top = (profit.rank(pct=True) > 0.6) & (margin.rank(pct=True) > 0.6)
+    return (top & revenue_led(df)).fillna(False).astype(bool)
 
 
 def leading_sector_stocks(df: pd.DataFrame) -> pd.Series:
@@ -165,15 +169,13 @@ SCANS = (
          skip=("MEASURES",),
          recipe="Every stock in the 5 sectors (of 5+ stocks) with the most stocks near their 52-week "
                 "high and reporting strong quarters, as ranked on 📈 Sectors."),
-    # 🌱 (2026-10-07): a LONG-horizon list. Its record is a 3-year study, not saved windows, so its
+    # 🌱 (2026-10-07): a LONG-horizon list. Its record is a 3-year backtest, not saved windows, so its
     # unseen windows are 12 months long (`horizon_days`) and start after its own design date.
     dict(key="compounder", emoji="🌱", name="Compounder Candidates", mask=compounder_candidates,
-         uses=(_growth, _num), designed_on="2026-10-07", horizon_days=365,
-         refine=dict(label="Revenue-led only", mask=revenue_led,
-                     help="Sales up more than 10% over the last year and profit growing faster than "
-                          "sales. Your narrowing, not part of the record: the record counts every match."),
-         recipe="Profit growth and margin widening over the last year, each in the top 40% of the "
-                "market. Starting points for research: better odds, not a promise."),
+         uses=(revenue_led, _growth, _num), designed_on="2026-10-07", horizon_days=365,
+         recipe="Sales up more than 10% with profit growing faster, and profit growth and margin "
+                "widening each in the top 40% of the market. Starting points for research: better odds, "
+                "not a promise."),
 )
 
 
@@ -362,7 +364,7 @@ def table_widths(scan: dict) -> dict:
 
 
 def scan_table(df: pd.DataFrame, scan: dict, members_at_latest=None, min_cr=None,
-               keep_ids=None, result_window_days=None, refine=False) -> pd.DataFrame:
+               keep_ids=None, result_window_days=None) -> pd.DataFrame:
     """The scan's stocks, sorted by PRISM Rank. The recipe runs on the frame given (the whole market);
     the liquidity floor and the sidebar's kept stocks (keep_ids) only narrow the FINISHED list, so a
     listed stock is exactly the match its record measured. A stock with no traded value cannot clear
@@ -374,8 +376,6 @@ def scan_table(df: pd.DataFrame, scan: dict, members_at_latest=None, min_cr=None
     clocks differ on purpose: technical legs move daily, fundamentals only when a result lands, so 🆕 + 📄
     together means the stock entered on a fresh result."""
     out = df.loc[scan["mask"](df)].copy()
-    if refine and scan.get("refine"):            # judged on the whole frame, applied to the finished list
-        out = out[scan["refine"]["mask"](df).loc[out.index].to_numpy()]
     out["_liq_cr"] = traded_value_cr(out)
     if min_cr is not None:
         out = out[out["_liq_cr"] >= min_cr]

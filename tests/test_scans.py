@@ -640,8 +640,11 @@ def test_compounder_takes_the_top_40pct_on_both_legs_across_the_market():
     ("pat", np.nan, "missing profit passes nothing"),
     ("opm", np.nan, "missing margin passes nothing"),
     ("opm", 10.0, "margin flat is not in the top 40%"),
+    ("revenue", 105.0, "sales up only 5%: not revenue-led"),
+    ("revenue_1yb", -1.0, "no sales base: no growth rate, not revenue-led"),
+    ("revenue", np.nan, "missing sales passes nothing"),
 ])
-def test_compounder_needs_both_legs(col, value, why):
+def test_compounder_needs_every_leg(col, value, why):
     df = _growers()
     df.loc[df.index[-1], col] = value
     assert not S.compounder_candidates(df).iloc[-1], why
@@ -666,18 +669,16 @@ def test_revenue_led_needs_sales_up_10pct_and_profit_outrunning_them():
     assert not S.revenue_led(df).iloc[8], "no sales base, no growth rate"
 
 
-def test_revenue_led_narrows_the_finished_list_only():
-    """The 🌱 recipe still ranks the whole market; the switch only removes rows from its result."""
-    comp = _scan("compounder")
+def test_compounder_requires_revenue_led_and_ranks_the_market_first():
+    """Revenue-led is part of the recipe (2026-10-07: without it the backtest edge all but vanished).
+    The top-40% cuts rank the WHOLE market before it narrows, as the backtest did: narrowing first
+    would re-rank a smaller set and change which stocks count as top 40%."""
     df = _growers()
-    df.loc[7, "revenue"] = 101.0                                  # a match whose sales barely grew
-    all_ = S.scan_table(df, comp)
-    led = S.scan_table(df, comp, refine=True)
-    assert set(all_["company_id"]) == {"NSE:G06", "NSE:G07", "NSE:G08", "NSE:G09"}
-    # G06 sales +12% / profit +60%, G08 +16% / +80%, G09 +18% / +90% are led; G07's sales grew 1%.
-    assert set(led["company_id"]) == {"NSE:G06", "NSE:G08", "NSE:G09"}
-    assert len(S.scan_table(df, _scan("playbook"), refine=True)) == len(S.scan_table(df, _scan("playbook"))), (
-        "a scan with no narrowing of its own ignores the switch")
+    df.loc[7, "revenue"] = 101.0          # a top-40% stock whose sales grew 1%: out
+    df.loc[0:5, "revenue"] = 100.0        # sales flat for the bottom six: they still count in the ranking
+    assert S.compounder_candidates(df).tolist() == [False] * 6 + [True, False, True, True]
+    df.loc[9, "revenue"] = 195.0          # still top on profit (+90%) and margin, but sales +95% outran
+    assert not S.compounder_candidates(df).iloc[9], "profit must grow faster than sales"
 
 
 def _study_record():
@@ -687,10 +688,10 @@ def _study_record():
 def test_the_compounder_card_shows_its_study_named_in_sample_with_its_caveats():
     comp = _scan("compounder")
     h = S.card_html(comp, 320, "measured", _study_record(), selected=True, latest="03 Oct")
-    for s in ("3-YEAR STUDY · IN-SAMPLE", "Oct 2023", "+10.9%/yr", "+4.3%/yr", "Doubled: 31.8% vs 20.5%",
-              "359 vs 1,101", "Re-tested in a falling year", "-0.6%", "-13.9%",
-              "Better odds, not a promise: 68% of matches did not double",
-              "Survivors only", "FY21 → FY23", "Out-of-sample: pending", "1-year windows",
+    for s in ("3-YEAR BACKTEST · IN-SAMPLE", "Oct 2023", "+20.4%/yr", "+4.4%/yr", "Doubled: 40.7% vs 20.8%",
+              "182 vs 1,325", "Falling year, profit and sales legs only", "+14.8%", "-12.2%",
+              "Better odds, not a promise: 59% of matches did not double",
+              "Survivors only", "before costs", "FY21 → FY23", "Out-of-sample: pending", "1-year windows",
               "31 Oct 2027"):
         assert s in h, s
     assert "DESIGN-PERIOD" not in h and "short windows" not in h, "a study is not saved windows"
@@ -707,7 +708,7 @@ def test_the_compounder_card_shows_unseen_windows_once_they_exist():
 
 def test_a_stale_compounder_record_shows_no_study():
     h = S.card_html(_scan("compounder"), 320, "stale", _study_record(), selected=False, latest="")
-    assert "changed since" in h and "+10.9" not in h
+    assert "changed since" in h and "+20.4" not in h
 
 
 def test_each_scan_is_judged_on_its_own_clock():
@@ -718,16 +719,15 @@ def test_each_scan_is_judged_on_its_own_clock():
 
 def test_the_compounder_fingerprint_follows_its_helpers():
     d = _deps(_scan("compounder"))
-    assert {"fn ui.ui_scans._growth", "fn ui.ui_scans._num"} <= d
-    assert "fn ui.ui_scans.revenue_led" not in d, "the switch is not part of the record"
+    assert {"fn ui.ui_scans._growth", "fn ui.ui_scans._num", "fn ui.ui_scans.revenue_led"} <= d, (
+        "revenue-led is part of the recipe, so its record follows it")
 
 
-def test_the_switch_appears_only_for_a_scan_that_has_one_and_reaches_both_tables():
+def test_no_scan_carries_an_optional_narrowing():
+    """The 🌱 revenue-led switch became part of the recipe (2026-10-07): no scan has a `refine`, and the
+    tab has no toggle, so nothing on screen narrows a list in a way its record does not describe."""
+    assert not any("refine" in s for s in S.SCANS)
     tree = ast.parse(_APP)
     block = next(n for n in tree.body if isinstance(n, ast.With)
                  and ast.unparse(n.items[0].context_expr) == "tabs[1]")
-    src = ast.unparse(block)
-    assert "_sc_ref_on = bool(_sc_refine) and st.toggle(" in src
-    tables = [n for n in ast.walk(block) if isinstance(n, ast.Call) and ast.unparse(n.func) == "scan_table"]
-    assert len(tables) == 2 and all(
-        any(k.arg == "refine" and ast.unparse(k.value) == "_sc_ref_on" for k in t.keywords) for t in tables)
+    assert "st.toggle" not in ast.unparse(block)
