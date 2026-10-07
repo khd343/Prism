@@ -617,8 +617,13 @@ def test_the_list_comes_before_the_footnotes_and_the_caption_does_not_overpromis
     tree = ast.parse(_APP)
     block = next(n for n in tree.body if isinstance(n, ast.With)
                  and ast.unparse(n.items[0].context_expr) == "tabs[1]")
-    calls = {ast.unparse(n.func): n.lineno for n in ast.walk(block) if isinstance(n, ast.Call)}
-    assert calls["st.expander"] > calls["st.dataframe"], "Being measured must follow the list"
+    calls = [n for n in ast.walk(block) if isinstance(n, ast.Call)]
+    def line(func, text):
+        return next(n.lineno for n in calls if ast.unparse(n.func) == func and text in ast.unparse(n))
+    table = line("st.dataframe", "scan_tbl_")                  # the scan's own list
+    left = line("st.expander", "Left ")                        # Left 🌱, the exit side
+    measured = line("st.expander", "Being measured")
+    assert table < left < measured, "the list, then who left it, then the footnote"
     src = ast.unparse(block)
     assert "load it into the Tear-Sheet tab" in src and "open its Tear-Sheet" not in src
     assert "column_order=list(scan_table_columns(_sc_sel))" in src, "the table shows this scan's columns"
@@ -879,3 +884,85 @@ def test_the_first_due_date_follows_the_start_month():
     assert S._first_unseen_due({"designed_on": "2026-11-02", "horizon_days": 365, "start_month": 10}) == "30 Oct 2028", (
         "designed after October: the first start is next October (31 Oct 2027 + 365 days; 2028 is a leap year)")
     assert S._first_unseen_due(_scan("playbook")) == "25 Nov", "a scan with no start month is unchanged"
+
+
+# ── 8. Left 🌱 — the exit side (2026-10-07) ───────────────────────────────────────────────────────────
+def _leavers():
+    """Five non-matches, one per reason, and one 🌱 match. Sales/profit as (year before, last year)."""
+    rows = [  # company, revenue_1yb, revenue, pat_1yb, pat, opm_1yb, opm
+        ("NSE:FELL", 100, 130, 10, 8, 10, 12),       # profit fell (sales still up 30%)
+        ("NSE:LOSS", 100, 120, -5, -9, 5, 4),        # loss widened: profit fell
+        ("NSE:SLOW", 100, 105, 10, 12, 10, 11),      # profit up, sales only +5%: not revenue-led
+        ("NSE:RANK", 100, 120, 10, 13, 10, 10.1),    # revenue-led, profit up: others grew faster
+        ("NSE:MISS", np.nan, 120, 10, 14, 10, 11),   # a figure missing
+        ("NSE:STAY", 100, 150, 10, 30, 10, 20),      # still a 🌱 match
+    ]
+    df = pd.DataFrame(rows, columns=["company_id", "revenue_1yb", "revenue", "pat_1yb", "pat",
+                                     "opm_1yb", "opm"])
+    df["name"] = df["company_id"].str[4:].str.title()
+    df["sector"] = "S"
+    return df
+
+
+_SEEDLING = next(s for s in S.SCANS if s["key"] == "compounder")
+_STAY_ONLY = {**_SEEDLING, "mask": lambda d: d["company_id"] == "NSE:STAY"}
+
+
+def test_each_exit_gets_the_reason_the_evidence_ranks_worst():
+    df = _leavers()
+    why = dict(zip(df["company_id"], S.compounder_exit_reason(df)))
+    assert why["NSE:FELL"] == "profit_fell" and why["NSE:LOSS"] == "profit_fell"
+    assert why["NSE:SLOW"] == "not_revenue_led"
+    assert why["NSE:RANK"] == "rank_slipped"
+    assert why["NSE:MISS"] == "unjudged"
+    assert list(S.EXIT_REASONS) == ["profit_fell", "not_revenue_led", "rank_slipped", "unjudged", "gone"]
+
+
+def test_left_lists_baseline_members_not_in_the_scan_now_worst_first():
+    df = _leavers()
+    base = list(df["company_id"]) + ["NSE:GONE"]
+    t = S.left_scan(df, _STAY_ONLY, base)
+    assert "NSE:STAY" not in set(t["company_id"]), "a stock still in the scan did not leave"
+    assert t["company_id"].tolist() == ["NSE:FELL", "NSE:LOSS", "NSE:SLOW", "NSE:RANK", "NSE:MISS", "NSE:GONE"]
+    assert t["_why"].tolist()[0] == "🔴 profit fell" and t["_why"].tolist()[-1] == "⚪ not in today's data"
+    row = t.set_index("company_id")
+    assert row.loc["NSE:FELL", "_sales_chg"] == pytest.approx(30.0)
+    assert row.loc["NSE:FELL", "_profit_chg"] == pytest.approx(-20.0)
+    assert pd.isna(row.loc["NSE:LOSS", "_profit_chg"]), "no growth rate from a loss year"
+    assert row.loc["NSE:GONE", "sector"] == "", "a stock gone from the data shows no sector, not 'None'"
+    assert S.left_summary(t) == ("🔴 2 profit fell · 🟠 1 no longer revenue-led · ⚪ 1 others grew faster · "
+                                 "⚪ 1 a figure is missing · ⚪ 1 not in today's data")
+
+
+def test_left_needs_a_baseline_and_measured_exit_reasons_and_obeys_the_sidebar_scope():
+    df = _leavers()
+    assert S.left_scan(df, _STAY_ONLY, None).empty, "no baseline, no exits"
+    no_reasons = {k: v for k, v in _STAY_ONLY.items() if k != "exit_reason"}
+    assert S.left_scan(df, no_reasons, list(df["company_id"])).empty, "only measured exits are shown"
+    t = S.left_scan(df, _STAY_ONLY, list(df["company_id"]) + ["NSE:GONE"], keep_ids={"NSE:FELL", "NSE:STAY"})
+    assert t["company_id"].tolist() == ["NSE:FELL"], "scoped: only kept stocks, and no gone ones"
+    assert [s["key"] for s in S.SCANS if "exit_reason" in s] == ["compounder"]
+
+
+def test_left_runs_the_recipe_on_the_whole_market():
+    """A stock leaves when the RECIPE drops it on the whole market — the same mask the record measures."""
+    df = _leavers()
+    seen = []
+    spy = {**_STAY_ONLY, "mask": lambda d: (seen.append(len(d)), d["company_id"] == "NSE:STAY")[1]}
+    S.left_scan(df, spy, list(df["company_id"]), keep_ids={"NSE:FELL"})
+    assert seen == [len(df)]
+
+
+def test_the_exit_reasons_are_not_part_of_the_recipe_fingerprint():
+    bare = {k: v for k, v in _SEEDLING.items() if k != "exit_reason"}
+    assert S.recipe_fingerprint(_SEEDLING) == S.recipe_fingerprint(bare)
+
+
+def test_the_legend_says_which_reasons_are_measured():
+    lines = S.left_legend().splitlines()
+    assert len(lines) == len(S.EXIT_REASONS)
+    measured = [ln for ln in lines if "— measured:" in ln]
+    assert [ln.split("**")[1] for ln in measured] == ["profit fell", "no longer revenue-led"]
+    assert all("not measured" in ln for ln in lines if ln not in measured)
+    assert "8 to 11 points" in lines[0] and "+9.8 and +26.6" in lines[1]
+
