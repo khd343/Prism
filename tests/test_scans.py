@@ -793,3 +793,63 @@ def test_the_yearly_bars_compare_by_height():
     heights = [int(x) for x in re.findall(r"width:14px;height:(\d+)px", h)]
     assert heights == [34, 6 + round(28 * 13.5 / 31.2), 6 + round(28 * 23.6 / 31.2)], heights
     assert heights[1] < heights[2] < heights[0], "the tallest bar is the largest year"
+
+
+# ── 9. 🌱 "Cycle ↓" — supply-chain velocity as a reading aid (2026-10-07) ───────────────────────────
+def _cycles(rows):
+    """rows: (cf_year_lag, ccc, ccc_1yb, revenue, revenue_1yb, revenue_2yb)."""
+    cols = ["cf_year_lag", "ccc", "ccc_1yb", "revenue", "revenue_1yb", "revenue_2yb"]
+    return pd.DataFrame(rows, columns=cols)
+
+
+def test_cycle_needs_15_days_shorter_and_sales_up_more_than_15pct():
+    df = _cycles([                         # every row: balance sheet on the P&L's year (cf_year_lag 0)
+        (0, 85, 100, 120, 100, 90),       # -15 days, sales +20%            -> ✓ (15 days is enough)
+        (0, 86, 100, 120, 100, 90),       # -14 days                        -> no
+        (0, 85, 100, 115, 100, 90),       # sales +15% exactly              -> no (must be MORE than 15%)
+        (0, 85, 100, 116, 100, 90),       # sales +16%                      -> ✓
+        (0, np.nan, 100, 130, 100, 90),   # no cash cycle                   -> no
+        (0, 85, 100, 130, 0, 90),         # no sales base                   -> no
+        (0, 85, 100, 130, -5, 90),        # negative base                   -> no
+    ])
+    assert S.cycle_shortened(df).tolist() == [True, False, False, True, False, False, False]
+
+
+def test_cycle_needs_the_balance_sheet_on_the_same_year_as_the_pl():
+    """Measured 2026-10-07: a YEAR-OLD cash-cycle improvement did not help 🌱 (+9.4 vs +15.9, +32.0 vs
+    +32.0); only the same-year one did. The vendor's balance sheet lags its P&L for most stocks in
+    October (cf_year_lag == 1), so those get no ✓ until it rolls — whatever their numbers say."""
+    df = _cycles([
+        (0, 80, 100, 130, 100, 90),       # balance sheet on the P&L's year, -20 days, sales +30% -> ✓
+        (1, 80, 100, 130, 100, 90),       # balance sheet a year behind: same numbers           -> no
+        (1, 80, 100, 101, 100, 80),       # behind, last year's sales +25%                       -> no
+        (np.nan, 80, 100, 130, 100, 90),  # year cannot be told                                  -> no
+        (0, 80, 100, 101, 100, 80),       # same year, this year's sales +1%                     -> no
+    ])
+    assert S.cycle_shortened(df).tolist() == [True, False, False, False, False]
+
+
+def test_cycle_is_a_column_on_the_compounder_table_only():
+    comp, play, lead = _scan("compounder"), _scan("playbook"), _scan("leaders")
+    cols = S.table_columns(comp)
+    assert cols[cols.index("_strong_q") + 1] == "_cycle", "it reads beside 🔥"
+    assert "_cycle" not in S.table_columns(play) and "_cycle" not in S.table_columns(lead)
+    assert S.table_columns(lead) == S.TABLE_COLUMNS
+    cfg = S.table_config("", comp)["_cycle"]
+    assert cfg["label"] == "Cycle ↓" and "not part of 🌱's recipe or record" in cfg["help"]
+
+
+def test_cycle_is_a_reading_aid_not_part_of_the_record():
+    assert "fn ui.ui_scans.cycle_shortened" not in _deps(_scan("compounder")), (
+        "the ✓ must not reach the fingerprint: changing it cannot stale the record")
+
+
+def test_the_compounder_table_marks_its_cycle_rows():
+    df = _growers()
+    df["cf_year_lag"] = 0.0
+    df["ccc_1yb"], df["ccc"] = 100.0, 100.0
+    df.loc[[6, 9], "ccc"] = 70.0                               # G06 sales +12%, G09 +18%
+    t = S.scan_table(df, _scan("compounder"))
+    marks = dict(zip(t["company_id"], t["_cycle"]))
+    assert marks == {"NSE:G06": "", "NSE:G07": "", "NSE:G08": "", "NSE:G09": "✓"}, (
+        "G06's cycle shortened but sales grew only 12%; G09's shortened with sales +18%")

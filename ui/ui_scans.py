@@ -136,6 +136,22 @@ def compounder_candidates(df: pd.DataFrame) -> pd.Series:
     return (top & revenue_led(df)).fillna(False).astype(bool)
 
 
+def cycle_shortened(df: pd.DataFrame) -> pd.Series:
+    """Cash conversion cycle down 15+ days AND sales up more than 15%, BOTH in the same fiscal year as
+    the P&L 🌱 is judged on — supply-chain velocity, the December candidate, as a READING AID on the 🌱
+    table (not part of its recipe or record).
+
+    Measured 2026-10-07 over three yearly windows: inside 🌱, same-year velocity beat the market by +24
+    to +54 points, ahead of 🌱 without it every year. A YEAR-OLD cash-cycle improvement did not help
+    (+9.4 vs +15.9 and +32.0 vs +32.0), and the vendor rolls the balance sheet months after the P&L
+    (cf_year_lag == 1 on ~83% of stocks in October). So the ✓ needs the balance sheet ON the P&L's year
+    (cf_year_lag == 0): a lagging or undecided stock gets no ✓ until its balance sheet rolls."""
+    same_year = _num(df, "cf_year_lag") == 0
+    change = _num(df, "ccc") - _num(df, "ccc_1yb")
+    sales = _growth(df, "revenue", "revenue_1yb")
+    return (same_year & (change <= -15) & (sales > 0.15)).fillna(False).astype(bool)
+
+
 def leading_sector_stocks(df: pd.DataFrame) -> pd.Series:
     """Every stock in the leading sectors — the whole sector, not only its leaders. In-sample record
     (2026-10-06, ui/scan_records.json): +3.9 / +11.2 / +2.4 / +3.4pp against the market median,
@@ -174,6 +190,9 @@ SCANS = (
     # unseen windows are 12 months long (`horizon_days`) and start after its own design date.
     dict(key="compounder", emoji="🌱", name="Compounder Candidates", mask=compounder_candidates,
          uses=(revenue_led, _growth, _num), designed_on="2026-10-07", horizon_days=365,
+         # "Cycle ↓" (2026-10-07): a reading aid, not part of the recipe or record; its 60px come from
+         # Stock, Sector and Score so the table keeps the laptop budget.
+         extra=("_cycle",), widths={"name": 155, "sector": 95, "composite_score": 75},
          recipe="Sales up more than 10% with profit growing faster, and profit growth and margin "
                 "widening each in the top 40% of the market. Starting points for research: better odds, "
                 "not a promise."),
@@ -348,15 +367,24 @@ TABLE_COLUMNS = ("rank", "_new", "name", "sector", "composite_score", "momentum_
 # fits 90, "Receivables · Neg FCF" needs 133, the headers of the number columns need their width.
 TABLE_WIDTHS = {"rank": 55, "_new": 55, "name": 170, "sector": 110, "composite_score": 105,
                 "momentum_score": 85, "improvement_score": 100, "_strong_q": 40,
-                "_measured_flags": 135, "weinstein_stage": 90, "_liq_cr": 80}
+                "_measured_flags": 135, "weinstein_stage": 90, "_liq_cr": 80, "_cycle": 60}
 # The engine's Weinstein labels, shortened so the column fits; the header tip carries the words.
 TREND_SHORT = {"📈 Stage 2 Advancing": "📈 Stage 2", "🔄 Stage 1 Basing": "🔄 Stage 1",
                "⚠️ Stage 3 Top": "⚠️ Stage 3", "📉 Stage 4 Declining": "📉 Stage 4"}
 
 
+# Columns a scan may ADD to the shared table (2026-10-07), each placed after an anchor column. Only a
+# scan that lists one in `extra` shows it; the others keep exactly the shared table.
+EXTRA_COLUMNS = {"_cycle": "_strong_q"}
+
+
 def table_columns(scan: dict) -> tuple:
-    """The columns this scan shows: every table column except those its recipe fixes."""
-    return tuple(c for c in TABLE_COLUMNS if c not in scan.get("fixed", ()))
+    """The columns this scan shows: every table column except those its recipe fixes, plus its own
+    extra columns, each right after its anchor."""
+    cols = [c for c in TABLE_COLUMNS if c not in scan.get("fixed", ())]
+    for extra in scan.get("extra", ()):
+        cols.insert(cols.index(EXTRA_COLUMNS[extra]) + 1, extra)
+    return tuple(cols)
 
 
 def table_widths(scan: dict) -> dict:
@@ -393,13 +421,14 @@ def scan_table(df: pd.DataFrame, scan: dict, members_at_latest=None, min_cr=None
              else pd.Series(False, index=out.index))
     out["_new"] = np.select([new & fresh, new, fresh], ["🆕 📄", "🆕", "📄"], default="")
     out["_strong_q"] = np.where(strong_quarter(out) == 1, "✓", "")
+    out["_cycle"] = np.where(cycle_shortened(out), "✓", "")
     if "weinstein_stage" in out.columns:
         out["weinstein_stage"] = out["weinstein_stage"].replace(TREND_SHORT)
     out = out.sort_values("rank", kind="mergesort")
     for c in TABLE_COLUMNS:
         if c not in out.columns:
             out[c] = np.nan
-    return out[[*TABLE_COLUMNS, "company_id"]].reset_index(drop=True)
+    return out[[*TABLE_COLUMNS, *EXTRA_COLUMNS, "company_id"]].reset_index(drop=True)
 
 
 def table_config(members_date_label: str, scan: dict = None) -> dict:
@@ -442,6 +471,14 @@ def table_config(members_date_label: str, scan: dict = None) -> dict:
                  "200-day: 📈 Stage 2 advancing · 🔄 Stage 1 basing · ⚠️ Stage 3 topping · 📉 Stage 4 "
                  "declining · ❔ not enough price history. Being above its stop is not the same line, so "
                  "a Stage 3 or 4 can appear in a scan; open the Tear-Sheet before deciding."),
+        "_cycle": cc.TextColumn(
+            "Cycle ↓", width=w["_cycle"],
+            help="✓ = cash conversion cycle down 15+ days with sales up more than 15%, both in the same "
+                 "year as the profit and sales 🌱 is judged on (supply-chain velocity). Inside 🌱, stocks "
+                 "like this beat the market by +24 to +54 points in each of three years (Oct 2023 to "
+                 "Oct 2026), ahead of 🌱 stocks without it (in-sample). A year-old improvement did not help, "
+                 "so a company whose balance sheet is still last year's stays blank until it updates. A "
+                 "reading aid, not part of 🌱's recipe or record."),
         "_liq_cr": cc.NumberColumn("₹ Cr/day", format="%.1f", width=w["_liq_cr"],
                                    help="Average daily traded value over 20 days (average volume × price), "
                                         "in ₹ crore."),
