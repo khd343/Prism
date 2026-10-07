@@ -324,6 +324,22 @@ def test_the_recipe_sees_the_whole_market_not_the_liquid_slice():
     assert t["company_id"].tolist() == ["NSE:S08"]
 
 
+def test_the_liquidity_guide_turns_every_step_into_an_order_size():
+    """Which floor to pick depends on the buyer's order (2026-10-07): the help names, for every step, the
+    largest order that stays under ORDER_SHARE of a day's traded value — derived from LIQUIDITY_STEPS, so
+    a new step brings its own line and a changed share moves every number."""
+    assert S.ORDER_SHARE == 0.05
+    assert [S.order_size_lakh(s) for s in (0.5, 1.0, 2.0, 5.0)] == [2.5, 5.0, 10.0, 25.0]
+    text = S.liquidity_help()
+    steps = [s for s in S.LIQUIDITY_STEPS if s is not None]
+    lines = [ln for ln in text.splitlines() if ln.startswith("- ")]
+    assert lines == [f"- ₹{s:g} Cr/day → orders up to about ₹{S.order_size_lakh(s):g} lakh" for s in steps]
+    assert "- ₹0.5 Cr/day → orders up to about ₹2.5 lakh" in lines         # 0.5 Cr × 5% = ₹2.5 lakh
+    assert "not part of the record" in text and "every match" in text
+    assert "about 5% of a day's traded value" in text and "ASM/GSM" in text
+    assert "about ₹10 lakh" in S.table_config("x")["_liq_cr"]["help"]       # the column says it too
+
+
 def test_sidebar_filters_narrow_the_finished_list_not_the_recipe():
     """🎯 Show only my filtered stocks (2026-10-06): the sidebar narrows the LIST; the recipe still
     ranks the whole market. Stock 8 is a whole-market match; kept alone with stock 9, re-ranking inside

@@ -91,6 +91,7 @@ from ui.ui_group_views import (MEASURES, OWNERSHIP, OWNERSHIP_GROUP_NOTE, OWNERS
 from ui.ui_reference_data import CONCEPT_REFERENCE, WCS_STUDIES
 from ui.ui_tearsheet import _FLAG_DISPLAY, _FW_META
 from ui.ui_scans import (SCANS, CANDIDATES as SCAN_CANDIDATES, LIQUIDITY_STEPS as SCAN_LIQUIDITY_STEPS,
+                         liquidity_help as scan_liquidity_help,
                          table_columns as scan_table_columns, card_html as scan_card_html,
                          latest_label as scan_latest_label, load_records as load_scan_records,
                          members_label as scan_members_label,
@@ -824,8 +825,7 @@ with tabs[1]:
         _sc_min = st.selectbox(
             "Liquidity", SCAN_LIQUIDITY_STEPS, key="scan_liq",
             format_func=lambda v: "Any" if v is None else f"₹{v:g} Cr/day",
-            help="Minimum average daily traded value over 20 days (average volume × price). Your "
-                 "preference, not part of the record: the record counts every match.")
+            help=scan_liquidity_help())
     _sc_state_sel, _sc_rec_sel = scan_record_state(_sc_recs, _sc_sel)
     _sc_members = _sc_rec_sel.get("members_at_latest") if _sc_state_sel == "measured" else None
     # 📄 window = the days from the 🆕 baseline to the data's own date (the Movers rule): a result

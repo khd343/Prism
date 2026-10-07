@@ -118,3 +118,18 @@ def test_the_cycle_column_shows_on_the_compounder_table_only(tab):
     assert not tab.exception, [e.value for e in tab.exception]
     order = list(tab.dataframe[0].proto.column_order)
     assert order[order.index("_strong_q") + 1] == "_cycle"
+
+
+def test_the_liquidity_selector_shows_the_order_size_guide_and_still_starts_at_any(tab):
+    """The guide reaches the screen through app.py (read from the rendered selector), and it changes
+    nothing else: same steps, default Any, and a floor still narrows only the finished list."""
+    from ui import ui_scans as S
+    sel = tab.selectbox(key="scan_liq")
+    assert sel.help == S.liquidity_help()
+    assert list(sel.options) == ["Any"] + [f"₹{s:g} Cr/day" for s in S.LIQUIDITY_STEPS if s is not None]
+    assert sel.value is None
+    sel.set_value(5.0).run()
+    assert not tab.exception, [e.value for e in tab.exception]
+    expected = S.scan_table(_frame(), S.SCANS[0], min_cr=5.0)
+    assert 0 < len(expected) < len(S.scan_table(_frame(), S.SCANS[0])), "the floor must really narrow"
+    assert sorted(tab.dataframe[0].value["name"]) == sorted(expected["name"])
