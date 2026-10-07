@@ -328,18 +328,68 @@ def test_no_result_mark_without_a_window():
     assert (t["_new"] == "").all()
 
 
-def test_the_table_fits_a_laptop_screen_with_one_header_each():
-    cols = S.TABLE_COLUMNS
-    assert sum(S.TABLE_WIDTHS[c] for c in cols) + 44 <= 1074
-    cfg = S.table_config("03 Oct")
+@pytest.mark.parametrize("scan", S.SCANS, ids=lambda s: s["key"])
+def test_the_table_fits_a_laptop_screen_with_one_header_each(scan):
+    """Per scan (2026-10-07): every shown column has a set width, the total fits the 1,030px a 1536px
+    laptop leaves, and a scan that hides a column gives its width to the others (no dead strip)."""
+    cols, w = S.table_columns(scan), S.table_widths(scan)
+    assert sum(w[c] for c in cols) + 44 <= 1074
+    assert sum(w[c] for c in cols) == sum(S.TABLE_WIDTHS[c] for c in S.TABLE_COLUMNS), (
+        f"{scan['key']}: a hidden column's width must go to the columns still shown")
+    cfg = S.table_config("03 Oct", scan)
     for c in cols:
         assert c in cfg, f"{c} has no column config"
+        assert cfg[c]["width"] == w[c], f"{c}: the config must use this scan's width"
         label = cfg[c]["label"]
         assert label and label != c and not (label.islower() and "_" in label), (c, label)
     assert {cfg[c]["label"] for c in ("rank", "name", "composite_score", "momentum_score",
                                        "improvement_score", "sector", "weinstein_stage")} == {
         "Rank", "Stock", "Score", "Momentum", "Improvement", "Sector", "Trend"}, (
         "the same column keeps the header it has in the Deep Scanner")
+
+
+def test_a_column_is_hidden_only_when_the_recipe_fixes_its_value():
+    """2026-10-07: on the Playbook the 🔥 column read ✓ on 100% of 275 stocks, because the recipe
+    requires a Strong Quarter. A hidden column must be constant BY CONSTRUCTION: here the one match is
+    strong, and making it not strong takes it out of the scan."""
+    play = next(s for s in S.SCANS if s["key"] == "playbook")
+    assert play["fixed"] == ("_strong_q",)
+    assert "_strong_q" not in S.table_columns(play)
+    t = S.scan_table(_universe(), play)
+    assert len(t) == 1 and set(t["_strong_q"]) == {"✓"}
+    df = _universe()
+    df.loc[df.index[-1], "pat_lq"] = 10.0                 # profit flat: not a strong quarter
+    assert S.scan_table(df, play).empty, "a stock without the fixed value cannot be in the scan"
+    leaders = next(s for s in S.SCANS if s["key"] == "leaders")
+    assert S.table_columns(leaders) == S.TABLE_COLUMNS, "Leading-Sector Stocks varies on every column"
+
+
+def test_trend_stays_on_the_playbook_because_the_recipe_allows_a_stage_3_or_4():
+    """'Above its stop' is not 'above its 30-week average': a stock in Stage 4 can pass every leg, so
+    hiding Trend would hide a warning (it read 0% Stage 3/4 on 2026-10-07 — by data, not by design)."""
+    df = _universe()
+    df.loc[df.index[-1], "weinstein_stage"] = "📉 Stage 4 Declining"
+    play = next(s for s in S.SCANS if s["key"] == "playbook")
+    t = S.scan_table(df, play)
+    assert t["weinstein_stage"].tolist() == ["📉 Stage 4"]
+    assert "weinstein_stage" in S.table_columns(play)
+
+
+def test_every_engine_trend_label_has_a_short_form():
+    """The short labels must cover every label the engine writes; an unknown one passes unchanged."""
+    src = open(os.path.join(ROOT, "core", "data_engine.py"), encoding="utf-8").read()
+    call = next(n for n in ast.walk(ast.parse(src)) if isinstance(n, ast.Assign)
+                and ast.unparse(n.targets[0]) == "df['weinstein_stage']")
+    labels = [e.value for e in call.value.args[1].elts]
+    assert len(labels) == 4 and set(labels) == set(S.TREND_SHORT), labels
+    df = _universe()
+    df["weinstein_stage"] = "❔ Unknown"
+    t = S.scan_table(df, {"key": "all", "mask": lambda d: pd.Series(True, index=d.index)})
+    assert set(t["weinstein_stage"]) == {"❔ Unknown"}
+    cfg = S.table_config("")
+    for short in [*S.TREND_SHORT.values(), "❔"]:
+        assert short.split()[0] in cfg["weinstein_stage"]["help"], f"the tip does not explain {short}"
+    assert not __import__("re").search(r"\bbuys?\b", cfg["weinstein_stage"]["help"], __import__("re").I)
 
 
 # ── 5. The card says what was measured, and only that ─────────────────────────────────────────────
@@ -357,6 +407,21 @@ def test_a_measured_card_shows_every_window_and_says_provisional():
         assert s in h, s
 
 
+def test_the_card_says_when_its_first_unseen_window_is_due():
+    h = S.card_html(S.SCANS[0], 235, "measured", _record(), selected=False, latest="03 Oct")
+    assert "DESIGN-PERIOD RECORD" in h and "none yet" in h and S._first_unseen_due() in h
+    assert "NEVER SAW" not in h
+
+
+def test_the_card_shows_unseen_windows_beside_the_design_period_record():
+    rec = _record()
+    rec["out_of_sample"] = [dict(start="2026-10-31", end="2026-12-04", days=34, n=120,
+                                 median_excess_pp=-1.4, beat_pct=47)]
+    h = S.card_html(S.SCANS[0], 235, "measured", rec, selected=False, latest="03 Oct")
+    assert "NEVER SAW" in h and "-1.4" in h and "47%" in h and "none yet" not in h
+    assert h.index("DESIGN-PERIOD RECORD") < h.index("NEVER SAW"), "the design period reads first"
+
+
 def test_an_unmeasured_or_stale_card_shows_no_numbers():
     h = S.card_html(S.SCANS[0], 235, "unmeasured", None, selected=False, latest="")
     assert "Not yet measured" in h and "+7.1" not in h
@@ -369,7 +434,7 @@ def test_the_card_names_the_record_in_sample_and_out_of_sample_pending():
     in-sample (the recipe was chosen on it), its windows share start dates, and nothing out of sample
     exists until the first unseen window — the card says all three in words."""
     h = S.card_html(S.SCANS[0], 235, "measured", _record(), selected=True, latest="03 Oct")
-    for s in ("In-sample", "chosen on these windows", "not proven", "before costs",
+    for s in ("IN-SAMPLE · DESIGN-PERIOD RECORD", "chosen on these windows", "not proven", "before costs",
               "4 short windows from 2 start dates", "Out-of-sample: pending", S._first_unseen_due()):
         assert s in h, s
 
@@ -449,6 +514,20 @@ def test_a_row_click_sets_the_stock_directly_and_never_reruns():
     widget_at = _APP.index('key="xray_stock"')
     assert block.lineno < _APP[:widget_at].count("\n") + 1, (
         "the direct set is only legal while Scans renders before the Tear-Sheet's stock selectbox")
+
+
+def test_the_list_comes_before_the_footnotes_and_the_caption_does_not_overpromise():
+    """2026-10-07: the list is the tab's payoff, so 'Being measured' (no record yet) sits after it. A
+    row click loads the stock — Streamlit cannot switch tabs from code — so the caption says so."""
+    tree = ast.parse(_APP)
+    block = next(n for n in tree.body if isinstance(n, ast.With)
+                 and ast.unparse(n.items[0].context_expr) == "tabs[1]")
+    calls = {ast.unparse(n.func): n.lineno for n in ast.walk(block) if isinstance(n, ast.Call)}
+    assert calls["st.expander"] > calls["st.dataframe"], "Being measured must follow the list"
+    src = ast.unparse(block)
+    assert "load it into the Tear-Sheet tab" in src and "open its Tear-Sheet" not in src
+    assert "column_order=list(scan_table_columns(_sc_sel))" in src, "the table shows this scan's columns"
+    assert "scan_table_config(_sc_new_label, _sc_sel)" in src, "and this scan's widths"
 
 
 def test_the_tab_reads_the_whole_market_and_never_the_sidebar_frame():

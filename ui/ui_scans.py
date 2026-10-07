@@ -113,8 +113,13 @@ def leading_sector_stocks(df: pd.DataFrame) -> pd.Series:
 
 
 SCANS = (
+    # `fixed`: table columns the recipe itself fixes, so they would repeat one value on every row — the
+    # Playbook requires a 🔥 Strong Quarter, so that column is ✓ on 100% of its stocks. Only columns
+    # fixed BY CONSTRUCTION are hidden; Trend stays, because "above its stop" is not "above its 30-week
+    # average" and a Stage 3 or 4 is possible (tests/test_scans.py). `widths` gives the hidden column's
+    # 40px to Stock and Sector (measured 2026-10-07: names fit 79% -> 90%, sectors 51% -> 75%).
     dict(key="playbook", emoji="🚀", name="Playbook Shortlist", mask=playbook_shortlist,
-         uses=(strong_quarter, _pct, _num),
+         uses=(strong_quarter, _pct, _num), fixed=("_strong_q",), widths={"name": 190, "sector": 130},
          recipe="Momentum and Breakout in the top third of the market, a 🔥 Strong Quarter, Improvement "
                 "in the top half, and the price above its stop."),
     dict(key="leaders", emoji="🌬️", name="Leading-Sector Stocks", mask=leading_sector_stocks,
@@ -186,9 +191,24 @@ TABLE_COLUMNS = ("rank", "_new", "name", "sector", "composite_score", "momentum_
                  "improvement_score", "_strong_q", "_measured_flags", "weinstein_stage", "_liq_cr")
 # Set widths (an auto-sized text column grows to its longest cell): 1,025px, inside the 1,030px a
 # 1536px laptop leaves after the 44px row-selection column (the Deep Scanner's measured budget).
-TABLE_WIDTHS = {"rank": 55, "_new": 55, "name": 170, "sector": 95, "composite_score": 105,
+# Measured 2026-10-07 in the grid's own font (13px Source Sans + 16px padding): every short Trend label
+# fits 90, "Receivables · Neg FCF" needs 133, the headers of the number columns need their width.
+TABLE_WIDTHS = {"rank": 55, "_new": 55, "name": 170, "sector": 110, "composite_score": 105,
                 "momentum_score": 85, "improvement_score": 100, "_strong_q": 40,
-                "_measured_flags": 140, "weinstein_stage": 100, "_liq_cr": 80}
+                "_measured_flags": 135, "weinstein_stage": 90, "_liq_cr": 80}
+# The engine's Weinstein labels, shortened so the column fits; the header tip carries the words.
+TREND_SHORT = {"📈 Stage 2 Advancing": "📈 Stage 2", "🔄 Stage 1 Basing": "🔄 Stage 1",
+               "⚠️ Stage 3 Top": "⚠️ Stage 3", "📉 Stage 4 Declining": "📉 Stage 4"}
+
+
+def table_columns(scan: dict) -> tuple:
+    """The columns this scan shows: every table column except those its recipe fixes."""
+    return tuple(c for c in TABLE_COLUMNS if c not in scan.get("fixed", ()))
+
+
+def table_widths(scan: dict) -> dict:
+    """Column widths for this scan: the shared widths, with the scan's own overrides."""
+    return {**TABLE_WIDTHS, **scan.get("widths", {})}
 
 
 def scan_table(df: pd.DataFrame, scan: dict, members_at_latest=None, min_cr=None,
@@ -220,6 +240,8 @@ def scan_table(df: pd.DataFrame, scan: dict, members_at_latest=None, min_cr=None
              else pd.Series(False, index=out.index))
     out["_new"] = np.select([new & fresh, new, fresh], ["🆕 📄", "🆕", "📄"], default="")
     out["_strong_q"] = np.where(strong_quarter(out) == 1, "✓", "")
+    if "weinstein_stage" in out.columns:
+        out["weinstein_stage"] = out["weinstein_stage"].replace(TREND_SHORT)
     out = out.sort_values("rank", kind="mergesort")
     for c in TABLE_COLUMNS:
         if c not in out.columns:
@@ -227,9 +249,9 @@ def scan_table(df: pd.DataFrame, scan: dict, members_at_latest=None, min_cr=None
     return out[[*TABLE_COLUMNS, "company_id"]].reset_index(drop=True)
 
 
-def table_config(members_date_label: str) -> dict:
+def table_config(members_date_label: str, scan: dict = None) -> dict:
     """Column headers — the same header each column carries in the Deep Scanner — widths and tips."""
-    w = TABLE_WIDTHS
+    w = table_widths(scan or {})
     cc = st.column_config
     since = (f"on {members_date_label}, the last archived month-end copy" if members_date_label
              else "on the last archived month-end copy")
@@ -261,7 +283,12 @@ def table_config(members_date_label: str) -> dict:
                  "receivables bloat and negative free cash flow — weaker mainly for businesses that are "
                  "not improving, and negative free cash flow alongside capex mirage was not weaker. "
                  "Shown, never removed: open the Tear-Sheet's Forensics tab before deciding."),
-        "weinstein_stage": cc.TextColumn("Trend", width=w["weinstein_stage"]),
+        "weinstein_stage": cc.TextColumn(
+            "Trend", width=w["weinstein_stage"],
+            help="Weinstein stage — the price against its 30-week average, and that average against the "
+                 "200-day: 📈 Stage 2 advancing · 🔄 Stage 1 basing · ⚠️ Stage 3 topping · 📉 Stage 4 "
+                 "declining · ❔ not enough price history. Being above its stop is not the same line, so "
+                 "a Stage 3 or 4 can appear in a scan; open the Tear-Sheet before deciding."),
         "_liq_cr": cc.NumberColumn("₹ Cr/day", format="%.1f", width=w["_liq_cr"],
                                    help="Average daily traded value over 20 days (average volume × price), "
                                         "in ₹ crore."),
@@ -352,44 +379,55 @@ def card_html(scan: dict, n_now: int, state: str, rec, selected: bool, latest: s
             f'<div style="font-size:0.76rem;color:{c["text_secondary"]};margin:4px 0 10px 0;line-height:1.35;">'
             f'{esc(scan["recipe"])}</div>')
     if state == "measured" and rec and rec.get("windows"):
+        # One ROW per record — the words on the left, the bars on the right — so the card is about half
+        # the height of a stacked one and the list starts on the first screen (2026-10-07).
         ws = rec["windows"]
         beat = _range([int(w["beat_pct"]) for w in ws], "{}") + "%"
         n = _range([int(w["n"]) for w in ws], "{}")
         starts = len({w["start"] for w in ws})
-        body = (f'<div style="font-size:0.66rem;color:{c["text_muted"]};margin-bottom:4px;line-height:1.3;">'
-                f'<b style="color:{c["text_secondary"]};">In-sample</b> (design period) — the recipe was '
-                f'chosen on these windows: worth testing, not proven · points above the market median</div>'
-                f'<div style="display:flex;gap:6px;align-items:flex-end;min-height:56px;">{_bars(ws, c, esc)}</div>'
-                f'<div style="font-size:0.74rem;color:{c["text_secondary"]};margin-top:8px;">'
-                f'{beat} of matches beat the market · {n} stocks per window · before costs</div>'
-                f'{_extras(ws, c, esc)}'
-                f'<div style="font-size:0.66rem;color:{c["text_muted"]};margin-top:3px;">provisional · '
-                f'{len(ws)} short windows from {starts} start date{"s" if starts != 1 else ""}'
-                f'{f" · measured to {esc(latest)}" if latest else ""}</div>')
-        unseen = rec.get("out_of_sample") or []
         built = f"{date.fromisoformat(DESIGNED_ON):%d %b}"
+        unseen = rec.get("out_of_sample") or []
+        bars_tip = ("Points above the market median in each window, before costs; hover a bar for its "
+                    "dates and size. In-sample = windows studied while the recipe was chosen.")
+        # Named in so many words (2026-10-07): "provisional" alone read as "proven, just early".
+        body = (f'<div style="display:flex;gap:14px;align-items:flex-end;justify-content:space-between;">'
+                f'<div style="flex:1;min-width:0;">'
+                f'<div style="font-size:0.66rem;font-weight:700;color:{c["text_muted"]};letter-spacing:.3px;">'
+                f'IN-SAMPLE · DESIGN-PERIOD RECORD</div>'
+                f'<div style="font-size:0.66rem;color:{c["text_muted"]};margin-top:2px;">The recipe was chosen '
+                f'on these windows: worth testing, not proven</div>'
+                f'<div style="font-size:0.74rem;color:{c["text_secondary"]};margin-top:3px;">'
+                f'{beat} of matches beat the market · before costs</div>'
+                f'<div style="font-size:0.66rem;color:{c["text_muted"]};margin-top:2px;">{n} stocks per '
+                f'window · provisional</div>'
+                f'<div style="font-size:0.66rem;color:{c["text_muted"]};margin-top:2px;">{len(ws)} short '
+                f'windows from {starts} start date{"s" if starts != 1 else ""}'
+                f'{f", measured to {esc(latest)}" if latest else ""}</div>'
+                + ("" if unseen else
+                   f'<div style="font-size:0.66rem;color:{c["text_muted"]};margin-top:2px;" title="Windows '
+                   f'that start after the recipe was chosen ({built}) — data nobody looked at while '
+                   f'choosing it.">Out-of-sample: pending — unseen windows: none yet, the first is due '
+                   f'about {_first_unseen_due()}</div>')
+                + f'</div><div style="display:flex;gap:4px;align-items:flex-end;" title="{esc(bars_tip)}">'
+                f'{_bars(ws, c, esc)}</div></div>{_extras(ws, c, esc)}')
         if unseen:
             u_beat = _range([int(w["beat_pct"]) for w in unseen], "{}") + "%"
-            body += (f'<div style="border-top:1px solid {c["border"]};margin-top:9px;padding-top:7px;'
-                     f'font-size:0.66rem;color:{c["text_muted"]};"><b style="color:{c["text_secondary"]};">'
-                     f'Out-of-sample</b> — windows it never saw, since it was built ({built})</div>'
-                     f'<div style="display:flex;gap:6px;align-items:flex-end;min-height:56px;">'
-                     f'{_bars(unseen, c, esc)}</div>'
-                     f'<div style="font-size:0.74rem;color:{c["text_secondary"]};margin-top:6px;">'
-                     f'{u_beat} of matches beat the market · before costs · the most trustworthy record</div>'
+            body += (f'<div style="display:flex;gap:14px;align-items:flex-end;justify-content:space-between;'
+                     f'border-top:1px solid {c["border"]};margin-top:8px;padding-top:7px;">'
+                     f'<div style="flex:1;min-width:0;">'
+                     f'<div style="font-size:0.66rem;font-weight:700;color:{c["text_muted"]};letter-spacing:.3px;">'
+                     f'OUT-OF-SAMPLE · SINCE IT WAS BUILT ({esc(built.upper())}) — WINDOWS IT NEVER SAW</div>'
+                     f'<div style="font-size:0.74rem;color:{c["text_secondary"]};margin-top:3px;">'
+                     f'{u_beat} of matches beat the market · before costs · the most trustworthy record</div></div>'
+                     f'<div style="display:flex;gap:4px;align-items:flex-end;">{_bars(unseen, c, esc)}</div></div>'
                      f'{_extras(unseen, c, esc)}')
-        else:
-            body += (f'<div style="border-top:1px solid {c["border"]};margin-top:9px;padding-top:7px;'
-                     f'font-size:0.7rem;color:{c["text_muted"]};"><b style="color:{c["text_secondary"]};">'
-                     f'Out-of-sample: pending</b> — no window since it was built ({built}); the first is '
-                     f'due about {_first_unseen_due()}.</div>')
     elif state == "stale":
         body = (f'<div style="font-size:0.74rem;color:{c["gold"]};">The recipe changed since its record was '
                 f'measured — no record is shown until it is re-measured.</div>')
     else:
         body = f'<div style="font-size:0.74rem;color:{c["text_muted"]};">Not yet measured.</div>'
     return (f'<div style="background:{c["bg_secondary"]};border:1px solid {border};border-radius:10px;'
-            f'padding:12px 14px;min-height:205px;">{head}{body}</div>')
+            f'padding:12px 14px;">{head}{body}</div>')
 
 
 def members_label(records: dict) -> str:
