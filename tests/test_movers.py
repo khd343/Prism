@@ -28,8 +28,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from ui.ui_movers import (JOIN_KEY, SOUND_LADDER, WEALTH_LADDER, compute_movers, default_vintage,
-                          fy_quarter, usable_vintages)
+from ui.ui_movers import (JOIN_KEY, QUARTER_END_MONTHS, SOUND_LADDER, WEALTH_LADDER, compute_movers,
+                          default_vintage, fy_quarter, quarter_end_vintages, quarter_label, usable_vintages)
 
 _APP = os.path.join(os.path.dirname(__file__), "..", "app.py")
 _MOV = os.path.join(os.path.dirname(__file__), "..", "ui", "ui_movers.py")
@@ -479,6 +479,66 @@ def test_default_vintage_prefers_the_most_recent_on_cycle_quarter():
     only_off = usable_vintages(_index(("2026-10-29", "FY27Q1 (off-cycle)", "id3", "u", "t", 1, "ok")))
     assert default_vintage(only_off)["spreadsheet_id"] == "id3"
     assert default_vintage(ok.iloc[0:0]) is None
+
+
+# ── 7b. One copy per quarter: the calendar quarter-end (2026-10-07) ─────────────────────────
+def test_quarter_end_vintages_keep_the_newest_copy_of_each_quarter_end_month():
+    ok = usable_vintages(_index(
+        ("2026-06-15", "FY26Q4", "jun15", "u", "t", 1, "ok"),
+        ("2026-06-30", "FY26Q4", "jun30", "u", "t", 1, "ok"),
+        ("2026-07-31", "FY26Q4 (off-cycle)", "jul31", "u", "t", 1, "ok"),
+        ("2026-08-31", "FY27Q1", "aug31", "u", "t", 1, "ok"),
+        ("2026-09-19", "FY27Q1", "sep19", "u", "t", 1, "ok"),
+        ("2026-09-30", "FY27Q1", "sep30", "u", "t", 1, "ok"),
+        ("2026-10-06", "FY27Q1 (off-cycle)", "oct06", "u", "t", 1, "ok"),
+        ("2026-12-31", "FY27Q2", "dec31", "u", "t", 1, "ok"),
+    ))
+    q = quarter_end_vintages(ok)
+    assert q["spreadsheet_id"].tolist() == ["dec31", "sep30", "jun30"]
+    assert list(q.columns) == ["vintage_date", "fy_quarter", "spreadsheet_id"]
+    assert default_vintage(q)["spreadsheet_id"] == "dec31", "the default is the latest quarter"
+
+
+def test_no_quarter_end_copy_yet_means_an_empty_list_for_the_caller_to_fall_back_from():
+    ok = usable_vintages(_index(("2026-10-06", "FY27Q1 (off-cycle)", "oct06", "u", "t", 1, "ok")))
+    assert quarter_end_vintages(ok).empty
+    assert quarter_end_vintages(ok.iloc[0:0]).empty
+
+
+def test_every_day_of_a_quarter_end_month_is_a_clean_on_cycle_quarter():
+    """The claim the picker rests on, checked against the archiver's own rule for every day of five
+    years: a quarter-end month is always after that quarter's deadline and before the next season,
+    and holds a fixed results quarter — Jun Q4, Sep Q1, Dec Q2, Mar Q3."""
+    expect = {3: "Q3", 6: "Q4", 9: "Q1", 12: "Q2"}
+    assert set(QUARTER_END_MONTHS) == set(expect)
+    for day in pd.date_range("2026-01-01", "2030-12-31"):
+        if day.month in QUARTER_END_MONTHS:
+            label = fy_quarter(day.strftime("%Y-%m-%d"))
+            assert "off-cycle" not in label, (day, label)
+            assert label.endswith(expect[day.month]), (day, label)
+
+
+def test_quarter_label_names_the_results_the_copy_holds():
+    assert quarter_label("2026-06-30") == "Jan–Mar + annual results (FY26 Q4) · 30 Jun 2026"
+    assert quarter_label("2026-09-30") == "Apr–Jun results (FY27 Q1) · 30 Sep 2026"
+    assert quarter_label("2026-12-31") == "Jul–Sep results (FY27 Q2) · 31 Dec 2026"
+    assert quarter_label("2027-03-31") == "Oct–Dec results (FY27 Q3) · 31 Mar 2027"
+
+
+def test_the_tab_lists_quarter_ends_from_an_index_but_never_filters_a_pasted_copy():
+    """app.py: the index path narrows to quarter_end_vintages (falling back to every copy until one
+    exists); a single pasted copy is compared as is — the way to reach any other copy."""
+    import ast
+    src = open(os.path.join(os.path.dirname(__file__), "..", "app.py"), encoding="utf-8").read()
+    i = src.index("_mv_ok = _load_archive_index(_mv_id)")
+    j = src.index("except ValueError:", i)
+    index_path = src[i:j]
+    assert "quarter_end_vintages(_mv_ok)" in index_path and "if not _mv_qe.empty:" in index_path
+    copy_path = src[j:src.index("except Exception as _e:", j)]
+    assert "quarter_end_vintages" not in copy_path
+    assert "format_func=lambda i: _mv_opt.get(i, i)" in src
+    assert '_mv_ok["vintage_date"].map(quarter_label)' in src
+    ast.parse(src)
 
 
 def test_a_non_index_sheet_fails_loud():

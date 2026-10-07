@@ -2922,7 +2922,8 @@ def _render_market_pulse():
         from core.sheet_meta import fetch_sheet_title, parse_data_date
         from ui.ui_export import engine_version as _mv_engine
         from ui.ui_movers import (JOIN_KEY as _MV_KEY, compute_movers, default_vintage, fy_quarter,
-                                  reason_counts, render_movers, restrict)
+                                  quarter_end_vintages, quarter_label, reason_counts, render_movers,
+                                  restrict)
 
         # ONE LINE. Measured before this pass: seven controls and ~280 words sat above the first
         # data row and ⭐ What matters began ~900px down a 732px viewport. The how-and-why now
@@ -2973,9 +2974,14 @@ def _render_market_pulse():
                     "ARCHIVE_INDEX_SHEET_ID in secrets). Nothing to compare until then.")
         else:
             # ── 3. Resolve: an index (many vintages) or a single copy (one vintage from its name) ──
-            _mv_ok, _mv_err = None, None
+            _mv_ok, _mv_err, _mv_quarterly = None, None, False
             try:
                 _mv_ok = _load_archive_index(_mv_id)
+                # One copy per quarter: the calendar quarter-end copy, the cleanest state of a results
+                # quarter (ui_movers.QUARTER_END_MONTHS). Until the archive holds one, every copy.
+                _mv_qe = quarter_end_vintages(_mv_ok)
+                if not _mv_qe.empty:
+                    _mv_ok, _mv_quarterly = _mv_qe, True
             except ValueError:               # not an index → maybe a copy: read its own name
                 _title = fetch_sheet_title(extract_spreadsheet_id(_mv_id))
                 _d = parse_data_date(_title)
@@ -3000,16 +3006,26 @@ def _render_market_pulse():
                 # stored id no longer in the index cannot be loaded at all, so snapping to the
                 # default here is honest, not the silent-widening class.
                 _mv_ids = list(_mv_ok["spreadsheet_id"])
+                # _mv_lab (short) names the copy on the button and in the notes; the picker reads the
+                # results each quarter-end copy holds.
                 _mv_lab = dict(zip(_mv_ok["spreadsheet_id"],
                                    _mv_ok["fy_quarter"] + " · " + _mv_ok["vintage_date"]))
+                _mv_opt = (dict(zip(_mv_ok["spreadsheet_id"], _mv_ok["vintage_date"].map(quarter_label)))
+                           if _mv_quarterly else _mv_lab)
                 _mv_def = default_vintage(_mv_ok)["spreadsheet_id"]
                 if st.session_state.get("mp_mv_pick") not in _mv_ids:
                     st.session_state["mp_mv_pick"] = _mv_def
                 with _mv_pk:
-                    _mv_pick = st.selectbox("Previous vintage", _mv_ids, key="mp_mv_pick",
-                                            format_func=lambda i: _mv_lab.get(i, i),
-                                            help="Default = the most recent on-cycle quarter (a clean quarter "
-                                                 "boundary). Off-cycle rows are real data captured mid-quarter.")
+                    _mv_pick = st.selectbox(
+                        "Previous quarter" if _mv_quarterly else "Previous vintage", _mv_ids, key="mp_mv_pick",
+                        format_func=lambda i: _mv_opt.get(i, i),
+                        help=("One copy per quarter: the copy at the calendar quarter-end (30 Jun, 30 Sep, "
+                              "31 Dec, 31 Mar). Every company has filed that quarter's results by then and the "
+                              "next season has not begun, so a move is the business changing, not a company "
+                              "that had not reported yet. To compare with any other archived copy, paste that "
+                              "copy's ID where the archive index ID goes." if _mv_quarterly else
+                              "No quarter-end copy is archived yet, so every copy is listed. Default = the most "
+                              "recent on-cycle quarter; off-cycle rows are real data captured mid-quarter."))
                 _mv_prev_v = str(_mv_ok.loc[_mv_ok["spreadsheet_id"] == _mv_pick, "vintage_date"].iloc[0])
                 _mv_prev_q = str(_mv_ok.loc[_mv_ok["spreadsheet_id"] == _mv_pick, "fy_quarter"].iloc[0])
                 _mv_cur_v = _fresh.data_date.isoformat() if _fresh.is_known else _mv_today.today().isoformat()
