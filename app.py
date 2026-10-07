@@ -91,7 +91,7 @@ from ui.ui_group_views import (MEASURES, OWNERSHIP, OWNERSHIP_GROUP_NOTE, OWNERS
 from ui.ui_reference_data import CONCEPT_REFERENCE, WCS_STUDIES
 from ui.ui_tearsheet import _FLAG_DISPLAY, _FW_META
 from ui.ui_scans import (SCANS, CANDIDATES as SCAN_CANDIDATES, LIQUIDITY_STEPS as SCAN_LIQUIDITY_STEPS,
-                         TABLE_COLUMNS as SCAN_TABLE_COLUMNS, card_html as scan_card_html,
+                         table_columns as scan_table_columns, card_html as scan_card_html,
                          latest_label as scan_latest_label, load_records as load_scan_records,
                          members_label as scan_members_label,
                          record_state as scan_record_state, scan_table, table_config as scan_table_config)
@@ -790,9 +790,10 @@ with tabs[1]:
     _sc_new_label = scan_members_label(_sc_recs)   # the month-end copy 🆕 compares against
     _sc_counts = {s["key"]: int(s["mask"](df).sum()) for s in SCANS}
     st.markdown(
-        "<div class='sec-cap'>Stock lists PRISM has measured. Each card shows how its stocks did against "
-        "the market on the saved snapshots: provisional, short windows, re-measured after every snapshot. "
-        "A list narrows the market; the decision stays yours.</div>", unsafe_allow_html=True)
+        "<div class='sec-cap'>Stock lists PRISM has measured, each beside its record: the bars are points "
+        "above the market median in each saved window — the design period was studied while choosing the "
+        "recipe, unseen windows are added automatically. A list narrows the market; the decision stays "
+        "yours.</div>", unsafe_allow_html=True)
     for _sc_col, _sc in zip(st.columns(len(SCANS)), SCANS):
         with _sc_col:
             _sc_state, _sc_rec = scan_record_state(_sc_recs, _sc)
@@ -802,32 +803,29 @@ with tabs[1]:
             st.button("✓ Showing" if _sc_on else "Show list", key=f"scan_open_{_sc['key']}",
                       on_click=_pick_scan, args=(_sc["key"],),
                       type="primary" if _sc_on else "secondary", width="stretch")
-    with st.expander(f"🔬 Being measured ({len(SCAN_CANDIDATES)}) — not scans yet; December's review decides",
-                     expanded=False):
-        st.markdown("\n".join(f"- **{_n}** — {_r}" for _n, _r in SCAN_CANDIDATES))
     # ONE FUNNEL, TOP DOWN (2026-10-06). The card's recipe ranks the WHOLE market, so every listed stock
     # is exactly the match its record measured. Then the traded-value floor and — only while the
     # sidebar actually narrows the market — the same 🎯 opt-in Market Pulse uses; then the shared lens
     # row (Sector · Wealth tier · Market cap · Catalyst, live counts, 🧹 Clear). Every control narrows
     # the FINISHED list, never the recipe: ranking inside a filtered slice would be a different scan
     # with no record (tests/test_scans.py).
+    # ONE ROW of filters (2026-10-07): Liquidity, then the lens row — its 🧹 slot sits empty when idle —
+    # and the 🎯 line only while the sidebar narrows, so the default view spends no row on it.
     _sc_narrowed = 0 < len(filt) < len(df)
-    _sc_lc, _sc_rc = st.columns([2, 3])
+    if _sc_narrowed:
+        st.checkbox(
+            f"🎯 Show only my filtered stocks — {len(filt):,} of {len(df):,}", key="scan_use_sidebar",
+            help="Narrows this list to the stocks your sidebar filters kept. The recipe still ranks the "
+                 "whole market, so every stock shown is the same match it would be unfiltered, and the "
+                 "record still describes the whole scan.")
+    _sc_scoped = _sc_narrowed and bool(st.session_state.get("scan_use_sidebar", False))
+    _sc_lc, _sc_rc = st.columns([1.5, 8.5])
     with _sc_lc:
         _sc_min = st.selectbox(
-            "Min. average daily traded value", SCAN_LIQUIDITY_STEPS, key="scan_liq",
-            format_func=lambda v: "Any" if v is None else f"₹{v:g} Cr a day",
-            help="Your preference, not part of the record: the record counts every match. "
-                 "Average daily traded value over 20 days (average volume × price).")
-    with _sc_rc:
-        if _sc_narrowed:
-            st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
-            st.checkbox(
-                f"🎯 Show only my filtered stocks — {len(filt):,} of {len(df):,}", key="scan_use_sidebar",
-                help="Narrows this list to the stocks your sidebar filters kept. The recipe still ranks the "
-                     "whole market, so every stock shown is the same match it would be unfiltered, and the "
-                     "record still describes the whole scan.")
-    _sc_scoped = _sc_narrowed and bool(st.session_state.get("scan_use_sidebar", False))
+            "Liquidity", SCAN_LIQUIDITY_STEPS, key="scan_liq",
+            format_func=lambda v: "Any" if v is None else f"₹{v:g} Cr/day",
+            help="Minimum average daily traded value over 20 days (average volume × price). Your "
+                 "preference, not part of the record: the record counts every match.")
     _sc_state_sel, _sc_rec_sel = scan_record_state(_sc_recs, _sc_sel)
     _sc_members = _sc_rec_sel.get("members_at_latest") if _sc_state_sel == "measured" else None
     # 📄 window = the days from the 🆕 baseline to the data's own date (the Movers rule): a result
@@ -837,8 +835,9 @@ with tabs[1]:
     _sc_window = (_sc_data_day - _date.fromisoformat(_sc_base_day)).days if _sc_base_day else None
     _sc_base = scan_table(df, _sc_sel, min_cr=_sc_min,
                           keep_ids=set(filt['company_id'].astype(str)) if _sc_scoped else None)
-    _sc_lens, _sc_lens_n = _mp_lens_row(df[df["company_id"].astype(str).isin(set(_sc_base["company_id"]))],
-                                        "scan")
+    with _sc_rc:
+        _sc_lens, _sc_lens_n = _mp_lens_row(
+            df[df["company_id"].astype(str).isin(set(_sc_base["company_id"]))], "scan")
     _sc_tbl = scan_table(df, _sc_sel, members_at_latest=_sc_members, min_cr=_sc_min,
                          keep_ids=set(_sc_lens["company_id"].astype(str)), result_window_days=_sc_window)
     _sc_total = _sc_counts[_sc_sel["key"]]
@@ -862,13 +861,15 @@ with tabs[1]:
                   if len(_sc_tbl) < _sc_total else " stocks")
         _sc_new = (f" · 🆕 new since {_sc_new_label} · 📄 result declared since then"
                    if _sc_members is not None and _sc_new_label else "")
-        st.caption(f"{len(_sc_tbl):,}{_sc_of} · sorted by Rank{_sc_new} · click a row to open its "
-                   f"Tear-Sheet")
+        # "load it into", not "open": Streamlit cannot switch tabs from code, so the reader clicks the tab.
+        st.caption(f"{len(_sc_tbl):,}{_sc_of} · sorted by Rank{_sc_new} · click a row to load it into the "
+                   f"Tear-Sheet tab")
         # The key follows the VISIBLE list: when any control changes it, the table is a new widget and
         # an old row pick cannot point at a different stock.
         _sc_ids = universe_signature(_sc_tbl["company_id"])
         _sc_pick = st.dataframe(
-            _sc_tbl, column_config=scan_table_config(_sc_new_label), column_order=list(SCAN_TABLE_COLUMNS),
+            _sc_tbl, column_config=scan_table_config(_sc_new_label, _sc_sel),
+            column_order=list(scan_table_columns(_sc_sel)),
             hide_index=True, width="stretch", height=min(560, 38 + 35 * len(_sc_tbl)),
             on_select="rerun", selection_mode="single-row",
             key=f"scan_tbl_{_sc_sel['key']}_{_sc_ids}")
@@ -891,6 +892,10 @@ with tabs[1]:
               set — <strong style="color:{COLORS['blue']};">click The Tear-Sheet tab</strong> for full analysis.
             </div>
             """, unsafe_allow_html=True)
+    # A footnote, so it sits after the list: candidates are not scans yet and carry no record.
+    with st.expander(f"🔬 Being measured ({len(SCAN_CANDIDATES)}) — not scans yet; December's review decides",
+                     expanded=False):
+        st.markdown("\n".join(f"- **{_n}** — {_r}" for _n, _r in SCAN_CANDIDATES))
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
