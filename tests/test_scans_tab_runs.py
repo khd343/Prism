@@ -9,8 +9,8 @@ synthetic market, so a wrong name, a widget that raises, or a switch that does n
 fails here instead of on the live app. Only the parts that need the full app are stubbed: the data
 load (`df` / `filt`), the shared lens row (returns its input unfiltered) and the freshness probe.
 
-What it pins: all three cards render; picking 🌱 shows its list; its "Revenue-led only" switch
-appears for 🌱 alone and narrows the list to exactly the recipe's revenue-led matches.
+What it pins: all three cards render, there is no toggle (2026-10-07: 🌱's revenue-led leg is part of
+its recipe, not a switch), and picking 🌱 shows exactly the recipe's matches.
 """
 import ast
 import os
@@ -101,22 +101,9 @@ def test_every_card_renders_and_the_compounder_list_opens(tab):
     html = "".join(m.value for m in tab.markdown)
     for s in S.SCANS:
         assert s["name"] in html, f"{s['name']} card missing"
-    assert not tab.toggle, "no switch on a scan that has no narrowing of its own"
+    assert not tab.toggle, "no scan narrows its list with a switch its record does not describe"
     tab.button(key="scan_open_compounder").click().run()
     assert not tab.exception, [e.value for e in tab.exception]
     expected = S.scan_table(_frame(), next(s for s in S.SCANS if s["key"] == "compounder"))
-    assert len(tab.dataframe) == 1 and len(tab.dataframe[0].value) == len(expected) > 0
-
-
-def test_the_revenue_led_switch_narrows_the_compounder_list_exactly(tab):
-    from ui import ui_scans as S
-    comp = next(s for s in S.SCANS if s["key"] == "compounder")
-    tab.button(key="scan_open_compounder").click().run()
-    assert [t.key for t in tab.toggle] == ["scan_refine_compounder"]
-    tab.toggle(key="scan_refine_compounder").set_value(True).run()
-    assert not tab.exception, [e.value for e in tab.exception]
-    want = S.scan_table(_frame(), comp, refine=True)
-    shown = tab.dataframe[0].value
-    assert 0 < len(shown) < len(S.scan_table(_frame(), comp)), "the fixture must exercise a real narrowing"
-    assert sorted(shown["name"]) == sorted(want["name"])
-    assert "revenue-led" in "".join(c.value for c in tab.caption), "the caption names the narrowing"
+    assert len(tab.dataframe) == 1 and len(expected) > 0
+    assert sorted(tab.dataframe[0].value["name"]) == sorted(expected["name"])

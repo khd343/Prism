@@ -446,31 +446,33 @@
    ]
   },
   "compounder": {
-   "fingerprint": "065a0707a710fe08",
+   "fingerprint": "0e2a24062b1f2ea8",
    "designed_on": "2026-10-07",
    "horizon_days": 365,
    "windows": [],
    "out_of_sample": [],
    "study": {
-    "title": "3-year study",
+    "title": "3-year backtest",
     "from": "Oct 2023",
     "to": "Oct 2026",
-    "match_cagr_pct": 10.9,
-    "rest_cagr_pct": 4.3,
-    "match_doubled_pct": 31.8,
-    "rest_doubled_pct": 20.5,
-    "n_match": 359,
-    "n_rest": 1101,
+    "match_cagr_pct": 20.4,
+    "rest_cagr_pct": 4.4,
+    "match_doubled_pct": 40.7,
+    "rest_doubled_pct": 20.8,
+    "n_match": 182,
+    "n_rest": 1325,
     "second": {
-     "label": "Re-tested in a falling year",
+     "label": "Falling year, profit and sales legs only",
      "from": "Oct 2025",
      "to": "Oct 2026",
-     "match_pct": -0.6,
-     "rest_pct": -13.9
+     "match_pct": 14.8,
+     "rest_pct": -12.2,
+     "n_match": 522,
+     "n_rest": 1537
     },
-    "caveats": "Survivors only; history as the vendor reports it today.",
-    "definition_note": "The study measured the two changes over FY21 → FY23; this list uses the last year, which measured better in PRISM's improvement score.",
-    "source": "docs/december-2026-plan.md, section 1 (study of 2026-10-03, StockScans export joined to the 2026-10-03 snapshot) and section 7 (falling-year re-test)"
+    "caveats": "Survivors only; history as the vendor reports it today; before costs.",
+    "definition_note": "In the backtest the margin leg is FY21 → FY23 (FY22 margins are not in the data); profit and sales are FY22 → FY23, as in the live list.",
+    "source": "Backtest 2026-10-07: PRISM export 2026-10-06 (fiscal history) joined to StockScans 1Y/3Y returns, 2,712 stocks. The same data reproduces docs/december-2026-plan.md section 1 (358 vs 1,102 matches, 31.8% vs 20.5% doubled)."
    }
   }
  },
