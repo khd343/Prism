@@ -455,6 +455,21 @@ FORENSIC_PENALTY_TIERS = [
 # fails if a future vintage pushes the distortion past this constant.
 PRELISTING_BASELINE_DAYS = 730
 
+# A company's results are STALE once it has filed none for this many days (2026-10-07). Set by the
+# listing rules, not by taste. SEBI LODR Reg 33: a quarter's results within 45 days of its end, the
+# March quarter with the annual within 60 days; companies on the SME platforms file HALF-YEARLY
+# (Apr-Sep within 45 days, the annual within 60 days of March). The longest gap an ON-TIME filer can
+# show: quarterly ~140 days (Oct-Dec results filed around 10 January -> the annual on 30 May);
+# half-yearly ~232 days (Apr-Sep results filed around 10 October -> the annual on 30 May; only a filing
+# in the first two days of October could pass 240, and a half-year audited that fast is not seen). 240
+# is past both, so it marks a company that missed a deadline under ANY calendar. The previous 120 flagged 282
+# stocks on the 2026-10-06 vintage — about 270 of them SME-platform companies on their normal
+# half-yearly calendar, including 89 of 🌱's 255 — and quarterly filers too every May; 240 flags 10,
+# each a real story: Gensol (602 days), Jet Airways (648), absorbed or merged companies (Cigniti,
+# Sanghi, GSPL), Kody Technolab (no FY26 annual by 30 May). The price, accepted: a quarterly filer that
+# misses ONE deadline is flagged at ~8 months, not ~4; its Result Age still shows the days.
+STALE_RESULT_DAYS = 240
+
 # ── Asymmetric Governance Risk Shield ──
 # Negative ownership signals predict DISASTERS far better than positive signals predict
 # winners (Yes Bank, DHFL, Zee, Manpasand all showed promoter exit / pledge / dilution

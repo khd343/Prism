@@ -2318,7 +2318,8 @@ def render_stock_hero(stock: pd.Series, regime: str = "SIDEWAYS", tier_colors: d
         )
 
     # Data-recency companion to the Evidence badge: the score rests on the last reported result,
-    # so a stock that has not reported in >120 days is scored on stale fundamentals (and is often
+    # so a stock that has filed nothing for config.STALE_RESULT_DAYS (240: a missed deadline under any
+    # listing calendar, quarterly or SME half-yearly) is scored on stale fundamentals (and is often
     # in distress — Gensol Engineering sat 477 days stale before its collapse). Shown only when
     # stale; display-only, no scoring impact.
     _stale_badge = ""

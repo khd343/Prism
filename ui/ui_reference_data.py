@@ -11,6 +11,8 @@ live ui_discovery filters), and a 40-char quality floor guards against shallow e
 
 Pure data — zero Streamlit. Rendered by ui_reference.render_concepts(); surfaced in the 📖 Reference tab.
 """
+from config import STALE_RESULT_DAYS
+
 
 CONCEPT_REFERENCE = {
     # ── moat_growth_quad — core/data_engine.py:1725 (has_moat = ROCE 5y-med ≥15; has_growth = PAT 5y ≥15)
@@ -215,11 +217,12 @@ CONCEPT_REFERENCE = {
         ("Low", "40–60% evidence coverage — a meaningful share of inputs are missing; treat with care."),
         ("Very Low", "Under 40% evidence coverage — the soundness verdict rests on thin data; tentative."),
     ],
-    # ── result_age_days / result_stale_flag — core/data_engine.py:1566 (sign-flipped days_from_result;
-    # stale at >120d). Shown as the tearsheet '⏳ Stale Nd' badge + the Discovery 'Hide Stale' filter.
+    # ── result_age_days / result_stale_flag — core/data_engine.py (sign-flipped days_from_result;
+    # stale past config.STALE_RESULT_DAYS). Shown as the tearsheet '⏳ Stale Nd' badge + the Discovery
+    # 'Hide Stale' filter.
     # A recency signal (how OLD the data is) — sibling to, and distinct from, the Evidence badge above. ──
     "⏳ Result Recency": [
-        ("⏳ Stale", "The tearsheet badge shown when the company's most recent reported result is more than 120 days old — the financials may predate recent events, so treat the numbers as potentially out of date. The Discovery tab's 'Hide Stale' filter drops these."),
+        ("⏳ Stale", f"The tearsheet badge shown when the company has filed no result for more than {STALE_RESULT_DAYS} days — past every listing deadline, whether it reports quarterly or, on the SME platform, half-yearly. A missed deadline often comes before distress, and the financials may predate recent events, so treat the numbers as out of date. The Discovery tab's 'Hide Stale' filter drops these."),
         ("Result Age (days)", "How many days since the company last reported financial results — higher means staler numbers. The recency sibling to the 🔍 Evidence badge: coverage measures how MUCH of the data reported, this measures how OLD it is."),
     ],
     # ── verdict_axis_governance — core/verdict_engine.py:116 (governance multiplier)
