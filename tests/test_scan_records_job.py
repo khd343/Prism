@@ -80,6 +80,43 @@ def test_a_window_with_too_few_matches_is_not_recorded():
     assert J.measure_window(early, late, _SCAN, "2026-10-31", "2026-11-28") is None, "29 < MIN_N"
 
 
+def test_measure_window_counts_what_the_headline_leaves_out():
+    """2026-10-07: a match with no price at the end (delisted, suspended, missing) cannot be scored,
+    so the headline is the survivors' record — the window says how many fell out, and how many were
+    corporate actions, instead of letting them vanish."""
+    early, late = _frames(80)
+    late = late[~late["company_id"].isin(["S01", "S02"])]     # two matches with no price at the end
+    r = J.measure_window(early, late, _SCAN, "2026-10-31", "2026-11-28")
+    assert r is None, "27 scored matches < MIN_N"
+    early = pd.concat([early, early.iloc[[5] * 3].assign(company_id=["X1", "X2", "X3"])], ignore_index=True)
+    late = pd.concat([late, late.iloc[[3] * 3].assign(company_id=["X1", "X2", "X3"])], ignore_index=True)
+    r = J.measure_window(early, late, _SCAN, "2026-10-31", "2026-11-28")
+    assert r["n"] == 30 and r["dropped_no_return"] == 2 and r["dropped_corp_action"] == 1
+
+
+def test_the_net_record_keeps_only_liquid_matches_and_charges_the_round_trip():
+    early, late = _frames(80)
+    early["vol_sma_20d"] = 100_000.0                          # x ₹100 = ₹1 Cr a day: under the floor
+    early.loc[1:30, "vol_sma_20d"] = 1_000_000.0              # ₹10 Cr a day: S01..S29 + S30 (not a match)
+    early = pd.concat([early, early.iloc[[1]].assign(company_id="S99")], ignore_index=True)
+    late = pd.concat([late, late.iloc[[1]].assign(company_id="S99")], ignore_index=True)
+    r = J.measure_window(early, late, _SCAN, "2026-10-31", "2026-11-28")
+    net = r["net"]
+    assert (net["min_cr"], net["cost_pp"]) == (S.NET_MIN_CR, S.NET_COST_PP)
+    assert net["n"] == 30, "S01..S29 and S99 clear ₹2 Cr; S00 split out; S30 is not a match"
+    assert net["median_excess_pp"] == pytest.approx(r["median_excess_pp"] - S.NET_COST_PP)
+    assert net["beat_pct"] == 100
+
+
+def test_too_few_liquid_matches_give_a_net_count_and_no_reading():
+    early, late = _frames(80)
+    early = pd.concat([early, early.iloc[[1]].assign(company_id="S99")], ignore_index=True)
+    late = pd.concat([late, late.iloc[[1]].assign(company_id="S99")], ignore_index=True)
+    r = J.measure_window(early, late, _SCAN, "2026-10-31", "2026-11-28")
+    assert r["net"]["n"] == 0, "no traded value = unknown = does not clear the floor"
+    assert "median_excess_pp" not in r["net"] and "beat_pct" not in r["net"]
+
+
 # ── 3. Merging never loses the other half, and a quiet week writes nothing ─────────────────────────
 def _existing():
     return {"version": S.RECORD_VERSION, "designed_on": S.DESIGNED_ON, "generated": "2026-10-06",
@@ -124,6 +161,8 @@ def test_the_committed_records_carry_the_baseline_and_the_unseen_section():
         assert isinstance(r["out_of_sample"], list)
         for w in r["out_of_sample"]:
             assert w["start"] > S.DESIGNED_ON and w["days"] >= 25 and w["n"] >= J.MIN_N
+            assert {"net", "dropped_no_return", "dropped_corp_action"} <= set(w), (
+                "the job records what each unseen window leaves out")
         assert r["members_at_latest"], f"{scan['key']}: no 🆕 baseline"
 
 

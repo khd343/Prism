@@ -69,19 +69,36 @@ def baseline_date(dates):
 def measure_window(early: pd.DataFrame, late: pd.DataFrame, scan: dict, start: str, end: str):
     """The scan's record over one window. The recipe runs on the WHOLE early frame (as the tab runs it
     on the whole market); returns exclude corporate actions; excess = a match's return minus the
-    median of every stock measured. None when fewer than MIN_N matches have a return."""
-    m = forward_returns(early, late, "company_id")
-    m = m[~m["corp_action"]][["company_id", "fwd_return"]]
+    median of every stock measured. None when fewer than MIN_N matches have a return.
+
+    Beside the headline (2026-10-07), what it leaves out: dropped_no_return = matches with no price at
+    the end (delisted, suspended or missing: their fate is unknown, so they cannot be scored and the
+    headline is the survivors' record) and dropped_corp_action = matches whose share count moved.
+    And net = the same reading on matches trading at least S.NET_MIN_CR a day, each charged
+    S.NET_COST_PP; its median and beat rate only when it has MIN_N matches, else just its n."""
+    fr = forward_returns(early, late, "company_id")
+    corp = early["company_id"].isin(set(fr.loc[fr["corp_action"], "company_id"]))
+    m = fr[~fr["corp_action"]][["company_id", "fwd_return"]]
     ret = early[["company_id"]].merge(m, on="company_id", how="left")["fwd_return"].to_numpy() * 100
     ret = pd.Series(ret, index=early.index)
-    match = scan["mask"](early) & ret.notna()
+    in_scan = scan["mask"](early)
+    match = in_scan & ret.notna()
     if int(match.sum()) < MIN_N:
         return None
     excess = ret - ret.median()
+    liquid = match & (S.traded_value_cr(early) >= S.NET_MIN_CR)
+    net = dict(min_cr=S.NET_MIN_CR, cost_pp=S.NET_COST_PP, n=int(liquid.sum()))
+    if net["n"] >= MIN_N:
+        kept = excess[liquid] - S.NET_COST_PP
+        net.update(median_excess_pp=round(float(kept.median()), 1),
+                   beat_pct=int(round(float((kept > 0).mean() * 100))))
     return dict(start=start, end=end, days=_days(start, end),
                 median_excess_pp=round(float(excess[match].median()), 1),
                 beat_pct=int(round(float((excess[match] > 0).mean() * 100))),
-                n=int(match.sum()))
+                n=int(match.sum()),
+                dropped_no_return=int((in_scan & ret.isna() & ~corp).sum()),
+                dropped_corp_action=int((in_scan & corp).sum()),
+                net=net)
 
 
 def members(frame: pd.DataFrame, scan: dict) -> list:
