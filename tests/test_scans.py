@@ -541,8 +541,10 @@ def test_the_recipe_docstrings_quote_the_committed_record():
         assert quoted, f"{scan['key']}: its docstring quotes no record"
         st_ = rec["scans"][scan["key"]].get("study")
         if st_:                                # a study's figures, in the order the docstring gives them
-            assert quoted == [st_["match_cagr_pct"], st_["rest_cagr_pct"],
-                              st_["second"]["match_pct"], st_["second"]["rest_pct"]], (scan["key"], quoted)
+            want = [st_["match_cagr_pct"], st_["rest_cagr_pct"]]
+            for y in st_.get("years", []):
+                want += [y["match_excess_pp"], y["rest_excess_pp"]]
+            assert quoted == want, (scan["key"], quoted, want)
             continue
         ws = rec["scans"][scan["key"]]["windows"]
         assert quoted == [w["median_excess_pp"] for w in ws], (scan["key"], quoted)
@@ -686,15 +688,20 @@ def _study_record():
 
 
 def test_the_compounder_card_shows_its_study_named_in_sample_with_its_caveats():
+    import html as _html
     comp = _scan("compounder")
-    h = S.card_html(comp, 320, "measured", _study_record(), selected=True, latest="03 Oct")
+    h = _html.unescape(S.card_html(comp, 320, "measured", _study_record(), selected=True, latest="03 Oct"))
     for s in ("3-YEAR BACKTEST · IN-SAMPLE", "Oct 2023", "+20.4%/yr", "+4.4%/yr", "Doubled: 40.7% vs 20.8%",
-              "182 vs 1,325", "Falling year, profit and sales legs only", "+14.8%", "-12.2%",
+              "182 vs 1,325", "+31.2", "+13.5", "+23.6", "23→24", "24→25 ✦", "25→26",
+              "Ahead in all 3 years — inside every size group, against its own industry, with last year's "
+              "momentum held", "Beat the market: 71% / 64% / 68% of matches, against 44% / 46% / 47% of the rest",
+              "✦ Cleanest test: 24→25", "net margin",
               "Better odds, not a promise: 59% of matches did not double",
               "Survivors only", "before costs", "FY21 → FY23", "Out-of-sample: pending", "1-year windows",
               "31 Oct 2027"):
         assert s in h, s
     assert "DESIGN-PERIOD" not in h and "short windows" not in h, "a study is not saved windows"
+    assert h.index("+31.2") < h.index("+13.5") < h.index("+23.6"), "the years read in order"
 
 
 def test_the_compounder_card_shows_unseen_windows_once_they_exist():
@@ -731,3 +738,58 @@ def test_no_scan_carries_an_optional_narrowing():
     block = next(n for n in tree.body if isinstance(n, ast.With)
                  and ast.unparse(n.items[0].context_expr) == "tabs[1]")
     assert "st.toggle" not in ast.unparse(block)
+
+
+# ── 8. 🌱's year-by-year record (2026-10-07) ─────────────────────────────────────────────────────────
+def _years():
+    return _study_record()["study"]["years"]
+
+
+def test_the_yearly_record_is_three_separate_years_in_order():
+    ys = _years()
+    assert [y["label"] for y in ys] == ["23→24", "24→25", "25→26"]
+    assert [y["known"] for y in ys] == ["FY23", "FY24", "FY25"], "each year judged on the results public at its start"
+    for y in ys:
+        assert y["n_match"] >= 30 and y["n_rest"] >= 30
+        assert 0 <= y["match_beat_pct"] <= 100 and 0 <= y["rest_beat_pct"] <= 100
+        assert set(y["size_pp"]) == {"small", "mid", "large"}
+    assert ys[0]["momentum_held_pp"] is None, "the first window has no previous year to hold"
+    st_ = _study_record()["study"]
+    assert st_["cleanest"]["label"] in [y["label"] for y in ys] and st_["years_note"] and st_["years_source"]
+    assert "second" not in st_, "the yearly record replaces the profit-and-sales-only falling-year reading"
+
+
+def test_the_card_claims_only_what_every_year_measured():
+    """The 'ahead in all N years — controls' line is computed from the record, never written by hand:
+    flip one year and the card must say so, and drop each control that no longer holds every year."""
+    ys = _years()
+    assert S.year_claims(ys) == (3, 3, ["inside every size group", "against its own industry",
+                                       "with last year's momentum held"])
+    import copy
+    flipped = copy.deepcopy(ys)
+    flipped[1]["match_excess_pp"], flipped[1]["rest_excess_pp"] = -3.0, 1.0
+    flipped[1]["size_pp"]["mid"] = [-2.0, 1.0]
+    flipped[2]["momentum_held_pp"] = -0.5
+    assert S.year_claims(flipped) == (2, 3, ["against its own industry"])
+    rec = copy.deepcopy(_study_record())
+    rec["study"]["years"] = flipped
+    h = S.card_html(_scan("compounder"), 255, "measured", rec, selected=False, latest="")
+    assert "Ahead in 2 of 3 years — against its own industry." in h and "Ahead in all" not in h
+    assert "-3.0" in h, "a losing year shows as it is"
+
+
+def test_a_study_without_yearly_record_still_renders_its_two_bars():
+    import copy
+    rec = copy.deepcopy(_study_record())
+    for k in ("years", "cleanest", "years_note"):
+        rec["study"].pop(k, None)
+    h = S.card_html(_scan("compounder"), 255, "measured", rec, selected=False, latest="")
+    assert "Matches" in h and "Rest" in h and "+20.4%" in h and "Year by year" not in h and "✦" not in h
+
+
+def test_the_yearly_bars_compare_by_height():
+    import re
+    h = S._year_bars(_years(), "24→25", S.COLORS, __import__("html").escape)
+    heights = [int(x) for x in re.findall(r"width:14px;height:(\d+)px", h)]
+    assert heights == [34, 6 + round(28 * 13.5 / 31.2), 6 + round(28 * 23.6 / 31.2)], heights
+    assert heights[1] < heights[2] < heights[0], "the tallest bar is the largest year"

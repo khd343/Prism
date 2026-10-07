@@ -123,8 +123,9 @@ def compounder_candidates(df: pd.DataFrame) -> pd.Series:
 
     Backtest of 2026-10-07 (PRISM's export of 2026-10-06 for the fiscal history, joined to StockScans
     returns, 2,712 stocks; traits as they stood in FY23, public by mid-2023): matches compounded
-    +20.4%/yr against +4.4%/yr for the rest from Oct 2023 to Oct 2026. In a falling year (Oct 2025 to
-    Oct 2026), profit and sales legs only, +14.8% against -12.2%. The same data reproduces the study in
+    +20.4%/yr against +4.4%/yr for the rest from Oct 2023 to Oct 2026. Year by year, each judged only
+    on results public at its start, points above the market's median stock: 23→24 +31.2 against -6.8,
+    24→25 +13.5 against -2.6, 25→26 +23.6 against -2.2. The same data reproduces the study in
     docs/december-2026-plan.md section 1 to the stock (358 vs 1,102 matches), and without the
     revenue-led leg the edge all but vanishes, so it is part of the recipe, not an option."""
     profit = _growth(df, "pat", "pat_1yb")
@@ -515,22 +516,68 @@ def _extras(ws, c, esc) -> str:
     return out
 
 
+def _year_bars(years: list, cleanest: str, c: dict, esc) -> str:
+    """One bar per one-year window: the matches' median return above the market's median stock, in
+    points. Green above, red below; scaled to the largest year, so the years compare by height. The
+    cleanest test carries a ✦."""
+    out = ""
+    top = max([abs(float(y["match_excess_pp"])) for y in years] + [1.0])
+    for y in years:
+        v = float(y["match_excess_pp"])
+        col = c["green"] if v > 0 else c["red"]
+        h = 6 + round(28 * abs(v) / top)
+        mark = " ✦" if y["label"] == cleanest else ""
+        tip = (f'{y["window"]}, judged on {y["known"]} results: matches {v:+.1f} vs rest '
+               f'{float(y["rest_excess_pp"]):+.1f} points above the market median · beat it '
+               f'{int(y["match_beat_pct"])}% vs {int(y["rest_beat_pct"])}% · {int(y["n_match"])} vs '
+               f'{int(y["n_rest"])} stocks')
+        out += (f'<div style="display:flex;flex-direction:column;align-items:center;justify-content:flex-end;'
+                f'min-width:46px;" title="{esc(tip)}">'
+                f'<div style="width:14px;height:{h}px;background:{col};border-radius:3px;"></div>'
+                f'<div style="font-size:0.78rem;font-weight:800;color:{col};margin-top:3px;">{v:+.1f}</div>'
+                f'<div style="font-size:0.6rem;color:{c["text_muted"]};">{esc(y["label"])}{mark}</div></div>')
+    return out
+
+
+def year_claims(years: list) -> tuple:
+    """(years ahead, of how many, the controls that held in EVERY year) — computed from the record, so
+    the card never claims more than it measured. A control a year did not measure (no momentum before
+    the first window) is judged on the years that did."""
+    ahead = sum(float(y["match_excess_pp"]) > float(y["rest_excess_pp"]) for y in years)
+    controls = []
+    if years and all(all(float(m) > float(r) for m, r in y["size_pp"].values()) for y in years):
+        controls.append("inside every size group")
+    if years and all(float(y["match_vs_industry_pp"]) > float(y["rest_vs_industry_pp"]) for y in years):
+        controls.append("against its own industry")
+    held = [float(y["momentum_held_pp"]) for y in years if y.get("momentum_held_pp") is not None]
+    if held and all(v > 0 for v in held):
+        controls.append("with last year's momentum held")
+    return ahead, len(years), controls
+
+
 def _study_body(scan: dict, rec: dict, c: dict, esc) -> str:
     """A record that is a STUDY, not saved windows (🌱, 2026-10-07): traits known at the start, returns
     over the years after. Named in-sample (the recipe was chosen on it), its caveats on the card, and
-    the share of matches that did NOT double, so 'better odds' never reads as 'will compound'. Then the
-    out-of-sample section: the scan's own long windows, or when the first is due."""
+    the share of matches that did NOT double, so 'better odds' never reads as 'will compound'. When the
+    study has a year-by-year record, one bar per year (each judged only on results public at its
+    start) with the controls that held in every year. Then the out-of-sample section: the scan's own
+    long windows, or when the first is due."""
     st_ = rec["study"]
     muted = f'font-size:0.66rem;color:{c["text_muted"]};margin-top:2px;'
-    pair = ""
-    for label, v in (("Matches", st_["match_cagr_pct"]), ("Rest", st_["rest_cagr_pct"])):
-        col = c["green"] if v > 0 else c["red"]
-        h = 6 + round(28 * min(abs(v) / 12.0, 1.0))
-        pair += (f'<div style="display:flex;flex-direction:column;align-items:center;justify-content:flex-end;'
-                 f'min-width:46px;"><div style="width:14px;height:{h}px;background:{col};border-radius:3px;">'
-                 f'</div><div style="font-size:0.78rem;font-weight:800;color:{col};margin-top:3px;">'
-                 f'{v:+.1f}%</div><div style="font-size:0.6rem;color:{c["text_muted"]};">{label}</div></div>')
-    second = st_.get("second")
+    years = st_.get("years") or []
+    cleanest = (st_.get("cleanest") or {}).get("label", "")
+    if years:
+        bars = _year_bars(years, cleanest, c, esc)
+        bars_tip = "Each year: matches' median return above the market's median stock, in points"
+    else:
+        bars, bars_tip = "", ""
+        for label, v in (("Matches", st_["match_cagr_pct"]), ("Rest", st_["rest_cagr_pct"])):
+            col = c["green"] if v > 0 else c["red"]
+            h = 6 + round(28 * min(abs(v) / 12.0, 1.0))
+            bars += (f'<div style="display:flex;flex-direction:column;align-items:center;justify-content:flex-end;'
+                     f'min-width:46px;"><div style="width:14px;height:{h}px;background:{col};border-radius:3px;">'
+                     f'</div><div style="font-size:0.78rem;font-weight:800;color:{col};margin-top:3px;">'
+                     f'{v:+.1f}%</div><div style="font-size:0.6rem;color:{c["text_muted"]};">{label}</div></div>')
     body = (f'<div style="display:flex;flex-wrap:wrap;gap:6px 14px;align-items:flex-end;justify-content:space-between;">'
             f'<div style="flex:1 1 200px;min-width:0;">'
             f'<div style="font-size:0.66rem;font-weight:700;color:{c["text_muted"]};letter-spacing:.3px;">'
@@ -541,13 +588,23 @@ def _study_body(scan: dict, rec: dict, c: dict, esc) -> str:
             f'<b>{st_["match_cagr_pct"]:+.1f}%/yr</b> vs {st_["rest_cagr_pct"]:+.1f}%/yr for the rest</div>'
             f'<div style="{muted}">Doubled: {st_["match_doubled_pct"]:.1f}% vs {st_["rest_doubled_pct"]:.1f}% · '
             f'{int(st_["n_match"]):,} vs {int(st_["n_rest"]):,} stocks</div>'
-            + (f'<div style="{muted}">{esc(second["label"])} ({esc(second["from"])} → {esc(second["to"])}): '
-               f'{second["match_pct"]:+.1f}% vs {second["rest_pct"]:+.1f}%</div>' if second else "")
-            + f'</div><div style="display:flex;gap:4px;align-items:flex-end;" title="Compounded a year, '
-            f'matches against the rest, in the study">{pair}</div></div>'
-            f'<div style="font-size:0.7rem;color:{c["text_secondary"]};margin-top:5px;">Better odds, not a '
-            f'promise: {100 - st_["match_doubled_pct"]:.0f}% of matches did not double.</div>'
-            f'<div style="{muted}">{esc(st_["caveats"])} {esc(st_["definition_note"])}</div>')
+            f'</div><div style="display:flex;gap:4px;align-items:flex-end;" title="{esc(bars_tip)}">{bars}</div></div>')
+    if years:
+        ahead, total, controls = year_claims(years)
+        head = (f"Ahead in all {total} years" if ahead == total else f"Ahead in {ahead} of {total} years")
+        beat_m = " / ".join(f'{int(y["match_beat_pct"])}%' for y in years)
+        beat_r = " / ".join(f'{int(y["rest_beat_pct"])}%' for y in years)
+        body += (f'<div style="font-size:0.7rem;color:{c["text_secondary"]};margin-top:6px;">'
+                 f'<b>Year by year</b> (each judged on results public at its start): {esc(head)}'
+                 f'{" — " + esc(", ".join(controls)) if controls else ""}.</div>'
+                 f'<div style="{muted}">Beat the market: {beat_m} of matches, against {beat_r} of the rest.</div>')
+        if cleanest:
+            body += (f'<div style="{muted}">✦ Cleanest test: {esc(cleanest)} — '
+                     f'{esc(st_["cleanest"].get("why", ""))}.</div>')
+    body += (f'<div style="font-size:0.7rem;color:{c["text_secondary"]};margin-top:5px;">Better odds, not a '
+             f'promise: {100 - st_["match_doubled_pct"]:.0f}% of matches did not double.</div>'
+             f'<div style="{muted}">{esc(st_["caveats"])} {esc(st_["definition_note"])}'
+             f'{" " + esc(st_["years_note"]) if years and st_.get("years_note") else ""}</div>')
     unseen = rec.get("out_of_sample") or []
     built = f"{date.fromisoformat(scan_designed_on(scan)):%d %b %Y}"
     years = scan_horizon(scan) / 365
