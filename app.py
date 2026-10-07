@@ -790,10 +790,10 @@ with tabs[1]:
     _sc_new_label = scan_members_label(_sc_recs)   # the month-end copy 🆕 compares against
     _sc_counts = {s["key"]: int(s["mask"](df).sum()) for s in SCANS}
     st.markdown(
-        "<div class='sec-cap'>Stock lists PRISM has measured, each beside its record: the bars are points "
-        "above the market median in each saved window — the design period was studied while choosing the "
-        "recipe, unseen windows are added automatically. A list narrows the market; the decision stays "
-        "yours.</div>", unsafe_allow_html=True)
+        "<div class='sec-cap'>Stock lists PRISM has measured, each beside its record: 🚀 and 🌬️ against "
+        "the market median in saved windows of 1–3 months, 🌱 in a 3-year study. In-sample records were "
+        "studied while choosing the recipe; unseen windows are added automatically. A list narrows the "
+        "market; the decision stays yours.</div>", unsafe_allow_html=True)
     for _sc_col, _sc in zip(st.columns(len(SCANS)), SCANS):
         with _sc_col:
             _sc_state, _sc_rec = scan_record_state(_sc_recs, _sc)
@@ -826,6 +826,11 @@ with tabs[1]:
             format_func=lambda v: "Any" if v is None else f"₹{v:g} Cr/day",
             help="Minimum average daily traded value over 20 days (average volume × price). Your "
                  "preference, not part of the record: the record counts every match.")
+        # A scan's own narrowing (🌱 Revenue-led only, 2026-10-07): shown only for a scan that has one,
+        # applied to the FINISHED list like the floor, never to the recipe or its record.
+        _sc_refine = _sc_sel.get("refine")
+        _sc_ref_on = bool(_sc_refine) and st.toggle(
+            _sc_refine["label"], key=f"scan_refine_{_sc_sel['key']}", help=_sc_refine["help"])
     _sc_state_sel, _sc_rec_sel = scan_record_state(_sc_recs, _sc_sel)
     _sc_members = _sc_rec_sel.get("members_at_latest") if _sc_state_sel == "measured" else None
     # 📄 window = the days from the 🆕 baseline to the data's own date (the Movers rule): a result
@@ -834,16 +839,22 @@ with tabs[1]:
     _sc_data_day = _fresh.data_date if _fresh.is_known else _date.today()
     _sc_window = (_sc_data_day - _date.fromisoformat(_sc_base_day)).days if _sc_base_day else None
     _sc_base = scan_table(df, _sc_sel, min_cr=_sc_min,
-                          keep_ids=set(filt['company_id'].astype(str)) if _sc_scoped else None)
+                          keep_ids=set(filt['company_id'].astype(str)) if _sc_scoped else None,
+                          refine=_sc_ref_on)
     with _sc_rc:
         _sc_lens, _sc_lens_n = _mp_lens_row(
             df[df["company_id"].astype(str).isin(set(_sc_base["company_id"]))], "scan")
     _sc_tbl = scan_table(df, _sc_sel, members_at_latest=_sc_members, min_cr=_sc_min,
-                         keep_ids=set(_sc_lens["company_id"].astype(str)), result_window_days=_sc_window)
+                         keep_ids=set(_sc_lens["company_id"].astype(str)), result_window_days=_sc_window,
+                         refine=_sc_ref_on)
     _sc_total = _sc_counts[_sc_sel["key"]]
     if _sc_tbl.empty:
         if _sc_total == 0:
             st.info("No stock matches this scan today.")
+        elif _sc_base.empty and _sc_ref_on:
+            st.info(f"None of the {_sc_total:,} matches is {_sc_refine['label'].lower().replace(' only', '')}"
+                    f"{' among your filtered stocks' if _sc_scoped else ''}"
+                    f"{' at this traded-value floor' if _sc_min else ''} — switch it off to see them all.")
         elif _sc_base.empty and _sc_scoped:
             st.info(f"None of the {_sc_total:,} matches is among your {len(filt):,} filtered stocks"
                     f"{' at this traded-value floor' if _sc_min else ''} — untick 🎯 to see the whole scan.")
@@ -854,6 +865,7 @@ with tabs[1]:
                     f"🧹 Clear resets them.")
     else:
         _sc_why = " · ".join(w for w in ("your filters" if _sc_scoped else "",
+                                         _sc_refine["label"].lower().replace(" only", "") if _sc_ref_on else "",
                                          f"₹{_sc_min:g} Cr+ a day" if _sc_min else "",
                                          f"{_sc_lens_n} filter{'s' if _sc_lens_n > 1 else ''} above"
                                          if _sc_lens_n else "") if w)

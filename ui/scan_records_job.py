@@ -7,8 +7,9 @@ It refreshes ui/scan_records.json from the PRISM Archive (the monthly copies the
 listed in the 'PRISM Archive Index' sheet), re-scoring every copy with TODAY's engine and measuring
 every scan with the SAME recipe function the tab runs (ui/ui_scans.py — one definition):
 
-- UNSEEN windows: from each month-end copy dated after DESIGNED_ON whose month is over (frozen),
-  to the first copy at least MIN_HORIZON_DAYS later and to the latest copy. These are windows the
+- UNSEEN windows: from each month-end copy dated after the scan's design date whose month is over
+  (frozen), to the first copy at least the scan's horizon later (MIN_HORIZON_DAYS, or 365 days for
+  🌱 Compounder Candidates) and to the latest copy. These are windows the
   recipes were never chosen on — the most trustworthy record a card shows.
 - 🆕 baseline: the scan's members on the latest frozen month-end copy, and its date.
 
@@ -58,6 +59,11 @@ def unseen_windows(dates, designed_on: str = S.DESIGNED_ON, min_days: int = MIN_
         for b in dict.fromkeys(later[:1] + later[-1:]):
             out.append((a, b))
     return out
+
+
+def scan_windows(dates, scan: dict) -> list:
+    """This scan's unseen windows: after ITS design date, at least ITS horizon long."""
+    return unseen_windows(dates, S.scan_designed_on(scan), S.scan_horizon(scan))
 
 
 def baseline_date(dates):
@@ -180,9 +186,11 @@ def main() -> int:
     idx = load_index(index_id)                                     # status 'ok' rows only
     ids = dict(zip(idx["vintage_date"], idx["spreadsheet_id"]))
     dates = sorted(ids)
-    windows = unseen_windows(dates)
+    # Each scan on its own clock (2026-10-07): its own design date and shortest window, so a 🌱 list
+    # judged over 12 months is never recorded on a 1-month window.
+    windows = {s["key"]: scan_windows(dates, s) for s in S.SCANS}
     base = baseline_date(dates)
-    need = sorted({d for w in windows for d in w} | ({base} if base else set()))
+    need = sorted({d for ws in windows.values() for w in ws for d in w} | ({base} if base else set()))
     print(f"archive copies {dates}\nunseen windows {windows}\n🆕 baseline {base}")
     frames = {}
     for d in need:
@@ -190,7 +198,7 @@ def main() -> int:
         print(f"  scored {d}: {len(frames[d])} stocks")
     updates = {}
     for scan in S.SCANS:
-        rows = [r for a, b in windows if (r := measure_window(frames[a], frames[b], scan, a, b))]
+        rows = [r for a, b in windows[scan["key"]] if (r := measure_window(frames[a], frames[b], scan, a, b))]
         updates[scan["key"]] = {"out_of_sample": rows}
         if base:
             updates[scan["key"]]["members_at_latest"] = members(frames[base], scan)

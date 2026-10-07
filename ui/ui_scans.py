@@ -103,6 +103,34 @@ def leading_sectors(df: pd.DataFrame, n: int = 5, min_stocks: int = 5) -> list:
     return order["sector"].head(n).tolist()
 
 
+def _growth(df: pd.DataFrame, now: str, prev: str) -> pd.Series:
+    """now / prev - 1, only where BOTH years are positive: a loss year has no growth RATE, so it is no
+    evidence (NaN, which passes nothing). The guard PRISM's improvement score uses."""
+    a, b = _num(df, now), _num(df, prev)
+    return (a / b - 1.0).where((a > 0) & (b > 0))
+
+
+def compounder_candidates(df: pd.DataFrame) -> pd.Series:
+    """Profit growth AND margin widening over the last year, each in the top 40% of the stocks that can
+    be judged on it (whole market). From the 3-year study in docs/december-2026-plan.md section 1:
+    stocks with these traits at the start (Oct 2023) compounded +10.9%/yr against +4.3%/yr for the
+    rest over the next three years; in a falling year (Oct 2025 -> Oct 2026) -0.6% against -13.9%.
+    The study measured the two changes over FY21 -> FY23; this list uses the last year, which
+    measured better for every measure in PRISM's improvement score (2026-10-03)."""
+    profit = _growth(df, "pat", "pat_1yb")
+    margin = _num(df, "opm") - _num(df, "opm_1yb")
+    # Top 40% = percentile rank ABOVE 0.6: of 10 stocks, ranks 7-10 (rank 6 sits at exactly 0.6).
+    return ((profit.rank(pct=True) > 0.6) & (margin.rank(pct=True) > 0.6)).fillna(False).astype(bool)
+
+
+def revenue_led(df: pd.DataFrame) -> pd.Series:
+    """Sales up more than 10% over the last year AND profit growing faster than sales: margin expansion
+    the business earned by selling more. A visible narrowing of the 🌱 list, not part of its record
+    (docs/december-2026-plan.md section 7: leverage paid only when revenue-led)."""
+    sales, profit = _growth(df, "revenue", "revenue_1yb"), _growth(df, "pat", "pat_1yb")
+    return ((sales > 0.10) & (profit > sales)).fillna(False).astype(bool)
+
+
 def leading_sector_stocks(df: pd.DataFrame) -> pd.Series:
     """Every stock in the leading sectors — the whole sector, not only its leaders. In-sample record
     (2026-10-06, ui/scan_records.json): +3.9 / +11.2 / +2.4 / +3.4pp against the market median,
@@ -137,7 +165,26 @@ SCANS = (
          skip=("MEASURES",),
          recipe="Every stock in the 5 sectors (of 5+ stocks) with the most stocks near their 52-week "
                 "high and reporting strong quarters, as ranked on 📈 Sectors."),
+    # 🌱 (2026-10-07): a LONG-horizon list. Its record is a 3-year study, not saved windows, so its
+    # unseen windows are 12 months long (`horizon_days`) and start after its own design date.
+    dict(key="compounder", emoji="🌱", name="Compounder Candidates", mask=compounder_candidates,
+         uses=(_growth, _num), designed_on="2026-10-07", horizon_days=365,
+         refine=dict(label="Revenue-led only", mask=revenue_led,
+                     help="Sales up more than 10% over the last year and profit growing faster than "
+                          "sales. Your narrowing, not part of the record: the record counts every match."),
+         recipe="Profit growth and margin widening over the last year, each in the top 40% of the "
+                "market. Starting points for research: better odds, not a promise."),
 )
+
+
+def scan_designed_on(scan: dict) -> str:
+    """The day this scan's recipe was chosen: windows starting after it are out of sample."""
+    return scan.get("designed_on", DESIGNED_ON)
+
+
+def scan_horizon(scan: dict) -> int:
+    """The shortest window that counts as evidence for this scan, in days."""
+    return int(scan.get("horizon_days", MIN_HORIZON_DAYS))
 
 # Recorded in tools/validate.py; December decides (docs/december-2026-plan.md, sections 2d and 8).
 CANDIDATES = (
@@ -315,7 +362,7 @@ def table_widths(scan: dict) -> dict:
 
 
 def scan_table(df: pd.DataFrame, scan: dict, members_at_latest=None, min_cr=None,
-               keep_ids=None, result_window_days=None) -> pd.DataFrame:
+               keep_ids=None, result_window_days=None, refine=False) -> pd.DataFrame:
     """The scan's stocks, sorted by PRISM Rank. The recipe runs on the frame given (the whole market);
     the liquidity floor and the sidebar's kept stocks (keep_ids) only narrow the FINISHED list, so a
     listed stock is exactly the match its record measured. A stock with no traded value cannot clear
@@ -327,6 +374,8 @@ def scan_table(df: pd.DataFrame, scan: dict, members_at_latest=None, min_cr=None
     clocks differ on purpose: technical legs move daily, fundamentals only when a result lands, so 🆕 + 📄
     together means the stock entered on a fresh result."""
     out = df.loc[scan["mask"](df)].copy()
+    if refine and scan.get("refine"):            # judged on the whole frame, applied to the finished list
+        out = out[scan["refine"]["mask"](df).loc[out.index].to_numpy()]
     out["_liq_cr"] = traded_value_cr(out)
     if min_cr is not None:
         out = out[out["_liq_cr"] >= min_cr]
@@ -425,13 +474,14 @@ def _bars(ws, c, esc) -> str:
     return out
 
 
-def _first_unseen_due() -> str:
-    """When the first unseen window can exist: a start must be a month-end copy taken after
-    DESIGNED_ON, and a window needs MIN_HORIZON_DAYS — so about that many days after the end of the
-    month the recipes were chosen in."""
-    d = date.fromisoformat(DESIGNED_ON)
+def _first_unseen_due(scan: dict = None) -> str:
+    """When the first unseen window can exist: a start must be a month-end copy taken after the scan's
+    design date, and a window needs the scan's horizon — so about that many days after the end of the
+    month its recipe was chosen in. The year is shown when it differs from the design year."""
+    d = date.fromisoformat(scan_designed_on(scan or {}))
     month_end = (date(d.year + d.month // 12, d.month % 12 + 1, 1) - timedelta(days=1))
-    return f"{month_end + timedelta(days=MIN_HORIZON_DAYS):%d %b}"
+    due = month_end + timedelta(days=scan_horizon(scan or {}))
+    return f"{due:%d %b %Y}" if due.year != d.year else f"{due:%d %b}"
 
 
 def _extras(ws, c, esc) -> str:
@@ -465,6 +515,62 @@ def _extras(ws, c, esc) -> str:
     return out
 
 
+def _study_body(scan: dict, rec: dict, c: dict, esc) -> str:
+    """A record that is a STUDY, not saved windows (🌱, 2026-10-07): traits known at the start, returns
+    over the years after. Named in-sample (the recipe was chosen on it), its caveats on the card, and
+    the share of matches that did NOT double, so 'better odds' never reads as 'will compound'. Then the
+    out-of-sample section: the scan's own long windows, or when the first is due."""
+    st_ = rec["study"]
+    muted = f'font-size:0.66rem;color:{c["text_muted"]};margin-top:2px;'
+    pair = ""
+    for label, v in (("Matches", st_["match_cagr_pct"]), ("Rest", st_["rest_cagr_pct"])):
+        col = c["green"] if v > 0 else c["red"]
+        h = 6 + round(28 * min(abs(v) / 12.0, 1.0))
+        pair += (f'<div style="display:flex;flex-direction:column;align-items:center;justify-content:flex-end;'
+                 f'min-width:46px;"><div style="width:14px;height:{h}px;background:{col};border-radius:3px;">'
+                 f'</div><div style="font-size:0.78rem;font-weight:800;color:{col};margin-top:3px;">'
+                 f'{v:+.1f}%</div><div style="font-size:0.6rem;color:{c["text_muted"]};">{label}</div></div>')
+    second = st_.get("second")
+    body = (f'<div style="display:flex;flex-wrap:wrap;gap:6px 14px;align-items:flex-end;justify-content:space-between;">'
+            f'<div style="flex:1 1 200px;min-width:0;">'
+            f'<div style="font-size:0.66rem;font-weight:700;color:{c["text_muted"]};letter-spacing:.3px;">'
+            f'{esc(st_["title"].upper())} · IN-SAMPLE</div>'
+            f'<div style="{muted}">Traits known at the start ({esc(st_["from"])}); returns to '
+            f'{esc(st_["to"])}</div>'
+            f'<div style="font-size:0.74rem;color:{c["text_secondary"]};margin-top:3px;">'
+            f'<b>{st_["match_cagr_pct"]:+.1f}%/yr</b> vs {st_["rest_cagr_pct"]:+.1f}%/yr for the rest</div>'
+            f'<div style="{muted}">Doubled: {st_["match_doubled_pct"]:.1f}% vs {st_["rest_doubled_pct"]:.1f}% · '
+            f'{int(st_["n_match"]):,} vs {int(st_["n_rest"]):,} stocks</div>'
+            + (f'<div style="{muted}">{esc(second["label"])} ({esc(second["from"])} → {esc(second["to"])}): '
+               f'{second["match_pct"]:+.1f}% vs {second["rest_pct"]:+.1f}%</div>' if second else "")
+            + f'</div><div style="display:flex;gap:4px;align-items:flex-end;" title="Compounded a year, '
+            f'matches against the rest, in the study">{pair}</div></div>'
+            f'<div style="font-size:0.7rem;color:{c["text_secondary"]};margin-top:5px;">Better odds, not a '
+            f'promise: {100 - st_["match_doubled_pct"]:.0f}% of matches did not double.</div>'
+            f'<div style="{muted}">{esc(st_["caveats"])} {esc(st_["definition_note"])}</div>')
+    unseen = rec.get("out_of_sample") or []
+    built = f"{date.fromisoformat(scan_designed_on(scan)):%d %b %Y}"
+    years = scan_horizon(scan) / 365
+    span = f"{years:g}-year" if years >= 1 else f"{scan_horizon(scan)}-day"
+    if unseen:
+        u_beat = _range([int(w["beat_pct"]) for w in unseen], "{}") + "%"
+        body += (f'<div style="display:flex;flex-wrap:wrap;gap:6px 14px;align-items:flex-end;justify-content:space-between;'
+                 f'border-top:1px solid {c["border"]};margin-top:8px;padding-top:7px;">'
+                 f'<div style="flex:1 1 200px;min-width:0;">'
+                 f'<div style="font-size:0.66rem;font-weight:700;color:{c["text_muted"]};letter-spacing:.3px;">'
+                 f'OUT-OF-SAMPLE · SINCE IT WAS BUILT ({esc(built.upper())}) — WINDOWS IT NEVER SAW</div>'
+                 f'<div style="font-size:0.74rem;color:{c["text_secondary"]};margin-top:3px;">'
+                 f'{u_beat} of matches beat the market · before costs · the most trustworthy record</div></div>'
+                 f'<div style="display:flex;gap:4px;align-items:flex-end;">{_bars(unseen, c, esc)}</div></div>'
+                 f'{_extras(unseen, c, esc)}')
+    else:
+        body += (f'<div style="border-top:1px solid {c["border"]};margin-top:8px;padding-top:7px;{muted}">'
+                 f'<b style="color:{c["text_secondary"]};">Out-of-sample: pending</b> — this list is judged '
+                 f'on {span} windows that start after it was built ({built}); the first is due about '
+                 f'{_first_unseen_due(scan)}.</div>')
+    return body
+
+
 def card_html(scan: dict, n_now: int, state: str, rec, selected: bool, latest: str) -> str:
     """One scan card: name, today's count, the recipe in words, and two records — the IN-SAMPLE one
     (the design period: windows studied while the recipe was chosen, frozen) and the OUT-OF-SAMPLE one
@@ -481,20 +587,22 @@ def card_html(scan: dict, n_now: int, state: str, rec, selected: bool, latest: s
             f'<span style="font-size:0.7rem;font-weight:600;color:{c["text_muted"]};"> now</span></span></div>'
             f'<div style="font-size:0.76rem;color:{c["text_secondary"]};margin:4px 0 10px 0;line-height:1.35;">'
             f'{esc(scan["recipe"])}</div>')
-    if state == "measured" and rec and rec.get("windows"):
+    if state == "measured" and rec and rec.get("study"):
+        body = _study_body(scan, rec, c, esc)
+    elif state == "measured" and rec and rec.get("windows"):
         # One ROW per record — the words on the left, the bars on the right — so the card is about half
         # the height of a stacked one and the list starts on the first screen (2026-10-07).
         ws = rec["windows"]
         beat = _range([int(w["beat_pct"]) for w in ws], "{}") + "%"
         n = _range([int(w["n"]) for w in ws], "{}")
         starts = len({w["start"] for w in ws})
-        built = f"{date.fromisoformat(DESIGNED_ON):%d %b}"
+        built = f"{date.fromisoformat(scan_designed_on(scan)):%d %b}"
         unseen = rec.get("out_of_sample") or []
         bars_tip = ("Points above the market median in each window, before costs; hover a bar for its "
                     "dates and size. In-sample = windows studied while the recipe was chosen.")
         # Named in so many words (2026-10-07): "provisional" alone read as "proven, just early".
-        body = (f'<div style="display:flex;gap:14px;align-items:flex-end;justify-content:space-between;">'
-                f'<div style="flex:1;min-width:0;">'
+        body = (f'<div style="display:flex;flex-wrap:wrap;gap:6px 14px;align-items:flex-end;justify-content:space-between;">'
+                f'<div style="flex:1 1 200px;min-width:0;">'
                 f'<div style="font-size:0.66rem;font-weight:700;color:{c["text_muted"]};letter-spacing:.3px;">'
                 f'IN-SAMPLE · DESIGN-PERIOD RECORD</div>'
                 f'<div style="font-size:0.66rem;color:{c["text_muted"]};margin-top:2px;">The recipe was chosen '
@@ -510,14 +618,14 @@ def card_html(scan: dict, n_now: int, state: str, rec, selected: bool, latest: s
                    f'<div style="font-size:0.66rem;color:{c["text_muted"]};margin-top:2px;" title="Windows '
                    f'that start after the recipe was chosen ({built}) — data nobody looked at while '
                    f'choosing it.">Out-of-sample: pending — unseen windows: none yet, the first is due '
-                   f'about {_first_unseen_due()}</div>')
+                   f'about {_first_unseen_due(scan)}</div>')
                 + f'</div><div style="display:flex;gap:4px;align-items:flex-end;" title="{esc(bars_tip)}">'
                 f'{_bars(ws, c, esc)}</div></div>{_extras(ws, c, esc)}')
         if unseen:
             u_beat = _range([int(w["beat_pct"]) for w in unseen], "{}") + "%"
-            body += (f'<div style="display:flex;gap:14px;align-items:flex-end;justify-content:space-between;'
+            body += (f'<div style="display:flex;flex-wrap:wrap;gap:6px 14px;align-items:flex-end;justify-content:space-between;'
                      f'border-top:1px solid {c["border"]};margin-top:8px;padding-top:7px;">'
-                     f'<div style="flex:1;min-width:0;">'
+                     f'<div style="flex:1 1 200px;min-width:0;">'
                      f'<div style="font-size:0.66rem;font-weight:700;color:{c["text_muted"]};letter-spacing:.3px;">'
                      f'OUT-OF-SAMPLE · SINCE IT WAS BUILT ({esc(built.upper())}) — WINDOWS IT NEVER SAW</div>'
                      f'<div style="font-size:0.74rem;color:{c["text_secondary"]};margin-top:3px;">'

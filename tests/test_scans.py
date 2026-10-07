@@ -251,12 +251,24 @@ def test_the_committed_records_match_the_current_recipes():
         assert r, f"no record for {scan['key']}"
         assert r["fingerprint"] == S.recipe_fingerprint(scan), (
             f"{scan['key']}: the recipe changed since it was measured — run tools/scan_records.py")
-        assert len(r["windows"]) >= 2
-        for w in r["windows"]:
-            assert w["days"] >= 25 and w["start"] < w["end"], w
-            assert w["n"] >= 30, f"{scan['key']} {w['start']}->{w['end']}: n={w['n']} is too few to show"
-            assert 0 <= w["beat_pct"] <= 100
-        members = r["members_at_latest"]
+        if "study" in r:                       # 🌱: a study, not saved windows (2026-10-07)
+            st_ = r["study"]
+            assert r["windows"] == [], f"{scan['key']}: a study record carries no saved windows"
+            assert r["designed_on"] == S.scan_designed_on(scan) and r["horizon_days"] == S.scan_horizon(scan)
+            assert st_["n_match"] >= 30 and st_["n_rest"] >= 30
+            assert 0 < st_["match_doubled_pct"] < 100 and 0 < st_["rest_doubled_pct"] < 100
+            assert st_["caveats"] and st_["definition_note"] and st_["source"], (
+                "a study record states its caveats, how it differs from the live recipe, and its source")
+        else:
+            assert len(r["windows"]) >= 2
+            for w in r["windows"]:
+                assert w["days"] >= 25 and w["start"] < w["end"], w
+                assert w["n"] >= 30, f"{scan['key']} {w['start']}->{w['end']}: n={w['n']} is too few to show"
+                assert 0 <= w["beat_pct"] <= 100
+            assert r["members_at_latest"], f"{scan['key']}: no 🆕 baseline"
+        # 🌱's baseline arrives with the weekly job's first run after it was added; when present it is
+        # the same shape as every other scan's.
+        members = r.get("members_at_latest", [])
         assert members == sorted(set(members)) and all(isinstance(x, str) for x in members)
     assert rec["latest_snapshot"] >= max(w["end"] for r in rec["scans"].values() for w in r["windows"])
 
@@ -527,6 +539,11 @@ def test_the_recipe_docstrings_quote_the_committed_record():
     for scan in S.SCANS:
         quoted = [float(x) for x in re.findall(r"[+-]\d+\.\d", scan["mask"].__doc__ or "")]
         assert quoted, f"{scan['key']}: its docstring quotes no record"
+        st_ = rec["scans"][scan["key"]].get("study")
+        if st_:                                # a study's figures, in the order the docstring gives them
+            assert quoted == [st_["match_cagr_pct"], st_["rest_cagr_pct"],
+                              st_["second"]["match_pct"], st_["second"]["rest_pct"]], (scan["key"], quoted)
+            continue
         ws = rec["scans"][scan["key"]]["windows"]
         assert quoted == [w["median_excess_pp"] for w in ws], (scan["key"], quoted)
         beat = re.search(r"(\d+)-(\d+)% of matches", scan["mask"].__doc__)
@@ -597,3 +614,120 @@ def test_the_tab_reads_the_whole_market_and_never_the_sidebar_frame():
     src = ast.unparse(block)
     assert "scan_table(df," in src, "the scan must run on the whole market"
     assert "scan_table(filt" not in src
+
+
+# ── 7. 🌱 Compounder Candidates (2026-10-07) ─────────────────────────────────────────────────────────
+def _growers(n=10):
+    """n stocks; profit growth and margin change both rise with the index, so the top 40% on each leg
+    is stocks 6..9 (percentile rank >= 0.6 of 10)."""
+    i = np.arange(n, dtype=float)
+    return pd.DataFrame({
+        "company_id": [f"NSE:G{k:02d}" for k in range(n)], "name": [f"G{k}" for k in range(n)],
+        "rank": np.arange(1, n + 1),
+        "pat_1yb": 100.0, "pat": 100.0 + 10 * i,                 # profit growth 0% .. 90%
+        "opm_1yb": 10.0, "opm": 10.0 + i,                        # margin change 0 .. +9 points
+        "revenue_1yb": 100.0, "revenue": 100.0 + 2 * i,          # sales growth 0% .. 18%
+    })
+
+
+def test_compounder_takes_the_top_40pct_on_both_legs_across_the_market():
+    assert S.compounder_candidates(_growers()).tolist() == [False] * 6 + [True] * 4
+
+
+@pytest.mark.parametrize("col,value,why", [
+    ("pat_1yb", -5.0, "a loss a year ago has no growth rate"),
+    ("pat", -1.0, "a loss now has no growth rate"),
+    ("pat", np.nan, "missing profit passes nothing"),
+    ("opm", np.nan, "missing margin passes nothing"),
+    ("opm", 10.0, "margin flat is not in the top 40%"),
+])
+def test_compounder_needs_both_legs(col, value, why):
+    df = _growers()
+    df.loc[df.index[-1], col] = value
+    assert not S.compounder_candidates(df).iloc[-1], why
+
+
+def test_compounder_ranks_the_whole_market_not_a_slice():
+    """Percentiles are taken over the frame given, which the tab passes whole: the same stock can be
+    top 40% of the market and bottom of a slice."""
+    df = _growers()
+    assert S.compounder_candidates(df).iloc[6]
+    assert not S.compounder_candidates(df.iloc[6:].reset_index(drop=True)).iloc[0]
+
+
+def test_revenue_led_needs_sales_up_10pct_and_profit_outrunning_them():
+    df = _growers()
+    # stock 9: sales +18%, profit +90% -> led; stock 4: sales +8% -> not more than 10%
+    led = S.revenue_led(df)
+    assert led.iloc[9] and not led.iloc[4]
+    df.loc[9, "pat"] = 110.0                                     # profit +10% < sales +18%
+    assert not S.revenue_led(df).iloc[9], "profit must grow faster than sales"
+    df.loc[8, "revenue_1yb"] = -1.0
+    assert not S.revenue_led(df).iloc[8], "no sales base, no growth rate"
+
+
+def test_revenue_led_narrows_the_finished_list_only():
+    """The 🌱 recipe still ranks the whole market; the switch only removes rows from its result."""
+    comp = _scan("compounder")
+    df = _growers()
+    df.loc[7, "revenue"] = 101.0                                  # a match whose sales barely grew
+    all_ = S.scan_table(df, comp)
+    led = S.scan_table(df, comp, refine=True)
+    assert set(all_["company_id"]) == {"NSE:G06", "NSE:G07", "NSE:G08", "NSE:G09"}
+    # G06 sales +12% / profit +60%, G08 +16% / +80%, G09 +18% / +90% are led; G07's sales grew 1%.
+    assert set(led["company_id"]) == {"NSE:G06", "NSE:G08", "NSE:G09"}
+    assert len(S.scan_table(df, _scan("playbook"), refine=True)) == len(S.scan_table(df, _scan("playbook"))), (
+        "a scan with no narrowing of its own ignores the switch")
+
+
+def _study_record():
+    return json.loads(S.RECORDS_PATH.read_text(encoding="utf-8"))["scans"]["compounder"]
+
+
+def test_the_compounder_card_shows_its_study_named_in_sample_with_its_caveats():
+    comp = _scan("compounder")
+    h = S.card_html(comp, 320, "measured", _study_record(), selected=True, latest="03 Oct")
+    for s in ("3-YEAR STUDY · IN-SAMPLE", "Oct 2023", "+10.9%/yr", "+4.3%/yr", "Doubled: 31.8% vs 20.5%",
+              "359 vs 1,101", "Re-tested in a falling year", "-0.6%", "-13.9%",
+              "Better odds, not a promise: 68% of matches did not double",
+              "Survivors only", "FY21 → FY23", "Out-of-sample: pending", "1-year windows",
+              "31 Oct 2027"):
+        assert s in h, s
+    assert "DESIGN-PERIOD" not in h and "short windows" not in h, "a study is not saved windows"
+
+
+def test_the_compounder_card_shows_unseen_windows_once_they_exist():
+    rec = _study_record()
+    rec["out_of_sample"] = [dict(start="2026-10-31", end="2027-10-31", days=365, n=300,
+                                 median_excess_pp=4.2, beat_pct=58)]
+    h = S.card_html(_scan("compounder"), 320, "measured", rec, selected=False, latest="03 Oct")
+    assert "NEVER SAW" in h and "+4.2" in h and "58%" in h and "pending" not in h
+    assert h.index("IN-SAMPLE") < h.index("NEVER SAW")
+
+
+def test_a_stale_compounder_record_shows_no_study():
+    h = S.card_html(_scan("compounder"), 320, "stale", _study_record(), selected=False, latest="")
+    assert "changed since" in h and "+10.9" not in h
+
+
+def test_each_scan_is_judged_on_its_own_clock():
+    assert S._first_unseen_due(_scan("playbook")) == "25 Nov"
+    assert S._first_unseen_due(_scan("compounder")) == "31 Oct 2027"
+    assert S.scan_horizon(_scan("compounder")) == 365 and S.scan_horizon(_scan("playbook")) == 25
+
+
+def test_the_compounder_fingerprint_follows_its_helpers():
+    d = _deps(_scan("compounder"))
+    assert {"fn ui.ui_scans._growth", "fn ui.ui_scans._num"} <= d
+    assert "fn ui.ui_scans.revenue_led" not in d, "the switch is not part of the record"
+
+
+def test_the_switch_appears_only_for_a_scan_that_has_one_and_reaches_both_tables():
+    tree = ast.parse(_APP)
+    block = next(n for n in tree.body if isinstance(n, ast.With)
+                 and ast.unparse(n.items[0].context_expr) == "tabs[1]")
+    src = ast.unparse(block)
+    assert "_sc_ref_on = bool(_sc_refine) and st.toggle(" in src
+    tables = [n for n in ast.walk(block) if isinstance(n, ast.Call) and ast.unparse(n.func) == "scan_table"]
+    assert len(tables) == 2 and all(
+        any(k.arg == "refine" and ast.unparse(k.value) == "_sc_ref_on" for k in t.keywords) for t in tables)
