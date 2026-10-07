@@ -1,0 +1,51 @@
+# 🫀 Keepalive — keeps PRISM's scheduled jobs from being switched off (2026-10-07).
+#
+# GitHub disables every scheduled workflow in a public repository after 60 days with no commits, and
+# workflow RUNS do not count — only commits. The scan-records job commits only when a measured value
+# changes, so a quiet stretch (no development, no new archive copy) could end the weekly record with
+# no error anywhere, just a banner in the Actions tab. Idea taken from khd343/Stage.
+#
+# It commits ONLY when the repository has been quiet for 40 days, so on an active repo it never
+# writes. Twice a month, so the worst case stays inside the 60 days: a 39-day-old commit plus the
+# longest gap between runs (17 days) is 56. Off the busy :00 / :30 minutes.
+name: Keepalive
+
+on:
+  schedule:
+    - cron: "7 3 1,15 * *"    # the 1st and 15th, 03:07 UTC = 08:37 IST
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: keepalive
+  cancel-in-progress: false
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Commit only if the repository has been quiet for 40 days
+        run: |
+          set -euo pipefail
+          last=$(git log -1 --format=%ct)
+          age_days=$(( ($(date +%s) - last) / 86400 ))
+          echo "last commit ${age_days} days ago"
+          if [ "${age_days}" -lt 40 ]; then
+            echo "Active enough; nothing to do."
+            exit 0
+          fi
+          date -u +"last keepalive: %Y-%m-%d %H:%M UTC" > .keepalive
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .keepalive
+          git commit -m "chore: 🫀 keepalive — the repository was quiet for ${age_days} days"
+          for attempt in 1 2 3; do
+            git pull --rebase origin "${GITHUB_REF_NAME}" && git push && exit 0
+            sleep $((attempt * 10))
+          done
+          echo "push failed after three attempts" && exit 1
