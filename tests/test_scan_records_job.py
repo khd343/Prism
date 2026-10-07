@@ -160,10 +160,12 @@ def test_the_committed_records_carry_the_baseline_and_the_unseen_section():
         r = rec["scans"][scan["key"]]
         assert isinstance(r["out_of_sample"], list)
         for w in r["out_of_sample"]:
-            assert w["start"] > S.DESIGNED_ON and w["days"] >= 25 and w["n"] >= J.MIN_N
+            assert w["start"] > S.scan_designed_on(scan) and w["days"] >= S.scan_horizon(scan)
+            assert w["n"] >= J.MIN_N
             assert {"net", "dropped_no_return", "dropped_corp_action"} <= set(w), (
                 "the job records what each unseen window leaves out")
-        assert r["members_at_latest"], f"{scan['key']}: no 🆕 baseline"
+        if "study" not in r:                   # 🌱's baseline arrives with the job's first run
+            assert r["members_at_latest"], f"{scan['key']}: no 🆕 baseline"
 
 
 # ── 4b. The secret is read however it was pasted ───────────────────────────────────────────────────
@@ -245,3 +247,16 @@ def test_the_keepalive_commits_only_after_a_quiet_stretch_and_inside_60_days():
     adds = [line.strip() for line in _KA.splitlines() if line.strip().startswith("git add")]
     assert adds == ["git add .keepalive"], "the keepalive touches its own file and nothing else"
     assert "workflow_dispatch:" in _KA and "contents: write" in _KA
+
+
+# ── 7. Each scan on its own clock (🌱, 2026-10-07) ───────────────────────────────────────────────────
+def test_the_compounder_is_only_ever_recorded_on_a_year_or_more():
+    comp = next(s for s in S.SCANS if s["key"] == "compounder")
+    play = next(s for s in S.SCANS if s["key"] == "playbook")
+    dates = ["2026-09-30", "2026-10-31", "2026-11-30", "2027-04-30", "2027-10-29", "2027-10-31", "2027-11-05"]
+    # 2026-09-30 is before the design date; 2026-11-30 -> 2027-11-05 is 340 days, not yet a year.
+    assert J.scan_windows(dates, comp) == [("2026-10-31", "2027-10-31"), ("2026-10-31", "2027-11-05")], (
+        "starts after its own design date (2026-10-07); ends at least 365 days later")
+    assert all(J._days(a, b) >= 365 for a, b in J.scan_windows(dates, comp))
+    assert ("2026-10-31", "2026-11-30") in J.scan_windows(dates, play), "the short lists keep their 25 days"
+    assert J.scan_windows(dates[:4], comp) == [], "no year has passed yet: nothing to record"
