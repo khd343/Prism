@@ -89,6 +89,41 @@ def default_vintage(ok: pd.DataFrame):
     return (on_cycle if not on_cycle.empty else ok).iloc[0]
 
 
+# The Movers picker offers ONE copy per quarter (2026-10-07): the copy at a CALENDAR quarter-end. It
+# is the cleanest state of a results quarter — every company has filed (the deadline has passed) and
+# the next season has not begun:
+#   30 Jun: Jan-Mar results with the annual (deadline 30 May; next season mid-July)
+#   30 Sep: Apr-Jun results (deadline 14 Aug; next season October)
+#   31 Dec: Jul-Sep results, SME half-years too (deadline 14 Nov; next season January)
+#   31 Mar: Oct-Dec results (deadline 14 Feb; next season April)
+# A copy taken mid-season mixes "the company changed" with "the company had not reported yet". The
+# archive still keeps every month-end copy (the scan records and the 🆕 baseline read them); any one
+# of them can still be compared by pasting its own id.
+QUARTER_END_MONTHS = (3, 6, 9, 12)
+RESULTS_OF = {"Q1": "Apr–Jun", "Q2": "Jul–Sep", "Q3": "Oct–Dec", "Q4": "Jan–Mar + annual"}
+
+
+def quarter_end_vintages(ok: pd.DataFrame) -> pd.DataFrame:
+    """usable_vintages rows → one per quarter: the newest copy dated in a quarter-end month (Mar,
+    Jun, Sep, Dec), newest quarter first. Empty when the archive holds none yet."""
+    month = pd.to_datetime(ok["vintage_date"], errors="coerce").dt.month
+    q = ok[month.isin(QUARTER_END_MONTHS)]
+    # the month key from the FILTERED rows: assigning a Series of the unfiltered frame to an empty
+    # selection makes pandas invent a row of NaN — a blank entry in the picker
+    q = q.assign(_ym=q["vintage_date"].str[:7])
+    q = q.sort_values("vintage_date", ascending=False, kind="mergesort").drop_duplicates("_ym")
+    return q.drop(columns="_ym").reset_index(drop=True)
+
+
+def quarter_label(iso: str) -> str:
+    """'Apr–Jun results (FY27 Q1) · 30 Sep 2026' — which results a quarter-end copy holds, from the
+    same fy_quarter the archiver writes (always on-cycle in a quarter-end month)."""
+    code = fy_quarter(iso).split(" ")[0]                     # 'FY27Q1'
+    fy, q = code[:4], code[4:]
+    day = pd.Timestamp(iso)
+    return f"{RESULTS_OF[q]} results ({fy} {q}) · {day.day} {day:%b %Y}"
+
+
 def load_index(sheet_id: str) -> pd.DataFrame:
     """Fetch the archive index by id (the same XLSX export path the data loader uses — never
     per-tab CSV, never gviz) and return usable_vintages of its first tab."""
