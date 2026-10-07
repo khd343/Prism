@@ -17,7 +17,7 @@ from config import (CSV_FILES, MCAP_TIERS,
                     FINANCIAL_SECTORS, FINANCIAL_SECTOR_NAMES, UTILITY_SECTOR_NAMES,
                     COST_OF_EQUITY, INDIA_GSEC_YIELD,
                     EPOCH3_TAXONOMY, EPOCH5_MODERN, CONSISTENT_SECTORS,
-                    PRELISTING_BASELINE_DAYS,
+                    PRELISTING_BASELINE_DAYS, STALE_RESULT_DAYS,
                     _vintage_sort_key, newer_vintage)
 from core.cyclicality_map import INDUSTRY_TIER, SECTOR_TIER_FALLBACK, TIER_LABELS
 from core.taxonomy import canonicalize_taxonomy
@@ -2064,13 +2064,15 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # ── Result Staleness (data-recency guard, sibling to data_coverage_pct) ──
     # days_from_result: negative = days SINCE the last reported result (past), positive = an
     # upcoming scheduled result. result_age_days flips the sign so positive = days the financials
-    # have gone stale. A company that has not reported in >120 days is (a) scored on outdated
-    # fundamentals and (b) frequently in distress — Gensol Engineering sat 477 days stale before
-    # its 2025 collapse. Display-only companion to the Evidence badge; never gates or scores.
+    # have gone stale. A company that has filed nothing for config.STALE_RESULT_DAYS (240) has missed
+    # a listing deadline under any calendar, quarterly or SME half-yearly (the constant's comment has
+    # the arithmetic): it is (a) scored on outdated fundamentals and (b) frequently in distress —
+    # Gensol Engineering sat 477 days stale before its 2025 collapse. Display-only companion to the
+    # Evidence badge; never gates or scores.
     # NaN days_from_result → age NaN → comparison False → not flagged (don't assert staleness blind).
     _dfr = df.get("days_from_result", pd.Series(np.nan, index=df.index))
     df["result_age_days"]   = -_dfr
-    df["result_stale_flag"] = (df["result_age_days"] > 120).astype(int)
+    df["result_stale_flag"] = (df["result_age_days"] > STALE_RESULT_DAYS).astype(int)
 
     df = df.copy()   # defrag — keep block manager consolidated (see top of function)
 

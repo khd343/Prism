@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from config import COLORS, FRAMEWORK_CATEGORIES
+from config import COLORS, FRAMEWORK_CATEGORIES, STALE_RESULT_DAYS
 
 
 # ── Active-filter chips: registry + pure detector (unit-tested) ───────────────
@@ -596,9 +596,13 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
             if sel_mincov > 0 and "data_coverage_pct" in _cf.columns:
                 _cf = _narrow(_cf, _cf["data_coverage_pct"] >= sel_mincov, "Min Coverage")
 
-            # 4g. Hide stale results — drop frozen filers (>120 days; catches Gensol-style filing freezes)
+            # 4g. Hide stale results — drop frozen filers (no result for STALE_RESULT_DAYS: a missed listing
+            # deadline under any calendar, so an SME on its half-yearly calendar is never dropped)
             st.session_state.setdefault("sb_hidestale", False)   # seed-before-instantiate
-            if st.checkbox("Hide stale results (>120d)", value=False, key="sb_hidestale") \
+            if st.checkbox("Hide stale results (no result in 8 months)", value=False, key="sb_hidestale",
+                           help=f"Drops companies that have filed no result for over {STALE_RESULT_DAYS} days — "
+                                f"past every listing deadline, quarterly or the SME half-yearly calendar — "
+                                f"the filing freeze that often comes before distress.") \
                     and "result_stale_flag" in _cf.columns:
                 _cf = _narrow(_cf, _cf["result_stale_flag"] == 0, "Hide Stale")
             st.caption(f"→ {len(_cf):,} remaining")
