@@ -162,6 +162,66 @@ def test_every_scan_fingerprints_the_engine_pieces_it_reads():
     assert {"leading_sector_stocks", "leading_sectors", "group_measures", "strong_quarter"} <= names["leaders"]
 
 
+# ── 3b. The fingerprint follows the engine behind the columns (2026-10-07) ───────────────────────
+# Until 2026-10-07 the fingerprint covered the recipe's own code only: re-defining how momentum_score
+# or improvement_score is computed changed the list on screen while the card still read "measured".
+def _deps(scan):
+    return set(S._dependencies([*S._recipe_functions(scan), *scan.get("inputs", ())],
+                               scan.get("values"), scan.get("skip", ())))
+
+
+def _scan(key):
+    return next(s for s in S.SCANS if s["key"] == key)
+
+
+def test_the_playbook_fingerprint_reaches_the_scores_it_reads():
+    d = _deps(_scan("playbook"))
+    for piece in ("fn core.scoring_engine.compute_momentum_score", "fn core.scoring_engine._compute_breakout_score",
+                  "fn core.scoring_engine._compute_rs_score", "fn core.scoring_engine._compute_improvement_score",
+                  "fn core.scoring_engine._pct_rank", "value MOMENTUM_WEIGHTS", "value BREAKOUT_SIGNALS"):
+        assert piece in d, f"the Playbook record does not follow {piece}"
+    assert not any(k.startswith("fn core.data_engine") for k in d), (
+        "compute_derived_signals (dist_to_vstop) is deliberately not followed — see SCANS")
+
+
+def test_a_changed_score_weight_or_helper_stales_the_playbook_record(monkeypatch):
+    from core import scoring_engine as E
+    play = _scan("playbook")
+    before = S.recipe_fingerprint(play)
+    monkeypatch.setattr(E, "BREAKOUT_SIGNALS", {**E.BREAKOUT_SIGNALS, "ath_distance": 0.5})
+    assert S.recipe_fingerprint(play) != before, "a re-weighted breakout score must stale the record"
+    monkeypatch.undo()
+    assert S.recipe_fingerprint(play) == before
+    monkeypatch.setattr(E, "_pct_rank", lambda series, ascending=True: series.rank(pct=True) * 99)
+    assert S.recipe_fingerprint(play) != before, "a changed ranking helper must stale the record"
+
+
+def test_the_leaders_fingerprint_follows_its_two_measures_not_the_whole_table(monkeypatch):
+    from ui.ui_group_views import MEASURES, _share
+    lead = _scan("leaders")
+    before = S.recipe_fingerprint(lead)
+    monkeypatch.setitem(MEASURES, "grp_new_column", dict(source="x", stat="share", value=lambda f: f["x"] > 0))
+    assert S.recipe_fingerprint(lead) == before, "a new Sectors column must not stale this record"
+    monkeypatch.setitem(MEASURES["grp_near_high"], "value",
+                        lambda f: _share(f["dist_52wh"] <= 10, f["dist_52wh"].notna()))
+    assert S.recipe_fingerprint(lead) != before, "a changed near-high threshold must stale it"
+    monkeypatch.undo()
+    # Same module, same name ("<lambda>"): only their logic tells the two measures apart.
+    monkeypatch.setitem(MEASURES["grp_near_high"], "value", MEASURES["grp_strong_quarter"]["value"])
+    assert S.recipe_fingerprint(lead) != before, "two Sectors measures must not hash as one"
+
+
+def test_the_fingerprint_is_the_same_on_every_run():
+    """Sets and dicts are sorted before hashing: the weekly job and the local tool must agree."""
+    import subprocess
+    code = ("import sys; sys.path.insert(0, %r); from ui import ui_scans as S; "
+            "print(','.join(S.recipe_fingerprint(s) for s in S.SCANS))" % ROOT)
+    outs = {subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                           env={**os.environ, "PYTHONHASHSEED": seed}).stdout.strip().splitlines()[-1]
+            for seed in ("1", "2", "3")}
+    assert len(outs) == 1, outs
+
+
 def test_record_states(tmp_path):
     scan = S.SCANS[0]
     assert S.record_state({}, scan) == ("unmeasured", None)

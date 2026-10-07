@@ -39,8 +39,8 @@ import streamlit as st
 
 from config import COLORS
 from core.forward_returns import MIN_HORIZON_DAYS
-from core.scoring_engine import strong_quarter
-from ui.ui_group_views import group_measures
+from core.scoring_engine import _compute_improvement_score, compute_momentum_score, strong_quarter
+from ui.ui_group_views import MEASURES, group_measures
 
 RECORDS_PATH = Path(__file__).with_name("scan_records.json")
 # The net record (2026-10-07): what a buyer could have kept. Only matches trading at least NET_MIN_CR
@@ -118,12 +118,23 @@ SCANS = (
     # fixed BY CONSTRUCTION are hidden; Trend stays, because "above its stop" is not "above its 30-week
     # average" and a Stage 3 or 4 is possible (tests/test_scans.py). `widths` gives the hidden column's
     # 40px to Stock and Sector (measured 2026-10-07: names fit 79% -> 90%, sectors 51% -> 75%).
+    # `inputs`: the engine functions that compute the columns a recipe reads. The fingerprint follows
+    # them, and everything they call, so a re-defined score makes the record stale (2026-10-07).
+    # dist_to_vstop is NOT followed: it comes from data_engine.compute_derived_signals, which computes
+    # hundreds of columns, so following it would stale the record on every unrelated engine change.
+    # Nor is the regime momentum boost in run_scoring_pipeline (one factor for every stock, so it
+    # moves no percentile below the 100 clip).
     dict(key="playbook", emoji="🚀", name="Playbook Shortlist", mask=playbook_shortlist,
-         uses=(strong_quarter, _pct, _num), fixed=("_strong_q",), widths={"name": 190, "sector": 130},
+         uses=(strong_quarter, _pct, _num), inputs=(compute_momentum_score, _compute_improvement_score),
+         fixed=("_strong_q",), widths={"name": 190, "sector": 130},
          recipe="Momentum and Breakout in the top third of the market, a 🔥 Strong Quarter, Improvement "
                 "in the top half, and the price above its stop."),
     dict(key="leaders", emoji="🌬️", name="Leading-Sector Stocks", mask=leading_sector_stocks,
          uses=(leading_sectors, group_measures, strong_quarter),
+         # It reads two of the Sectors measures, so it follows those two, not the whole table: a new
+         # Sectors column must not stale this record (2026-10-07).
+         values={f"MEASURES[{k}]": MEASURES[k] for k in ("grp_near_high", "grp_strong_quarter")},
+         skip=("MEASURES",),
          recipe="Every stock in the 5 sectors (of 5+ stocks) with the most stocks near their 52-week "
                 "high and reporting strong quarters, as ranked on 📈 Sectors."),
 )
@@ -141,22 +152,114 @@ def _recipe_functions(scan: dict) -> list:
     return [scan["mask"], *scan.get("uses", ())]
 
 
-def _fingerprint_of(funcs) -> str:
-    """Hash of the functions' LOGIC: the parsed code without docstrings or the function's own name, so
-    a reworded comment or a rename keeps a record valid and a changed threshold does not."""
-    parts = []
-    for fn in funcs:
-        node = ast.parse(textwrap.dedent(inspect.getsource(fn))).body[0]
-        if (node.body and isinstance(node.body[0], ast.Expr)
-                and isinstance(node.body[0].value, ast.Constant) and isinstance(node.body[0].value.value, str)):
-            node.body = node.body[1:]
-        node.name = "_"
-        parts.append(ast.dump(node))
-    return hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()[:16]
+_PROJECT_MODULES = ("config", "core", "ui")
+_PLAIN = (bool, int, float, str, type(None), dict, list, tuple, set, frozenset)
+
+
+def _is_project(obj) -> bool:
+    return (getattr(obj, "__module__", None) or "").split(".")[0] in _PROJECT_MODULES
+
+
+def _logic(fn) -> str:
+    """A named function's LOGIC: its parsed code without the docstring or its own name, so a reworded
+    comment or a rename keeps a record valid and a changed threshold does not. A lambda (one that sits
+    inside a settings table, e.g. a Sectors measure) has no source of its own, so its compiled code
+    stands in: instructions, constants and names, never line numbers."""
+    if fn.__name__ == "<lambda>":
+        return _code_logic(fn.__code__)
+    node = ast.parse(textwrap.dedent(inspect.getsource(fn))).body[0]
+    if (node.body and isinstance(node.body[0], ast.Expr)
+            and isinstance(node.body[0].value, ast.Constant) and isinstance(node.body[0].value.value, str)):
+        node.body = node.body[1:]
+    node.name = "_"
+    return ast.dump(node)
+
+
+def _code_logic(code) -> str:
+    consts = [_code_logic(c) if inspect.iscode(c) else repr(c) for c in code.co_consts]
+    return f"{code.co_code.hex()}|{consts}|{code.co_names}"
+
+
+def _canon(obj, found: list) -> str:
+    """A settings value as stable text: dicts and sets sorted (set order changes between runs), a
+    function inside it reduced to its logic and followed like any other dependency."""
+    if isinstance(obj, dict):
+        return "{" + ",".join(sorted(f"{_canon(k, found)}:{_canon(v, found)}" for k, v in obj.items())) + "}"
+    if isinstance(obj, (set, frozenset)):
+        return "{" + ",".join(sorted(_canon(v, found) for v in obj)) + "}"
+    if isinstance(obj, (list, tuple)):
+        return "[" + ",".join(_canon(v, found) for v in obj) + "]"
+    if inspect.isfunction(obj):
+        found.append(obj)
+        return f"<fn {_fn_key(obj)}>"
+    return repr(obj)
+
+
+def _fn_key(fn) -> str:
+    """A function's name for the record; lambdas share one name, so theirs carries their logic."""
+    key = f"{fn.__module__}.{fn.__qualname__}"
+    if fn.__name__ == "<lambda>":
+        key += "#" + hashlib.sha256(_logic(fn).encode("utf-8")).hexdigest()[:12]
+    return key
+
+
+def _referenced_globals(fn) -> set:
+    """The global names a function's code mentions: its own, its lambdas' and its comprehensions'."""
+    names, todo = set(), [fn.__code__]
+    while todo:
+        code = todo.pop()
+        names |= set(code.co_names)
+        todo += [c for c in code.co_consts if inspect.iscode(c)]
+    return names
+
+
+def _dependencies(funcs, values=None, skip=()) -> dict:
+    """Every PRISM function and settings value the given functions reach, followed to the end: the
+    helpers they call, the helpers those call, the weight tables they read (config included). Names
+    are looked up where each function lives, so a value imported from config counts wherever it is
+    read. Libraries (numpy, pandas) are not followed; their versions are pinned in requirements.txt.
+    `values` adds named settings directly (and follows the functions inside them); `skip` names a
+    settings table that is covered that way instead of whole."""
+    out, todo = {}, list(funcs)
+    for label, value in sorted((values or {}).items()):
+        found = []
+        out[f"value {label}"] = _canon(value, found)
+        todo += [f for f in found if _is_project(f)]
+    while todo:
+        fn = todo.pop()
+        key = f"fn {_fn_key(fn)}"
+        if key in out:
+            continue
+        out[key] = _logic(fn)
+        for name in sorted(_referenced_globals(fn)):
+            if name not in fn.__globals__:      # a method name or a builtin, not a module-level value
+                continue
+            obj = fn.__globals__[name]
+            if inspect.isfunction(obj) and _is_project(obj):
+                todo.append(obj)
+            elif isinstance(obj, _PLAIN) and not name.startswith("__") and name not in skip:
+                found = []
+                out[f"value {name}"] = _canon(obj, found)
+                todo += [f for f in found if _is_project(f)]
+    return out
+
+
+def _fingerprint_of(funcs, values=None, skip=()) -> str:
+    """Hash of the LOGIC a record depends on: the given functions and everything they reach
+    (_dependencies). Widened 2026-10-07: the fingerprint used to cover the recipe's own code only, so a
+    change to how momentum_score or improvement_score is computed changed the list on screen while the
+    card still read 'measured'."""
+    deps = _dependencies(funcs, values, skip)
+    roots = [_logic(fn) for fn in funcs]
+    for fn in funcs:                         # hashed above without their names; a rename is no change
+        deps.pop(f"fn {_fn_key(fn)}", None)
+    text = "\n".join(roots + [f"{k}={v}" for k, v in sorted(deps.items())])
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
 def recipe_fingerprint(scan: dict) -> str:
-    return _fingerprint_of(_recipe_functions(scan))
+    return _fingerprint_of([*_recipe_functions(scan), *scan.get("inputs", ())], scan.get("values"),
+                           scan.get("skip", ()))
 
 
 def load_records(path: Path = RECORDS_PATH) -> dict:
