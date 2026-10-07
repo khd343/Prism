@@ -7,7 +7,7 @@
  "method": "design period (in-sample): saved snapshots, each window to the first snapshot >= 25 days later and to the latest; unseen: PRISM Archive month-end copies after designed_on, re-scored with the current engine; excess = a match's return minus the median of every stock measured; corporate actions excluded; >= 30 matches.",
  "scans": {
   "playbook": {
-   "fingerprint": "d82e643fb6bd830b",
+   "fingerprint": "da869c1c0a1c43d7",
    "windows": [
     {
      "start": "2026-06-17",
@@ -328,7 +328,7 @@
    ]
   },
   "leaders": {
-   "fingerprint": "cd003f25313d9513",
+   "fingerprint": "55f16d9f46fede49",
    "windows": [
     {
      "start": "2026-06-17",

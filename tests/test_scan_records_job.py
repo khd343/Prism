@@ -207,3 +207,41 @@ def test_the_workflow_commits_only_the_records_and_only_when_they_changed():
     assert 'git diff --quiet -- ui/scan_records.json' in _WF
     adds = [line.strip() for line in _WF.splitlines() if line.strip().startswith("git add")]
     assert adds == ["git add ui/scan_records.json"], adds
+
+
+# ── 6. The schedule survives GitHub's best-effort queue and a quiet repository (2026-10-07) ────────
+def _crons(text):
+    import re
+    return re.findall(r'cron:\s*"([^"]+)"', text)
+
+
+def test_the_job_has_a_catch_up_slot_off_the_busy_minutes():
+    crons = _crons(_WF)
+    assert len(crons) == 2, "a first slot and a catch-up: a dropped run must not cost a week"
+    for c in crons:
+        minute = int(c.split()[0])
+        assert minute not in (0, 15, 30, 45), f"{c}: the busiest minutes are the ones GitHub drops"
+        assert c.split()[4] == "1", f"{c}: Mondays"
+
+
+def test_a_push_made_meanwhile_does_not_lose_the_records():
+    assert "git pull --rebase" in _WF and "for attempt in 1 2 3" in _WF
+
+
+_KA = (ROOT / ".github" / "workflows" / "keepalive.yml").read_text(encoding="utf-8")
+
+
+def test_the_keepalive_commits_only_after_a_quiet_stretch_and_inside_60_days():
+    """GitHub switches off scheduled workflows after 60 days without a commit. The keepalive writes
+    only when the repository has been quiet for QUIET days, and runs often enough that the longest gap
+    between runs plus QUIET stays under 60."""
+    import re
+    quiet = int(re.search(r'-lt (\d+) \]', _KA).group(1))
+    (cron,) = _crons(_KA)
+    days = [int(d) for d in cron.split()[2].split(",")]
+    assert int(cron.split()[0]) not in (0, 15, 30, 45)
+    longest_gap = max([b - a for a, b in zip(days, days[1:])] + [31 - days[-1] + days[0]])
+    assert quiet - 1 + longest_gap < 60, (quiet, longest_gap)
+    adds = [line.strip() for line in _KA.splitlines() if line.strip().startswith("git add")]
+    assert adds == ["git add .keepalive"], "the keepalive touches its own file and nothing else"
+    assert "workflow_dispatch:" in _KA and "contents: write" in _KA

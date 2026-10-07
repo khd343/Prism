@@ -5,8 +5,13 @@
 name: Scan records
 
 on:
+  # Two Monday slots, neither on :00 or :30 (2026-10-07). GitHub's scheduled runs are best-effort:
+  # delayed under load and sometimes dropped, most often on the busiest minutes. The second slot is a
+  # catch-up, not a second opinion: the job writes nothing when no measured value changed, so on a
+  # normal Monday it costs one idle minute, and on a dropped first slot it is the run that records.
   schedule:
-    - cron: "30 3 * * 1"      # Mondays 03:30 UTC = 09:00 IST
+    - cron: "23 3 * * 1"      # Mondays 03:23 UTC = 08:53 IST
+    - cron: "47 5 * * 1"      # Mondays 05:47 UTC = 11:17 IST (catch-up)
   workflow_dispatch:
 
 permissions:
@@ -47,4 +52,10 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add ui/scan_records.json
           git commit -m "chore: 🎯 scan records refreshed from the PRISM Archive"
-          git push
+          # A push made meanwhile (yours, or the keepalive's) would reject a bare push: take it in
+          # and retry, three times at most.
+          for attempt in 1 2 3; do
+            git pull --rebase origin "${GITHUB_REF_NAME}" && git push && exit 0
+            sleep $((attempt * 10))
+          done
+          echo "push failed after three attempts" && exit 1
