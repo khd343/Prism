@@ -283,3 +283,130 @@ def test_a_missing_october_copy_costs_that_year_not_a_wrong_window():
     dates = ["2026-10-31", "2026-11-30", "2027-09-30", "2027-11-30", "2027-12-31", "2028-11-30", "2028-12-05"]
     assert J.scan_windows(dates, comp) == [("2026-10-31", "2027-11-30")], (
         "no October 2027 copy: no 2027 window, and no window starting in another month instead")
+
+
+# ── 8. The out-of-sample record cannot see the future, and its arithmetic is checked twice (2026-10-07)
+# Ideas from khd343/Stage's VALIDATION_PROTOCOL: §7 "prove future data cannot affect a past signal",
+# §4 "check a critical calculation against an independent implementation".
+def _market(n=300, seed=11):
+    """A start snapshot every real recipe can match in (≥ MIN_N each): momentum and breakout move together,
+    every quarter is strong, every stock is above its stop; profits grow faster than sales; 10 sectors."""
+    rng = np.random.default_rng(seed)
+    i = np.arange(n, dtype=float)
+    return pd.DataFrame({
+        "company_id": [f"NSE:F{k:03d}" for k in range(n)], "name": [f"F{k}" for k in range(n)],
+        "sector": [f"Sec{k % 10}" for k in range(n)], "industry": [f"Ind{k % 20}" for k in range(n)],
+        "rank": rng.permutation(n) + 1,
+        "momentum_score": i, "breakout_score": i, "improvement_score": rng.uniform(0, 100, n),
+        "dist_to_vstop": rng.uniform(1, 9, n), "dist_52wh": rng.uniform(0, 30, n),
+        "rev_pyq": 100.0, "rev_lq": 130.0, "pat_pyq": 10.0, "pat_lq": 15.0, "ebitda_pyq": 15.0, "ebitda_lq": 26.0,
+        "pat_1yb": 100.0, "pat": 100.0 * (1 + rng.uniform(0.0, 1.0, n)),
+        "opm_1yb": 10.0, "opm": 10.0 + rng.uniform(-3, 3, n),
+        "revenue_1yb": 100.0, "revenue": 112.0,
+        "close_price": rng.uniform(50, 500, n), "equity_shares": 1e7,
+        "vol_sma_20d": rng.uniform(1e4, 2e6, n),
+    })
+
+
+def _later(early, seed=12):
+    late = early.copy()
+    late["close_price"] = early["close_price"] * np.random.default_rng(seed).uniform(0.6, 1.6, len(early))
+    return late
+
+
+def _scrambled(late, seed=13):
+    """Every column of the END snapshot permuted across stocks — except the identity, the price and the
+    share count that the forward return legitimately reads — plus a column nothing should read."""
+    rng = np.random.default_rng(seed)
+    out = late.copy()
+    for c in out.columns:
+        if c not in ("company_id", "close_price", "equity_shares"):
+            out[c] = rng.permutation(out[c].to_numpy())
+    out["future_only_column"] = rng.uniform(size=len(out))
+    return out
+
+
+@pytest.mark.parametrize("key", [s["key"] for s in S.SCANS])
+def test_a_scans_record_cannot_see_the_end_snapshot(key):
+    """Scrambling everything the END snapshot holds — scores, fundamentals, sectors, traded value — must
+    not change one number of the record: who is measured comes from the start snapshot alone."""
+    scan = next(s for s in S.SCANS if s["key"] == key)
+    early = _market(); late = _later(early)
+    a = J.measure_window(early, late, scan, "2026-10-31", "2027-10-31")
+    b = J.measure_window(early, _scrambled(late), scan, "2026-10-31", "2027-10-31")
+    assert a is not None, f"{key}: the fixture must produce a measurable window"
+    assert a == b, f"{key}: the record changed when only end-snapshot non-price data changed"
+
+
+@pytest.mark.parametrize("key", [s["key"] for s in S.SCANS])
+def test_the_recipe_and_the_liquidity_floor_only_ever_read_the_start_snapshot(key, monkeypatch):
+    scan = dict(next(s for s in S.SCANS if s["key"] == key))
+    early = _market(); late = _later(early)
+    seen = []
+    real_mask, real_tv = scan["mask"], S.traded_value_cr
+    scan["mask"] = lambda df: (seen.append(("recipe", df is early)), real_mask(df))[1]
+    monkeypatch.setattr(S, "traded_value_cr", lambda df: (seen.append(("liquidity", df is early)), real_tv(df))[1])
+    J.measure_window(early, late, scan, "2026-10-31", "2027-10-31")
+    assert seen and all(is_early for _, is_early in seen), seen
+
+
+def test_end_prices_move_the_returns_never_the_membership():
+    scan = next(s for s in S.SCANS if s["key"] == "compounder")
+    early = _market(); late = _later(early)
+    a = J.measure_window(early, late, scan, "2026-10-31", "2027-10-31")
+    b = J.measure_window(early, _later(early, seed=99), scan, "2026-10-31", "2027-10-31")
+    assert (a["n"], a["dropped_no_return"], a["dropped_corp_action"]) == (b["n"], b["dropped_no_return"], b["dropped_corp_action"])
+    assert a["median_excess_pp"] != b["median_excess_pp"], "the fixture must actually move the returns"
+
+
+def _reference_window(early, late, flagged):
+    """measure_window's numbers recomputed by a plain loop, from the written definitions — not from
+    measure_window or forward_returns: a return needs a positive price at both ends; a share count that
+    moved by more than SHARE_TOL is a corporate action (no return); excess = return minus the median
+    return of EVERY stock with one; the net reading keeps matches trading NET_MIN_CR a day or more,
+    each charged NET_COST_PP."""
+    import statistics
+    from core.forward_returns import SHARE_TOL
+    end = {r.company_id: r for r in late.itertuples()}
+    ret, corp = {}, set()
+    for r in early.itertuples():
+        e = end.get(r.company_id)
+        if e is None or not (r.close_price > 0 and e.close_price > 0):
+            continue
+        if r.equity_shares > 0 and abs(e.equity_shares / r.equity_shares - 1.0) > SHARE_TOL:
+            corp.add(r.company_id); continue
+        ret[r.company_id] = (e.close_price / r.close_price - 1.0) * 100
+    med = statistics.median(ret.values())
+    matches = [cid for cid in early["company_id"] if cid in flagged and cid in ret]
+    exc = [ret[cid] - med for cid in matches]
+    tv = dict(zip(early["company_id"], early["vol_sma_20d"] * early["close_price"] / 1e7))
+    liquid = [ret[cid] - med - S.NET_COST_PP for cid in matches if tv[cid] >= S.NET_MIN_CR]
+    net = dict(min_cr=S.NET_MIN_CR, cost_pp=S.NET_COST_PP, n=len(liquid))
+    if len(liquid) >= J.MIN_N:
+        net.update(median_excess_pp=round(statistics.median(liquid), 1),
+                   beat_pct=int(round(100 * sum(x > 0 for x in liquid) / len(liquid))))
+    return dict(median_excess_pp=round(statistics.median(exc), 1),
+                beat_pct=int(round(100 * sum(x > 0 for x in exc) / len(exc))), n=len(matches),
+                dropped_no_return=sum(1 for cid in flagged if cid not in ret and cid not in corp),
+                dropped_corp_action=sum(1 for cid in flagged if cid in corp), net=net)
+
+
+@pytest.mark.parametrize("seed", [1, 2, 3, 4, 5])
+def test_measure_window_agrees_with_an_independent_recalculation(seed):
+    """Random markets with every awkward case: matches that vanish (no end row), a zero or missing end
+    price, share counts that move (splits, issues) or wobble inside the tolerance, illiquid matches."""
+    rng = np.random.default_rng(seed)
+    n = 400
+    early = pd.DataFrame({"company_id": [f"S{k:03d}" for k in range(n)],
+                          "close_price": rng.uniform(10, 900, n), "equity_shares": rng.uniform(1e6, 1e8, n),
+                          "vol_sma_20d": rng.uniform(1e3, 3e6, n), "flag": rng.random(n) < 0.4})
+    late = early.copy()
+    late["close_price"] = early["close_price"] * rng.uniform(0.3, 2.5, n)
+    late.loc[rng.random(n) < 0.05, "close_price"] = 0.0                                  # no usable end price
+    late.loc[rng.random(n) < 0.06, "equity_shares"] *= rng.choice([2.0, 10.0, 1.3])      # corporate actions
+    late.loc[rng.random(n) < 0.06, "equity_shares"] *= 1.01                              # wobble, inside tolerance
+    late = late.drop(index=late.index[rng.random(n) < 0.05])                               # vanished at the end
+    scan = {"key": "toy", "mask": lambda d: d["flag"].astype(bool)}
+    got = J.measure_window(early, late, scan, "2026-10-31", "2027-10-31")
+    want = _reference_window(early, late, set(early.loc[early["flag"], "company_id"]))
+    assert {k: got[k] for k in want} == want
