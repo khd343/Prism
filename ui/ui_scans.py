@@ -136,6 +136,39 @@ def compounder_candidates(df: pd.DataFrame) -> pd.Series:
     return (top & revenue_led(df)).fillna(False).astype(bool)
 
 
+# ── Why a stock LEFT 🌱 (2026-10-07) ──────────────────────────────────────────────────────────────
+# Measured in the yearly backtest (December section 9c): a 🌱 stock judged on its NEXT annual results,
+# points against the market's median stock the following year — still revenue-led +9.8 / +26.6, growing
+# but no longer revenue-led +2.4 / +0.5, profit fell -11.1 / -8.1. Only the first two reasons below are
+# measured; the others say so. Order = how bad the news is: a stock that fell AND stopped being
+# revenue-led is listed under "profit fell".
+EXIT_REASONS = {
+    "profit_fell": ("🔴", "profit fell",
+                    "measured: a 🌱 stock whose next annual profit fell trailed the market's median "
+                    "stock by 8 to 11 points the following year"),
+    "not_revenue_led": ("🟠", "no longer revenue-led",
+                        "measured: profit did not fall, but sales are no longer up 10%+ with profit "
+                        "growing faster; its edge was gone (+2.4 and +0.5 points against +9.8 and +26.6 "
+                        "for those that stayed revenue-led)"),
+    "rank_slipped": ("⚪", "others grew faster",
+                     "not measured: still revenue-led with profit up, but its profit growth or margin "
+                     "change slipped out of the market's top 40%"),
+    "unjudged": ("⚪", "a figure is missing", "not measured: a number the recipe needs is missing"),
+    "gone": ("⚪", "not in today's data", "not measured: delisted, suspended or renamed"),
+}
+
+
+def compounder_exit_reason(df: pd.DataFrame) -> pd.Series:
+    """For each row, why it is NOT a 🌱 match (read only for stocks that left): a key of EXIT_REASONS."""
+    pat, pat_1yb = _num(df, "pat"), _num(df, "pat_1yb")
+    fell = pat.notna() & pat_1yb.notna() & (pat < pat_1yb)
+    needed = ("pat", "pat_1yb", "revenue", "revenue_1yb", "opm", "opm_1yb")
+    unjudged = pd.concat([_num(df, c).isna() for c in needed], axis=1).any(axis=1)
+    reason = np.select([fell, unjudged, ~revenue_led(df)], ["profit_fell", "unjudged", "not_revenue_led"],
+                       default="rank_slipped")
+    return pd.Series(reason, index=df.index, dtype=object)
+
+
 def cycle_shortened(df: pd.DataFrame) -> pd.Series:
     """Cash conversion cycle down 15+ days AND sales up more than 15%, BOTH in the same fiscal year as
     the P&L 🌱 is judged on — supply-chain velocity, the December candidate, as a READING AID on the 🌱
@@ -197,6 +230,9 @@ SCANS = (
          # "Cycle ↓" (2026-10-07): a reading aid, not part of the recipe or record; its 60px come from
          # Stock, Sector and Score so the table keeps the laptop budget.
          extra=("_cycle",), widths={"name": 155, "sector": 95, "composite_score": 75},
+         # "Left 🌱" (2026-10-07): why a stock in 🌱 on the 🆕 baseline is not in it now. Not part of the
+         # recipe, so not in the fingerprint (which follows mask, uses and inputs only).
+         exit_reason=compounder_exit_reason,
          recipe="Sales up more than 10% with profit growing faster, and profit growth and margin "
                 "widening each in the top 40% of the market. Starting points for research: better odds, "
                 "not a promise."),
@@ -465,6 +501,54 @@ def scan_table(df: pd.DataFrame, scan: dict, members_at_latest=None, min_cr=None
         if c not in out.columns:
             out[c] = np.nan
     return out[[*TABLE_COLUMNS, *EXTRA_COLUMNS, "company_id"]].reset_index(drop=True)
+
+
+def _change(df: pd.DataFrame, now: str, prev: str) -> pd.Series:
+    """now / prev - 1 in %, wherever the earlier year is positive (a fall into a loss still shows)."""
+    a, b = _num(df, now), _num(df, prev)
+    return ((a / b - 1.0) * 100).where(b > 0)
+
+
+def left_scan(df: pd.DataFrame, scan: dict, members_at_latest=None, keep_ids=None) -> pd.DataFrame:
+    """Stocks in the scan on the 🆕 baseline that are not in it now, each with why: columns company_id,
+    name, sector, _why, _sales_chg, _profit_chg, reason — the worst news first, then by name.
+
+    Empty for a scan without an exit_reason or without a baseline (members_at_latest is None, as it is
+    whenever the record is stale — the same rule the 🆕 marks follow). The recipe runs on the whole
+    market; the liquidity floor does NOT narrow this list (a stock does not leave 🌱 by trading less),
+    keep_ids does, and a stock gone from today's data is kept only when nothing narrows the list."""
+    cols = ["company_id", "name", "sector", "_why", "_sales_chg", "_profit_chg", "reason"]
+    if members_at_latest is None or "exit_reason" not in scan:
+        return pd.DataFrame(columns=cols)
+    ids = df["company_id"].astype(str)
+    left = set(map(str, members_at_latest)) - set(ids[scan["mask"](df)])
+    if keep_ids is not None:
+        left &= set(map(str, keep_ids))
+    here = df.loc[ids.isin(left)]
+    out = pd.DataFrame({"company_id": ids[here.index], "name": here.get("name"), "sector": here.get("sector"),
+                        "_sales_chg": _change(here, "revenue", "revenue_1yb"),
+                        "_profit_chg": _change(here, "pat", "pat_1yb"),
+                        "reason": scan["exit_reason"](here)})
+    gone = sorted(left - set(out["company_id"]))
+    if gone:
+        out = pd.concat([out, pd.DataFrame({"company_id": gone, "name": gone, "sector": "",
+                                            "reason": "gone"})], ignore_index=True)
+    out["_why"] = out["reason"].map(lambda r: f"{EXIT_REASONS[r][0]} {EXIT_REASONS[r][1]}")
+    order = {r: k for k, r in enumerate(EXIT_REASONS)}
+    out = out.assign(_o=out["reason"].map(order)).sort_values(["_o", "name"], kind="mergesort")
+    return out[cols].reset_index(drop=True)
+
+
+def left_summary(left: pd.DataFrame) -> str:
+    """'🔴 2 profit fell · 🟠 1 no longer revenue-led' — the counts, worst first; '' when none left."""
+    counts = left["reason"].value_counts()
+    return " · ".join(f"{EXIT_REASONS[r][0]} {counts[r]} {EXIT_REASONS[r][1]}"
+                      for r in EXIT_REASONS if r in counts)
+
+
+def left_legend() -> str:
+    """One line per reason: its mark, its words and whether it is measured."""
+    return "\n".join(f"- {m} **{lab}** — {why}" for m, lab, why in EXIT_REASONS.values())
 
 
 def table_config(members_date_label: str, scan: dict = None) -> dict:

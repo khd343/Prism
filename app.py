@@ -91,7 +91,8 @@ from ui.ui_group_views import (MEASURES, OWNERSHIP, OWNERSHIP_GROUP_NOTE, OWNERS
 from ui.ui_reference_data import CONCEPT_REFERENCE, WCS_STUDIES
 from ui.ui_tearsheet import _FLAG_DISPLAY, _FW_META
 from ui.ui_scans import (SCANS, CANDIDATES as SCAN_CANDIDATES, LIQUIDITY_STEPS as SCAN_LIQUIDITY_STEPS,
-                         liquidity_help as scan_liquidity_help,
+                         liquidity_help as scan_liquidity_help, left_scan as scan_left,
+                         left_summary as scan_left_summary, left_legend as scan_left_legend,
                          table_columns as scan_table_columns, card_html as scan_card_html,
                          latest_label as scan_latest_label, load_records as load_scan_records,
                          members_label as scan_members_label,
@@ -892,6 +893,36 @@ with tabs[1]:
               set — <strong style="color:{COLORS['blue']};">click The Tear-Sheet tab</strong> for full analysis.
             </div>
             """, unsafe_allow_html=True)
+    # "Left 🌱" (2026-10-07): the exit side. Only a scan with measured exit reasons shows it, on the same
+    # baseline and the same rule as 🆕 (members only while the record is current). The 🎯 sidebar scope
+    # narrows it; the liquidity floor and the lens row do not (a stock does not leave by trading less).
+    if "exit_reason" in _sc_sel and _sc_state_sel == "measured":
+        if _sc_members is None or not _sc_new_label:
+            st.caption(f"Left {_sc_sel['emoji']}: shown once the weekly record has saved a month-end list "
+                       f"to compare against.")
+        else:
+            _sc_left = scan_left(df, _sc_sel, _sc_members,
+                                 keep_ids=set(filt['company_id'].astype(str)) if _sc_scoped else None)
+            if _sc_left.empty:
+                st.caption(f"None left {_sc_sel['emoji']} since {_sc_new_label}.")
+            else:
+                with st.expander(f"Left {_sc_sel['emoji']} since {_sc_new_label}: {len(_sc_left):,} — "
+                                 f"{scan_left_summary(_sc_left)}", expanded=False):
+                    st.markdown(scan_left_legend())
+                    st.dataframe(
+                        _sc_left, hide_index=True, width="stretch",
+                        height=min(420, 38 + 35 * len(_sc_left)),
+                        column_order=["name", "_why", "sector", "_sales_chg", "_profit_chg"],
+                        column_config={
+                            "name": st.column_config.TextColumn("Stock"),
+                            "_why": st.column_config.TextColumn("Why it left"),
+                            "sector": st.column_config.TextColumn("Sector"),
+                            "_sales_chg": st.column_config.NumberColumn(
+                                "Sales", format="%+.0f%%", help="Sales over the last year against the year before."),
+                            "_profit_chg": st.column_config.NumberColumn(
+                                "Profit", format="%+.0f%%", help="Profit over the last year against the year "
+                                "before (blank when the year before was a loss)."),
+                        })
     # A footnote, so it sits after the list: candidates are not scans yet and carry no record.
     with st.expander(f"🔬 Being measured ({len(SCAN_CANDIDATES)}) — not scans yet; December's review decides",
                      expanded=False):

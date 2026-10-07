@@ -10,9 +10,12 @@ fails here instead of on the live app. Only the parts that need the full app are
 load (`df` / `filt`), the shared lens row (returns its input unfiltered) and the freshness probe.
 
 What it pins: all three cards render, there is no toggle (2026-10-07: 🌱's revenue-led leg is part of
-its recipe, not a switch), and picking 🌱 shows exactly the recipe's matches.
+its recipe, not a switch), and picking 🌱 shows exactly the recipe's matches; the Liquidity guide; and
+"Left 🌱" — who left since the baseline and why, a note while there is no baseline, nothing on a stale
+record or on scans without measured exits.
 """
 import ast
+import json
 import os
 import sys
 import textwrap
@@ -66,8 +69,9 @@ _HARNESS = textwrap.dedent('''
 ''')
 
 
-def _app_source() -> str:
-    """The Scans tab exactly as app.py has it: its ui.ui_scans import, _pick_scan, the tab block."""
+def _app_source(records: dict = None) -> str:
+    """The Scans tab exactly as app.py has it: its ui.ui_scans import, _pick_scan, the tab block.
+    `records` replaces the committed records (a baseline the committed file does not have yet)."""
     src = open(os.path.join(ROOT, "app.py"), encoding="utf-8").read()
     tree = ast.parse(src)
     parts = [n for n in tree.body if isinstance(n, ast.ImportFrom) and n.module == "ui.ui_scans"]
@@ -75,6 +79,8 @@ def _app_source() -> str:
     parts += [n for n in tree.body if isinstance(n, ast.With)
               and ast.unparse(n.items[0].context_expr) == "tabs[1]"]
     assert len(parts) == 3, "app.py's Scans tab is no longer one import, one callback and one block"
+    if records is not None:
+        parts.insert(1, ast.parse(f"load_scan_records = lambda: __import__('json').loads({json.dumps(records)!r})"))
     return _HARNESS.format(root=ROOT) + "\n".join(ast.unparse(p) for p in parts)
 
 
@@ -133,3 +139,90 @@ def test_the_liquidity_selector_shows_the_order_size_guide_and_still_starts_at_a
     expected = S.scan_table(_frame(), S.SCANS[0], min_cr=5.0)
     assert 0 < len(expected) < len(S.scan_table(_frame(), S.SCANS[0])), "the floor must really narrow"
     assert sorted(tab.dataframe[0].value["name"]) == sorted(expected["name"])
+
+
+def _run(tmp_path, records):
+    from streamlit.testing.v1 import AppTest
+    script = tmp_path / "scans_tab_left.py"
+    script.write_text(_app_source(records), encoding="utf-8")
+    at = AppTest.from_file(str(script), default_timeout=60)
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+    at.button(key="scan_open_compounder").click().run()
+    assert not at.exception, [e.value for e in at.exception]
+    return at
+
+
+def test_left_seedling_shows_who_left_since_the_baseline_and_why(tmp_path):
+    """The exit side, RUN: a baseline holding today's 🌱 stocks plus three that are not 🌱 now and one
+    gone from the data -> one collapsed 'Left 🌱 since 30 Sep: 4' line whose table is left_scan's."""
+    from ui import ui_scans as S
+    df = _frame()
+    seedling = next(s for s in S.SCANS if s["key"] == "compounder")
+    now = df.loc[seedling["mask"](df), "company_id"].tolist()
+    out = df.loc[~seedling["mask"](df), "company_id"].tolist()[:3]
+    records = json.loads(json.dumps(S.load_records()))
+    records["scans"]["compounder"]["members_at_latest"] = now + out + ["NSE:GONE"]
+    records["members_date"] = "2026-09-30"
+    at = _run(tmp_path, records)
+    expected = S.left_scan(df, seedling, now + out + ["NSE:GONE"])
+    assert len(expected) == 4
+    label = next(e.label for e in at.expander if e.label.startswith("Left 🌱"))
+    assert label == f"Left 🌱 since 30 Sep: 4 — {S.left_summary(expected)}"
+    left_tbl = at.dataframe[1].value
+    assert left_tbl["company_id"].tolist() == expected["company_id"].tolist()
+    assert list(at.dataframe[1].proto.column_order) == ["name", "_why", "sector", "_sales_chg", "_profit_chg"]
+
+
+def test_left_seedling_waits_for_a_baseline_and_says_so(tmp_path):
+    """Today's committed records hold no 🌱 baseline yet: one caption, no empty table."""
+    from ui import ui_scans as S
+    records = json.loads(json.dumps(S.load_records()))
+    records["scans"]["compounder"].pop("members_at_latest", None)
+    at = _run(tmp_path, records)
+    assert not any(e.label.startswith("Left") for e in at.expander)
+    assert any("shown once the weekly record has saved a month-end list" in c.value for c in at.caption)
+
+
+def test_left_seedling_says_none_when_nobody_left(tmp_path):
+    from ui import ui_scans as S
+    df = _frame()
+    seedling = next(s for s in S.SCANS if s["key"] == "compounder")
+    records = json.loads(json.dumps(S.load_records()))
+    records["scans"]["compounder"]["members_at_latest"] = df.loc[seedling["mask"](df), "company_id"].tolist()
+    records["members_date"] = "2026-09-30"
+    at = _run(tmp_path, records)
+    assert any(c.value == "None left 🌱 since 30 Sep." for c in at.caption)
+
+
+def test_no_left_line_on_scans_without_measured_exits(tmp_path):
+    """🚀 and 🌬️ have no measured exit reasons, so even with a baseline they show no Left line."""
+    from streamlit.testing.v1 import AppTest
+    from ui import ui_scans as S
+    records = json.loads(json.dumps(S.load_records()))
+    for key in ("playbook", "leaders"):
+        records["scans"][key]["members_at_latest"] = ["NSE:T000", "NSE:GONE"]
+    records["members_date"] = "2026-09-30"
+    script = tmp_path / "scans_tab_other.py"
+    script.write_text(_app_source(records), encoding="utf-8")
+    at = AppTest.from_file(str(script), default_timeout=60)
+    at.run()
+    for key in ("playbook", "leaders"):
+        at.button(key=f"scan_open_{key}").click().run()
+        assert not at.exception, [e.value for e in at.exception]
+        assert not any(e.label.startswith("Left") for e in at.expander), key
+        assert not any(c.value.startswith(("Left", "None left")) for c in at.caption), key
+
+
+def test_no_left_line_when_the_record_is_stale(tmp_path):
+    """A changed recipe makes the record stale: its baseline describes a different scan, so no exits
+    and no 'waiting' note either — the card already says the record is stale."""
+    from ui import ui_scans as S
+    records = json.loads(json.dumps(S.load_records()))
+    records["scans"]["compounder"]["fingerprint"] = "0000000000000000"
+    records["scans"]["compounder"]["members_at_latest"] = ["NSE:T000", "NSE:GONE"]
+    records["members_date"] = "2026-09-30"
+    at = _run(tmp_path, records)
+    assert not any(e.label.startswith("Left") for e in at.expander)
+    assert not any(c.value.startswith(("Left", "None left")) for c in at.caption)
+
