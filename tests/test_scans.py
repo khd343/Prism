@@ -697,7 +697,8 @@ def test_the_compounder_card_shows_its_study_named_in_sample_with_its_caveats():
               "momentum held", "Beat the market: 71% / 64% / 68% of matches, against 44% / 46% / 47% of the rest",
               "✦ Cleanest test: 24→25", "net margin",
               "Better odds, not a promise: 59% of matches did not double",
-              "Survivors only", "before costs", "FY21 → FY23", "Out-of-sample: pending", "1-year windows",
+              "Survivors only", "before costs", "FY21 → FY23", "Out-of-sample: pending",
+              "one 1-year window a year, each starting at the end of October",
               "31 Oct 2027"):
         assert s in h, s
     assert "DESIGN-PERIOD" not in h and "short windows" not in h, "a study is not saved windows"
@@ -853,3 +854,12 @@ def test_the_compounder_table_marks_its_cycle_rows():
     marks = dict(zip(t["company_id"], t["_cycle"]))
     assert marks == {"NSE:G06": "", "NSE:G07": "", "NSE:G08": "", "NSE:G09": "✓"}, (
         "G06's cycle shortened but sales grew only 12%; G09's shortened with sales +18%")
+
+
+def test_the_first_due_date_follows_the_start_month():
+    assert S._first_unseen_due(_scan("compounder")) == "31 Oct 2027"
+    assert S._first_unseen_due({"designed_on": "2026-03-15", "horizon_days": 365, "start_month": 10}) == "31 Oct 2027", (
+        "designed in March: the first start is that October's month-end, a year later the first result")
+    assert S._first_unseen_due({"designed_on": "2026-11-02", "horizon_days": 365, "start_month": 10}) == "30 Oct 2028", (
+        "designed after October: the first start is next October (31 Oct 2027 + 365 days; 2028 is a leap year)")
+    assert S._first_unseen_due(_scan("playbook")) == "25 Nov", "a scan with no start month is unchanged"

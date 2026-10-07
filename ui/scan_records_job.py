@@ -49,21 +49,30 @@ def frozen(dates) -> list:
     return [d for d in dates if d[:7] < dates[-1][:7]] if dates else []
 
 
-def unseen_windows(dates, designed_on: str = S.DESIGNED_ON, min_days: int = MIN_HORIZON_DAYS) -> list:
+def unseen_windows(dates, designed_on: str = S.DESIGNED_ON, min_days: int = MIN_HORIZON_DAYS,
+                   start_month=None) -> list:
     """(start, end) pairs the recipes were never chosen on: each frozen copy dated after designed_on,
-    to the first copy at least min_days later and to the latest copy."""
+    to the first copy at least min_days later and to the latest copy.
+
+    With a start_month (🌱, 2026-10-07): only frozen copies dated in that month start a window, and
+    each runs to the first copy at least min_days later ONLY — one non-overlapping window a year, so a
+    year of evidence is shown as one bar, not as a dozen windows that overlap by 11 months."""
     dates = sorted(dates)
     out = []
     for a in (d for d in frozen(dates) if d > designed_on):
+        if start_month is not None and int(a[5:7]) != int(start_month):
+            continue
         later = [b for b in dates if b > a and _days(a, b) >= min_days]
-        for b in dict.fromkeys(later[:1] + later[-1:]):
+        ends = later[:1] if start_month is not None else later[:1] + later[-1:]
+        for b in dict.fromkeys(ends):
             out.append((a, b))
     return out
 
 
 def scan_windows(dates, scan: dict) -> list:
-    """This scan's unseen windows: after ITS design date, at least ITS horizon long."""
-    return unseen_windows(dates, S.scan_designed_on(scan), S.scan_horizon(scan))
+    """This scan's unseen windows: after ITS design date, at least ITS horizon long, and — for a scan
+    with a start month — one a year."""
+    return unseen_windows(dates, S.scan_designed_on(scan), S.scan_horizon(scan), S.scan_start_month(scan))
 
 
 def baseline_date(dates):
