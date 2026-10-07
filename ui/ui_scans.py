@@ -371,6 +371,29 @@ def record_state(records: dict, scan: dict):
 MEASURED_FLAGS = {"rf_wc_double_squeeze": "Squeeze", "rf_receivables_bloat": "Receivables",
                   "rf_negative_fcf": "Neg FCF"}
 LIQUIDITY_STEPS = (None, 0.5, 1.0, 2.0, 5.0)    # ₹ crore a day; None = any
+# Which step to pick depends on the buyer's order, not on the stock (2026-10-07): keep one order under
+# ORDER_SHARE of a day's traded value — a common, cautious rule of thumb for an order the market takes
+# without moving the price much. The help derives each step's order size from LIQUIDITY_STEPS, so the
+# guide cannot drift from the steps. Guidance only: it filters nothing and touches no record.
+ORDER_SHARE = 0.05
+
+
+def order_size_lakh(cr_per_day: float) -> float:
+    """The largest order (₹ lakh) that stays under ORDER_SHARE of cr_per_day (₹ crore = 100 lakh)."""
+    return round(cr_per_day * ORDER_SHARE * 100, 2)
+
+
+def liquidity_help() -> str:
+    """The Liquidity selector's help: what the number is, that it is a preference, and which step fits
+    an order size — plus the one tradability risk the data cannot see."""
+    guide = "\n".join(f"- ₹{s:g} Cr/day → orders up to about ₹{order_size_lakh(s):g} lakh"
+                      for s in LIQUIDITY_STEPS if s is not None)
+    return ("Minimum average daily traded value over 20 days (average volume × price). Your preference, "
+            "not part of the record: the record counts every match.\n\n"
+            f"**Which step?** Keep one order under about {ORDER_SHARE:.0%} of a day's traded value, so the "
+            f"market can take it without moving the price much:\n\n{guide}\n\n"
+            "Small or BSE-only stock: check the exchange's surveillance status (ASM/GSM) before buying — "
+            "traded value cannot show it.")
 
 TABLE_COLUMNS = ("rank", "_new", "name", "sector", "composite_score", "momentum_score",
                  "improvement_score", "_strong_q", "_measured_flags", "weinstein_stage", "_liq_cr")
@@ -494,7 +517,8 @@ def table_config(members_date_label: str, scan: dict = None) -> dict:
                  "reading aid, not part of 🌱's recipe or record."),
         "_liq_cr": cc.NumberColumn("₹ Cr/day", format="%.1f", width=w["_liq_cr"],
                                    help="Average daily traded value over 20 days (average volume × price), "
-                                        "in ₹ crore."),
+                                        f"in ₹ crore. Keep one order under about {ORDER_SHARE:.0%} of it: "
+                                        f"2.0 → about ₹{order_size_lakh(2.0):g} lakh."),
     }
 
 
