@@ -429,6 +429,51 @@ def test_an_unmeasured_or_stale_card_shows_no_numbers():
     assert "changed since" in h and "+7.1" not in h, "a stale record must not sit beside a new list"
 
 
+def test_the_card_names_the_record_in_sample_and_out_of_sample_pending():
+    """2026-10-07: "provisional" alone was read as "proven, just early". The design-period record is
+    in-sample (the recipe was chosen on it), its windows share start dates, and nothing out of sample
+    exists until the first unseen window — the card says all three in words."""
+    h = S.card_html(S.SCANS[0], 235, "measured", _record(), selected=True, latest="03 Oct")
+    for s in ("IN-SAMPLE · DESIGN-PERIOD RECORD", "chosen on these windows", "not proven", "before costs",
+              "4 short windows from 2 start dates", "Out-of-sample: pending", S._first_unseen_due()):
+        assert s in h, s
+
+
+def test_a_record_without_net_or_left_out_counts_says_so():
+    h = S.card_html(S.SCANS[0], 235, "measured", _record(), selected=True, latest="03 Oct")
+    assert "not measured for these windows yet" in h, "absent is not zero"
+    assert "Left out" not in h
+
+
+def test_the_card_shows_the_net_record_and_what_was_left_out():
+    rec = _record()
+    for w, v in zip(rec["windows"], (4.0, 6.2, None, 0.8)):
+        w.update(dropped_no_return=3, dropped_corp_action=1,
+                 net=dict(min_cr=2.0, cost_pp=1.0, n=40) if v is None else
+                 dict(min_cr=2.0, cost_pp=1.0, n=60, median_excess_pp=v, beat_pct=55))
+    h = S.card_html(S.SCANS[0], 235, "measured", rec, selected=True, latest="03 Oct")
+    for s in ("Net of a 1.0pp round trip", "₹2 Cr+/day", "+4.0", "+6.2", "+0.8", "–", "55% beat",
+              "60 stocks", "3 with no price at the end", "1 corporate actions"):
+        assert s in h, s
+    assert "not measured for these windows yet" not in h
+
+
+def test_the_recipe_docstrings_quote_the_committed_record():
+    """2026-10-07: the docstrings had drifted from scan_records.json (+10.7 for +10.3; the leaders'
+    +2.9 / +8.6 for +3.9 / +11.2). One definition covers the prose too: any figure a recipe's
+    docstring quotes is the in-sample record, window by window."""
+    import re
+    rec = S.load_records()
+    for scan in S.SCANS:
+        quoted = [float(x) for x in re.findall(r"[+-]\d+\.\d", scan["mask"].__doc__ or "")]
+        assert quoted, f"{scan['key']}: its docstring quotes no record"
+        ws = rec["scans"][scan["key"]]["windows"]
+        assert quoted == [w["median_excess_pp"] for w in ws], (scan["key"], quoted)
+        beat = re.search(r"(\d+)-(\d+)% of matches", scan["mask"].__doc__)
+        assert beat and (int(beat[1]), int(beat[2])) == (min(w["beat_pct"] for w in ws),
+                                                         max(w["beat_pct"] for w in ws)), scan["key"]
+
+
 def test_no_buy_wording():
     """Matched / record / provisional — PRISM narrows, the user decides."""
     tree = ast.parse(inspect.getsource(S))

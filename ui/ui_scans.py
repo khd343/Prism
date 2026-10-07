@@ -16,6 +16,11 @@ THREE RULES, each pinned in tests/test_scans.py:
 3. NOTHING HIDDEN, NOTHING PROMISED. A flagged stock stays in its list with the flag named; a missing
    value never passes a condition; the wording is "matched / record / provisional".
 
+Each window also carries what the headline leaves out (2026-10-07): how many matches had no return
+(no price at the end: delisted, suspended or missing) or were dropped as corporate actions, and a NET
+record: only matches trading NET_MIN_CR a day or more, each charged NET_COST_PP for the round trip.
+The card labels the design-period record "in-sample" in so many words: the recipe was chosen on it.
+
 Display only, like ui_movers: no widgets here. app.py owns the scan choice, the liquidity floor and
 the row click.
 """
@@ -38,6 +43,11 @@ from core.scoring_engine import strong_quarter
 from ui.ui_group_views import group_measures
 
 RECORDS_PATH = Path(__file__).with_name("scan_records.json")
+# The net record (2026-10-07): what a buyer could have kept. Only matches trading at least NET_MIN_CR
+# a day count, and each is charged NET_COST_PP for the round trip (0.5% in + 0.5% out: taxes, spread,
+# impact). The benchmark (the market median) is charged nothing, so the cost side errs conservative.
+NET_MIN_CR = 2.0
+NET_COST_PP = 1.0
 RECORD_VERSION = 2
 # The day the recipes were chosen. Every window that STARTS on or after it is out of sample: data
 # nobody looked at while choosing. Windows before it are the design-period record (in sample).
@@ -50,6 +60,12 @@ def _num(df: pd.DataFrame, col: str) -> pd.Series:
             else pd.Series(np.nan, index=df.index))
 
 
+def traded_value_cr(df: pd.DataFrame) -> pd.Series:
+    """Average daily traded value over 20 days (average volume × price), ₹ crore; NaN when unknown. One
+    definition for the list's floor and the net record."""
+    return _num(df, "vol_sma_20d") * _num(df, "close_price") / 1e7
+
+
 def _pct(df: pd.DataFrame, col: str) -> pd.Series:
     """Percentile rank (0-1] across the frame given — the whole market, never a filtered slice."""
     return _num(df, col).rank(pct=True)
@@ -59,8 +75,8 @@ def _pct(df: pd.DataFrame, col: str) -> pd.Series:
 def playbook_shortlist(df: pd.DataFrame) -> pd.Series:
     """Momentum and Breakout in the market's top third, a 🔥 Strong Quarter (the engine's own
     definition; a quarter that cannot be judged is not strong), Improvement in the top half, and the
-    price at or above its stop. Measured 2026-10-06: +7.1 / +10.7 / +3.3 / +2.9pp against the market
-    median, 61-69% of matches beating it."""
+    price at or above its stop. In-sample record (2026-10-06, ui/scan_records.json): +7.1 / +10.3 /
+    +3.3 / +2.9pp against the market median, 61-70% of matches beating it."""
     return ((_pct(df, "momentum_score") >= 2 / 3)
             & (_pct(df, "breakout_score") >= 2 / 3)
             & (strong_quarter(df) == 1)
@@ -88,8 +104,9 @@ def leading_sectors(df: pd.DataFrame, n: int = 5, min_stocks: int = 5) -> list:
 
 
 def leading_sector_stocks(df: pd.DataFrame) -> pd.Series:
-    """Every stock in the leading sectors — the whole sector, not only its leaders. Measured
-    2026-10-06: +2.9 / +8.6 / +2.4 / +3.4pp against the market median."""
+    """Every stock in the leading sectors — the whole sector, not only its leaders. In-sample record
+    (2026-10-06, ui/scan_records.json): +3.9 / +11.2 / +2.4 / +3.4pp against the market median,
+    58-67% of matches beating it."""
     if "sector" not in df.columns:
         return pd.Series(False, index=df.index)
     return df["sector"].isin(leading_sectors(df)).astype(bool)
@@ -207,7 +224,7 @@ def scan_table(df: pd.DataFrame, scan: dict, members_at_latest=None, min_cr=None
     clocks differ on purpose: technical legs move daily, fundamentals only when a result lands, so 🆕 + 📄
     together means the stock entered on a fresh result."""
     out = df.loc[scan["mask"](df)].copy()
-    out["_liq_cr"] = _num(out, "vol_sma_20d") * _num(out, "close_price") / 1e7
+    out["_liq_cr"] = traded_value_cr(out)
     if min_cr is not None:
         out = out[out["_liq_cr"] >= min_cr]
     if keep_ids is not None:
@@ -314,12 +331,43 @@ def _first_unseen_due() -> str:
     return f"{month_end + timedelta(days=MIN_HORIZON_DAYS):%d %b}"
 
 
+def _extras(ws, c, esc) -> str:
+    """Under a record: the NET reading (liquid matches only, charged the round trip) and how many matches
+    the headline left out. Windows measured before these were recorded say so instead of showing 0."""
+    nets = [w.get("net") for w in ws]
+    if not any(nets):
+        return (f'<div style="font-size:0.66rem;color:{c["text_muted"]};margin-top:3px;">Net-of-costs record '
+                f'and left-out counts: not measured for these windows yet</div>')
+    cells = []
+    for nt in nets:
+        if nt and "median_excess_pp" in nt:
+            col = c["green"] if nt["median_excess_pp"] > 0 else c["red"]
+            cells.append(f'<span style="color:{col};font-weight:700;">{nt["median_excess_pp"]:+.1f}</span>')
+        else:
+            cells.append('<span title="fewer than 30 liquid matches">–</span>')
+    nt0 = next(nt for nt in nets if nt)
+    measured = [nt for nt in nets if nt and "median_excess_pp" in nt]
+    tail = (f' · {_range([int(nt["beat_pct"]) for nt in measured], "{}")}% beat · '
+            f'{_range([int(nt["n"]) for nt in measured], "{}")} stocks' if measured else
+            ' · too few liquid matches to measure')
+    out = (f'<div style="font-size:0.7rem;color:{c["text_secondary"]};margin-top:5px;">Net of a '
+           f'{float(nt0["cost_pp"]):.1f}pp round trip, ₹{float(nt0["min_cr"]):g} Cr+/day matches only: '
+           f'{" / ".join(cells)}{tail}</div>')
+    if all("dropped_no_return" in w for w in ws):
+        gone = _range([int(w["dropped_no_return"]) for w in ws], "{}")
+        ca = _range([int(w["dropped_corp_action"]) for w in ws], "{}")
+        out += (f'<div style="font-size:0.66rem;color:{c["text_muted"]};margin-top:2px;">Left out per window: '
+                f'{gone} with no price at the end (delisted, suspended or missing) · {ca} corporate '
+                f'actions</div>')
+    return out
+
+
 def card_html(scan: dict, n_now: int, state: str, rec, selected: bool, latest: str) -> str:
-    """One scan card: name, today's count, the recipe in words, and two records — the DESIGN-PERIOD
-    one (windows studied while the recipe was chosen: in-sample, frozen) and the UNSEEN one (windows
-    that start after DESIGNED_ON, measured automatically from the PRISM Archive). Each shows one bar
-    per window, the share of matches that beat the market, the sample size and "provisional". A stale
-    or missing record shows no numbers at all."""
+    """One scan card: name, today's count, the recipe in words, and two records — the IN-SAMPLE one
+    (the design period: windows studied while the recipe was chosen, frozen) and the OUT-OF-SAMPLE one
+    (windows that start after DESIGNED_ON, measured automatically from the PRISM Archive). Each shows
+    one bar per window, the share of matches that beat the market, the sample size, the net-of-costs
+    reading, what was left out and "provisional". A stale or missing record shows no numbers at all."""
     c = COLORS
     esc = html.escape
     border = c["gold"] if selected else c["border"]
@@ -336,37 +384,43 @@ def card_html(scan: dict, n_now: int, state: str, rec, selected: bool, latest: s
         ws = rec["windows"]
         beat = _range([int(w["beat_pct"]) for w in ws], "{}") + "%"
         n = _range([int(w["n"]) for w in ws], "{}")
+        starts = len({w["start"] for w in ws})
         built = f"{date.fromisoformat(DESIGNED_ON):%d %b}"
         unseen = rec.get("out_of_sample") or []
-        bars_tip = ("Points above the market median in each window; hover a bar for its dates and size. "
-                    "Design period = windows studied while the recipe was chosen.")
+        bars_tip = ("Points above the market median in each window, before costs; hover a bar for its "
+                    "dates and size. In-sample = windows studied while the recipe was chosen.")
+        # Named in so many words (2026-10-07): "provisional" alone read as "proven, just early".
         body = (f'<div style="display:flex;gap:14px;align-items:flex-end;justify-content:space-between;">'
                 f'<div style="flex:1;min-width:0;">'
                 f'<div style="font-size:0.66rem;font-weight:700;color:{c["text_muted"]};letter-spacing:.3px;">'
-                f'DESIGN-PERIOD RECORD</div>'
+                f'IN-SAMPLE · DESIGN-PERIOD RECORD</div>'
+                f'<div style="font-size:0.66rem;color:{c["text_muted"]};margin-top:2px;">The recipe was chosen '
+                f'on these windows: worth testing, not proven</div>'
                 f'<div style="font-size:0.74rem;color:{c["text_secondary"]};margin-top:3px;">'
-                f'{beat} of matches beat the market</div>'
+                f'{beat} of matches beat the market · before costs</div>'
                 f'<div style="font-size:0.66rem;color:{c["text_muted"]};margin-top:2px;">{n} stocks per '
                 f'window · provisional</div>'
                 f'<div style="font-size:0.66rem;color:{c["text_muted"]};margin-top:2px;">{len(ws)} short '
-                f'windows{f", measured to {esc(latest)}" if latest else ""}</div>'
+                f'windows from {starts} start date{"s" if starts != 1 else ""}'
+                f'{f", measured to {esc(latest)}" if latest else ""}</div>'
                 + ("" if unseen else
                    f'<div style="font-size:0.66rem;color:{c["text_muted"]};margin-top:2px;" title="Windows '
                    f'that start after the recipe was chosen ({built}) — data nobody looked at while '
-                   f'choosing it.">Unseen windows: none yet — the first is due about '
-                   f'{_first_unseen_due()}</div>')
+                   f'choosing it.">Out-of-sample: pending — unseen windows: none yet, the first is due '
+                   f'about {_first_unseen_due()}</div>')
                 + f'</div><div style="display:flex;gap:4px;align-items:flex-end;" title="{esc(bars_tip)}">'
-                f'{_bars(ws, c, esc)}</div></div>')
+                f'{_bars(ws, c, esc)}</div></div>{_extras(ws, c, esc)}')
         if unseen:
             u_beat = _range([int(w["beat_pct"]) for w in unseen], "{}") + "%"
             body += (f'<div style="display:flex;gap:14px;align-items:flex-end;justify-content:space-between;'
                      f'border-top:1px solid {c["border"]};margin-top:8px;padding-top:7px;">'
                      f'<div style="flex:1;min-width:0;">'
                      f'<div style="font-size:0.66rem;font-weight:700;color:{c["text_muted"]};letter-spacing:.3px;">'
-                     f'SINCE IT WAS BUILT ({esc(built.upper())}) — WINDOWS IT NEVER SAW</div>'
+                     f'OUT-OF-SAMPLE · SINCE IT WAS BUILT ({esc(built.upper())}) — WINDOWS IT NEVER SAW</div>'
                      f'<div style="font-size:0.74rem;color:{c["text_secondary"]};margin-top:3px;">'
-                     f'{u_beat} of matches beat the market · the most trustworthy record</div></div>'
-                     f'<div style="display:flex;gap:4px;align-items:flex-end;">{_bars(unseen, c, esc)}</div></div>')
+                     f'{u_beat} of matches beat the market · before costs · the most trustworthy record</div></div>'
+                     f'<div style="display:flex;gap:4px;align-items:flex-end;">{_bars(unseen, c, esc)}</div></div>'
+                     f'{_extras(unseen, c, esc)}')
     elif state == "stale":
         body = (f'<div style="font-size:0.74rem;color:{c["gold"]};">The recipe changed since its record was '
                 f'measured — no record is shown until it is re-measured.</div>')
