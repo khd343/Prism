@@ -107,3 +107,14 @@ def test_every_card_renders_and_the_compounder_list_opens(tab):
     expected = S.scan_table(_frame(), next(s for s in S.SCANS if s["key"] == "compounder"))
     assert len(tab.dataframe) == 1 and len(expected) > 0
     assert sorted(tab.dataframe[0].value["name"]) == sorted(expected["name"])
+
+
+def test_the_cycle_column_shows_on_the_compounder_table_only(tab):
+    """'Cycle ↓' (2026-10-07) reaches the screen through app.py's column_order: shown, beside 🔥, on 🌱;
+    absent on 🚀 — read from the rendered table, not from the module."""
+    first = list(tab.dataframe[0].proto.column_order)
+    assert "_cycle" not in first, "the first scan (🚀 Playbook) shows the shared table"
+    tab.button(key="scan_open_compounder").click().run()
+    assert not tab.exception, [e.value for e in tab.exception]
+    order = list(tab.dataframe[0].proto.column_order)
+    assert order[order.index("_strong_q") + 1] == "_cycle"
