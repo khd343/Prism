@@ -20,6 +20,7 @@ from config import (CSV_FILES, MCAP_TIERS,
                     PRELISTING_BASELINE_DAYS,
                     _vintage_sort_key, newer_vintage)
 from core.cyclicality_map import INDUSTRY_TIER, SECTOR_TIER_FALLBACK, TIER_LABELS
+from core.taxonomy import canonicalize_taxonomy
 
 warnings.filterwarnings('ignore')
 np.seterr(all='ignore')
@@ -716,6 +717,9 @@ def merge_datasets(datasets: Dict[str, pd.DataFrame]) -> pd.DataFrame:
         print(f"  ✅ Merged {name}: {len(master)} rows, {len(master.columns)} cols")
 
     master = _collapse_dual_listings(master)
+    # The vendor's industry/sector names → PRISM's (core/taxonomy.py). Here, not later, so every
+    # consumer — and the cyclicality-map generator, which reads this same frame — sees one vocabulary.
+    master = canonicalize_taxonomy(master)
 
     print(f"\n📊 Master DataFrame: {len(master)} stocks × {len(master.columns)} columns")
     return master
