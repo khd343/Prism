@@ -470,6 +470,23 @@ PRELISTING_BASELINE_DAYS = 730
 # misses ONE deadline is flagged at ~8 months, not ~4; its Result Age still shows the days.
 STALE_RESULT_DAYS = 240
 
+# ── Benchmark indices (2026-10-08) ──
+# The seven NSE indices the scans are judged against ("could I buy the index fund instead?"). They
+# arrive in the PRISM watchlists, so the sheet carries them as rows like a stock: price and
+# technicals filled, every fundamental, the sector, the industry and the market cap 'null'. They are
+# set aside at the merge (core/data_engine._set_aside_benchmarks) and never enter the stock universe.
+# Keyed by the vendor's id, which is steadier than a name (the vendor re-spelled every sector name in
+# early October 2026). Read from the sync's own fetch of 2026-10-08.
+BENCHMARK_INDICES = {
+    "NSE:CNX500": "Nifty 500",
+    "NSE:SMALLCA250": "Nifty Smallcap 250",
+    "NSE:NFMICRO250": "Nifty Microcap 250",
+    "NSE:NIF500MO50": "Nifty500 Momentum 50",
+    "NSE:NI200MOM30": "Nifty200 Momentum 30",
+    "NSE:NQUALITY30": "Nifty200 Quality 30",
+    "NSE:NS250MQ100": "Nifty Smallcap250 Momentum Quality 100",
+}
+
 # ── Asymmetric Governance Risk Shield ──
 # Negative ownership signals predict DISASTERS far better than positive signals predict
 # winners (Yes Bank, DHFL, Zee, Manpasand all showed promoter exit / pledge / dilution

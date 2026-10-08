@@ -17,7 +17,7 @@ from config import (CSV_FILES, MCAP_TIERS,
                     FINANCIAL_SECTORS, FINANCIAL_SECTOR_NAMES, UTILITY_SECTOR_NAMES,
                     COST_OF_EQUITY, INDIA_GSEC_YIELD,
                     EPOCH3_TAXONOMY, EPOCH5_MODERN, CONSISTENT_SECTORS,
-                    PRELISTING_BASELINE_DAYS, STALE_RESULT_DAYS,
+                    PRELISTING_BASELINE_DAYS, STALE_RESULT_DAYS, BENCHMARK_INDICES,
                     _vintage_sort_key, newer_vintage)
 from core.cyclicality_map import INDUSTRY_TIER, SECTOR_TIER_FALLBACK, TIER_LABELS
 from core.taxonomy import canonicalize_taxonomy
@@ -691,6 +691,39 @@ def _collapse_dual_listings(df: pd.DataFrame) -> pd.DataFrame:
     return df.loc[~drop_mask].copy()
 
 
+def benchmark_rows(df: pd.DataFrame) -> pd.Series:
+    """True for a row that is a benchmark INDEX, not a stock (2026-10-08): its id is one of
+    config.BENCHMARK_INDICES, or — the safety net for an index added to the watchlists later — it has
+    no market cap, no sector and no industry at all. Measured on the sync's fetch of 2026-10-08:
+    exactly the seven declared indices match, and not one of the 2,712 stocks lacks even one of the
+    three. Frames without those columns (an archived vintage, a test frame) match by id only."""
+    declared = (df["company_id"].astype(str).isin(BENCHMARK_INDICES) if "company_id" in df.columns
+                else pd.Series(False, index=df.index))
+    if {"market_cap", "sector", "industry"} <= set(df.columns):
+        bare = df["market_cap"].isna() & df["sector"].isna() & df["industry"].isna()
+    else:
+        bare = pd.Series(False, index=df.index)
+    return declared | bare
+
+
+def _set_aside_benchmarks(df: pd.DataFrame) -> pd.DataFrame:
+    """The stock universe without the benchmark index rows. They arrive in the PRISM watchlists so the
+    sheet (and its daily archive) carries their prices, but as stocks they would be ranked, scored,
+    counted in every breadth figure and in the market median each scan record is measured against.
+    Set aside HERE, once, so every consumer — app, snapshots, census, verify, the records job, Movers —
+    inherits the clean universe. The raw rows stay in the sheet and the archive for the benchmark
+    comparison. An unknown index-like row is named, never dropped silently."""
+    mask = benchmark_rows(df)
+    if not mask.any():
+        return df
+    ids = sorted(df.loc[mask, "company_id"].astype(str)) if "company_id" in df.columns else []
+    unknown = [i for i in ids if i not in BENCHMARK_INDICES]
+    print(f"  🧭 {int(mask.sum())} benchmark index row(s) set aside — not stocks")
+    if unknown:
+        print(f"  ⚠️ not in config.BENCHMARK_INDICES (no market cap, sector or industry): {', '.join(unknown)}")
+    return df.loc[~mask].copy()
+
+
 def merge_datasets(datasets: Dict[str, pd.DataFrame]) -> pd.DataFrame:
     """Merge all 6 datasets into a single master DataFrame on company_id."""
     print("\n🔗 Merging datasets...")
@@ -716,6 +749,8 @@ def merge_datasets(datasets: Dict[str, pd.DataFrame]) -> pd.DataFrame:
         )
         print(f"  ✅ Merged {name}: {len(master)} rows, {len(master.columns)} cols")
 
+    # First, before anything reads sector or name: the benchmark indices are not stocks (2026-10-08).
+    master = _set_aside_benchmarks(master)
     master = _collapse_dual_listings(master)
     # The vendor's industry/sector names → PRISM's (core/taxonomy.py). Here, not later, so every
     # consumer — and the cyclicality-map generator, which reads this same frame — sees one vocabulary.
