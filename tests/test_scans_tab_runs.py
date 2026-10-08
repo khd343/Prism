@@ -84,11 +84,23 @@ def _app_source(records: dict = None) -> str:
     return _HARNESS.format(root=ROOT) + "\n".join(ast.unparse(p) for p in parts)
 
 
+def _records_without_baselines() -> dict:
+    """The committed records with every 🆕 baseline removed. The weekly job rewrites the baselines with
+    REAL company ids, which a synthetic market does not hold, so a test that read them as committed
+    would change with every job run (2026-10-08: the first 🌱 baseline put a 'Left 🌱' table of 254
+    'gone' stocks under this market). Tests about baselines inject their own (the Left 🌱 tests below)."""
+    from ui import ui_scans as S
+    records = json.loads(json.dumps(S.load_records()))
+    for rec in records["scans"].values():
+        rec.pop("members_at_latest", None)
+    return records
+
+
 @pytest.fixture
 def tab(tmp_path):
     from streamlit.testing.v1 import AppTest
     script = tmp_path / "scans_tab.py"
-    script.write_text(_app_source(), encoding="utf-8")
+    script.write_text(_app_source(_records_without_baselines()), encoding="utf-8")
     at = AppTest.from_file(str(script), default_timeout=60)
     at.run()
     assert not at.exception, [e.value for e in at.exception]
@@ -175,7 +187,7 @@ def test_left_seedling_shows_who_left_since_the_baseline_and_why(tmp_path):
 
 
 def test_left_seedling_waits_for_a_baseline_and_says_so(tmp_path):
-    """Today's committed records hold no 🌱 baseline yet: one caption, no empty table."""
+    """Before the weekly job has saved a 🌱 baseline: one caption, no empty table."""
     from ui import ui_scans as S
     records = json.loads(json.dumps(S.load_records()))
     records["scans"]["compounder"].pop("members_at_latest", None)
