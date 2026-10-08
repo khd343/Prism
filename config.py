@@ -710,6 +710,18 @@ REGIME_ADJUSTMENTS = {
 }
 
 
+# Does the DETECTED regime change scores? Not until evidence says it should (2026-10-08). The detector
+# (scoring_engine.detect_market_regime) votes 2 of 3 on the share of stocks BEATING the Nifty 500, which
+# sits near 50% by construction: on 2026-10-08 it read 59.5% / 56.3% / 46.0% against BULL bars of 60 /
+# 55 / 55 — half a point from "Offence Mode" — while the Nifty 500 itself was in a Weinstein Stage-4
+# decline below its 200-day average. A flip would re-score every stock through REGIME_ADJUSTMENTS,
+# which were never tested, and BEAR's momentum ×0.70 runs against PRISM's own measurement (momentum
+# was the strongest signal in the falling Aug→Sep window). So scoring uses SIDEWAYS — every adjustment
+# neutral, exactly what scored the universe until now — and the detected regime is shown, not applied.
+# December's review decides whether a regime (perhaps the index's own trend) should touch scores at all.
+REGIME_DRIVES_SCORING = False
+
+
 def get_adaptive_weights(profile_name: str, regime: str = "SIDEWAYS") -> dict:
     """The Weight Factory — cascades Profile → Regime → Final Weights.
     

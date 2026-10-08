@@ -63,8 +63,9 @@ warnings.filterwarnings('ignore')
 import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from core import (fetch_and_clean_data, run_full_scoring, compute_forensic_signals,
+from core import (fetch_and_clean_data, load_market, run_full_scoring, compute_forensic_signals,
                   apply_forensic_penalty, compute_verdict, run_scoring_pipeline)
+from ui.ui_market import market_box_html
 from core.data_engine import extract_spreadsheet_id
 from ui import (render_moat_growth_matrix, render_fisher_module,
                 render_ep_power_curve_module, render_bruised_blue_chip_badge,
@@ -120,9 +121,11 @@ def get_clean_data(data_source, file_signature: str, sheet_id, _uploaded_dict=No
     _uploaded_dict IS underscored so Streamlit skips hashing the raw, unhashable stream objects.
     """
     t0 = time.time()
-    df = fetch_and_clean_data(data_source, _uploaded_dict, sheet_id)
+    # One load, two results (2026-10-08): the stocks, and the benchmark indices' table for the
+    # sidebar's market box — the same download, never a second fetch.
+    df, bench = load_market(data_source, _uploaded_dict, sheet_id)
     elapsed = time.time() - t0
-    return df, elapsed
+    return df, bench, elapsed
 
 @st.cache_data(show_spinner=False, ttl=900)
 def get_data_freshness(data_source: str, sheet_id, file_signature: str):
@@ -328,7 +331,7 @@ with st.spinner("🔄 Loading data..."):
             )
         else:
             file_sig = f"local_{sheet_id or 'default'}"
-        clean_df, load_time = get_clean_data(
+        clean_df, bench_df, load_time = get_clean_data(
             st.session_state.data_source, file_sig, sheet_id, _uploaded_dict=uploaded_dict
         )
     except Exception as e:
@@ -449,14 +452,10 @@ with st.sidebar:
     from ui.ui_export import engine_version, scored_universe_csv, universe_signature
     _scored_dl_ph = st.empty()
 
+    # The market box (2026-10-08): the benchmark indices' Weinstein stages, and under them the
+    # breadth regime — shown, not applied to scores (config.REGIME_DRIVES_SCORING). ui/ui_market.py.
     regime = df.attrs.get("detected_market_regime", "SIDEWAYS")
-    regime_color = COLORS['green'] if regime == "BULL" else COLORS['red'] if regime == "BEAR" else COLORS['gold']
-    st.markdown(f"""
-    <div style="background:{COLORS['bg_tertiary']}; border-left:4px solid {regime_color}; padding:8px 12px; margin-bottom:15px; border-radius:4px;">
-        <div style="font-size:0.75rem; color:{COLORS['text_muted']}; text-transform:uppercase; letter-spacing:1px;">Detected Regime</div>
-        <div style="font-size:1.1rem; font-weight:800; color:{regime_color};">{regime} MARKET</div>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(market_box_html(bench_df, regime), unsafe_allow_html=True)
 
 
 # Discovery filter cascade — built in ui/ui_discovery.py (stateful counterpart to the

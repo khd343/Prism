@@ -172,33 +172,51 @@ def test_qglp_receives_the_adaptive_dict_not_the_raw_profile():
 import functools
 
 
-@functools.lru_cache(maxsize=1)
-def _forced_regime_frames():
-    """The full pipeline under forced SIDEWAYS and forced BEAR (patched at the module global
-    run_full_scoring resolves at call time; restored in finally). Cached so the two behavioral
-    tests below share one pair of runs."""
+@functools.lru_cache(maxsize=2)
+def _forced_regime_frames(drives: bool = False):
+    """The full pipeline under forced SIDEWAYS / BEAR / BULL (patched at the module global
+    run_full_scoring resolves at call time; restored in finally), with config.REGIME_DRIVES_SCORING
+    as given (patched on scoring_engine, which imported it). Cached per switch position."""
     import contextlib, io as _io
     import core.scoring_engine as se
     from core import fetch_and_clean_data, run_scoring_pipeline
     with contextlib.redirect_stdout(_io.StringIO()):
         raw = fetch_and_clean_data("local")
-    _orig = se.detect_market_regime
+    _orig, _orig_drives = se.detect_market_regime, se.REGIME_DRIVES_SCORING
     frames = {}
     try:
-        for regime in ("SIDEWAYS", "BEAR"):
+        se.REGIME_DRIVES_SCORING = drives
+        for regime in ("SIDEWAYS", "BEAR", "BULL"):
             se.detect_market_regime = lambda d, v=regime: v
             with contextlib.redirect_stdout(_io.StringIO()):
                 frames[regime] = run_scoring_pipeline(raw.copy())
     finally:
-        se.detect_market_regime = _orig
+        se.detect_market_regime, se.REGIME_DRIVES_SCORING = _orig, _orig_drives
     return frames
 
 
-def test_bear_regime_tightens_qglp_pass_on_live_data():
-    """BEAR raises the QGLP growth/peg bars (config REGIME_ADJUSTMENTS), so a forced-BEAR run
-    must pass STRICTLY fewer stocks than SIDEWAYS. Catches any refactor that keeps the call
-    shape but severs the flow — the numbers judge, not the syntax."""
-    frames = _forced_regime_frames()
+def test_the_detected_regime_does_not_reach_the_scores_while_switched_off():
+    """2026-10-08: the detector stood half a point from BULL while the Nifty 500 was in a Stage-4
+    decline, and its adjustments were never tested — so scoring uses SIDEWAYS until December decides.
+    A forced BULL or BEAR must leave every score exactly as SIDEWAYS leaves it."""
+    from config import REGIME_DRIVES_SCORING
+    assert REGIME_DRIVES_SCORING is False, "December's review decides when the regime reaches the scores"
+    frames = _forced_regime_frames(False)
+    base = frames["SIDEWAYS"].set_index("company_id")
+    for regime in ("BEAR", "BULL"):
+        other = frames[regime].set_index("company_id").reindex(base.index)
+        for col in ("composite_score", "momentum_score", "rank", "qglp_pass", "conviction_tier",
+                    "fw_can_slim", "gate_pass", "wealth_tier"):
+            if col in base.columns:
+                same = (base[col].astype(str) == other[col].astype(str)).all()
+                assert same, f"forced {regime} moved {col} — the detected regime reached the scores"
+
+
+def test_with_the_switch_on_bear_still_tightens_qglp_pass_on_live_data():
+    """The machinery stays alive for December: switched on, BEAR raises the QGLP bars (config
+    REGIME_ADJUSTMENTS), so a forced-BEAR run passes STRICTLY fewer stocks than SIDEWAYS. The numbers
+    judge, not the syntax."""
+    frames = _forced_regime_frames(True)
     side, bear = int(frames["SIDEWAYS"]["qglp_pass"].sum()), int(frames["BEAR"]["qglp_pass"].sum())
     assert side > 0, "qglp_pass fires on nothing — the gate died"
     assert bear < side, (
@@ -208,8 +226,11 @@ def test_bear_regime_tightens_qglp_pass_on_live_data():
 
 def test_regime_dual_write_agrees():
     """detect_market_regime is stored twice (df.attrs primary + _detected_market_regime column
-    fallback, scoring_engine ~3312). The two must never disagree — a consumer picking the
-    'wrong' channel must get the same answer."""
-    for regime, frame in sorted(_forced_regime_frames().items()):
-        assert frame.attrs.get("detected_market_regime") == regime
-        assert frame["_detected_market_regime"].iloc[0] == regime
+    fallback). The two must never disagree — a consumer picking the 'wrong' channel must get the
+    same answer. The SCORING regime is stored the same way, and it is SIDEWAYS while switched off."""
+    for drives in (False, True):
+        for regime, frame in sorted(_forced_regime_frames(drives).items()):
+            assert frame.attrs.get("detected_market_regime") == regime
+            assert frame["_detected_market_regime"].iloc[0] == regime
+            want = regime if drives else "SIDEWAYS"
+            assert frame.attrs.get("scoring_regime") == want and frame["_scoring_regime"].iloc[0] == want

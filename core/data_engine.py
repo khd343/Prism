@@ -691,6 +691,44 @@ def _collapse_dual_listings(df: pd.DataFrame) -> pd.DataFrame:
     return df.loc[~drop_mask].copy()
 
 
+def weinstein_stage(close: pd.Series, sma_30w: pd.Series, sma_200d: pd.Series) -> np.ndarray:
+    """Weinstein's stage from the price against its 30-week average, and that average against the
+    200-day (the stacking stands in for the MA slope, which the data does not carry). ONE rule for the
+    stocks (compute_derived_signals) and the benchmark indices (benchmark_table), so a stock and the
+    market are always staged alike (2026-10-08)."""
+    ok = close.notna() & sma_30w.notna() & sma_200d.notna()
+    above = close > sma_30w
+    stack = sma_30w > sma_200d
+    return np.select(
+        [ok & above & stack,
+         ok & above & ~stack,
+         ok & ~above & stack,
+         ok & ~above & ~stack],
+        ["📈 Stage 2 Advancing", "🔄 Stage 1 Basing",
+         "⚠️ Stage 3 Top", "📉 Stage 4 Declining"],
+        default="❔ Unknown",
+    )
+
+
+def benchmark_table(datasets: Dict[str, pd.DataFrame]) -> pd.DataFrame:
+    """The declared benchmark indices, read from the Technicals tab before the merge sets them aside:
+    price, the averages, RSI and distance from the high, with each one's Weinstein stage. In
+    config.BENCHMARK_INDICES order; empty when the data carries none (an archived vintage, local
+    files from before 2026-10-08). Display only — nothing here reaches a score."""
+    keep = ["close_price", "sma_30w", "sma_50d", "sma_200d", "rsi_14d", "dist_52wh"]
+    tech = datasets.get("technical")
+    if tech is None or "company_id" not in tech.columns:
+        return pd.DataFrame(columns=["company_id", "name", *keep, "stage"])
+    rows = tech[tech["company_id"].astype(str).isin(BENCHMARK_INDICES)].drop_duplicates("company_id")
+    out = pd.DataFrame({"company_id": rows["company_id"].astype(str).to_numpy()})
+    out["name"] = out["company_id"].map(BENCHMARK_INDICES)
+    for c in keep:
+        out[c] = pd.to_numeric(rows[c], errors="coerce").to_numpy() if c in rows.columns else np.nan
+    out["stage"] = weinstein_stage(out["close_price"], out["sma_30w"], out["sma_200d"])
+    order = {k: i for i, k in enumerate(BENCHMARK_INDICES)}
+    return out.sort_values("company_id", key=lambda s: s.map(order)).reset_index(drop=True)
+
+
 def benchmark_rows(df: pd.DataFrame) -> pd.Series:
     """True for a row that is a benchmark INDEX, not a stock (2026-10-08): its id is one of
     config.BENCHMARK_INDICES, or — the safety net for an index added to the watchlists later — it has
@@ -2782,20 +2820,9 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     #   Stage 4 Declining (AVOID) : close <= 30W MA AND 30W <= 200D — below a falling MA, bearish
     # The MA SLOPE (Weinstein's literal stage differentiator) isn't in the CSV; the 30W-vs-200D
     # stacking is the faithful proxy for "rising vs falling MA". Display/context label, not a gate.
-    _w_close = df["close_price"]; _w_30 = df.get("sma_30w", pd.Series(np.nan, index=df.index))
-    _w_200 = df.get("sma_200d", pd.Series(np.nan, index=df.index))
-    _w_ok = _w_close.notna() & _w_30.notna() & _w_200.notna()
-    _w_above = _w_close > _w_30
-    _w_stack = _w_30 > _w_200
-    df["weinstein_stage"] = np.select(
-        [_w_ok & _w_above & _w_stack,
-         _w_ok & _w_above & ~_w_stack,
-         _w_ok & ~_w_above & _w_stack,
-         _w_ok & ~_w_above & ~_w_stack],
-        ["📈 Stage 2 Advancing", "🔄 Stage 1 Basing",
-         "⚠️ Stage 3 Top", "📉 Stage 4 Declining"],
-        default="❔ Unknown",
-    )
+    df["weinstein_stage"] = weinstein_stage(df["close_price"],
+                                            df.get("sma_30w", pd.Series(np.nan, index=df.index)),
+                                            df.get("sma_200d", pd.Series(np.nan, index=df.index)))
 
     # ── Per-stock trend modifiers (DISPLAY-ONLY) — Weinstein stage × book-faithful path chips ──
     # Enriches weinstein_stage (DIRECTION) + d45_trend_structure (STRENGTH 0-5) with the actionable
@@ -4398,12 +4425,26 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
 
 
 
+def load_market(data_source: str = "local", uploaded_files: dict = None,
+                sheet_id: str = None) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """ONE load, two results (2026-10-08): the clean stock universe (exactly fetch_and_clean_data's)
+    and the benchmark index table (benchmark_table), from the same download, so the app never fetches
+    the sheet twice to show the market beside the stocks."""
+    datasets = load_all_csvs(data_source=data_source, uploaded_files=uploaded_files, sheet_id=sheet_id)
+    return _clean_from(datasets), benchmark_table(datasets)
+
+
 def fetch_and_clean_data(data_source: str = "local", uploaded_files: dict = None, sheet_id: str = None) -> pd.DataFrame:
     """Tier-1 Cache: Load → Merge → Coerce → Derive → Return clean master DataFrame.
     This is the expensive operation (network/IO). Cache it aggressively.
     The scoring engine runs separately and is NOT cached — enabling instant re-scoring.
     """
-    datasets = load_all_csvs(data_source=data_source, uploaded_files=uploaded_files, sheet_id=sheet_id)
+    return _clean_from(load_all_csvs(data_source=data_source, uploaded_files=uploaded_files,
+                                     sheet_id=sheet_id))
+
+
+def _clean_from(datasets: Dict[str, pd.DataFrame]) -> pd.DataFrame:
+    """Merge → Coerce → Derive: the clean stock universe from the six loaded tabs."""
     master = merge_datasets(datasets)
     master = coerce_numeric_columns(master)
     master = compute_derived_signals(master)

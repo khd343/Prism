@@ -466,9 +466,10 @@ def test_trend_stays_on_the_playbook_because_the_recipe_allows_a_stage_3_or_4():
 def test_every_engine_trend_label_has_a_short_form():
     """The short labels must cover every label the engine writes; an unknown one passes unchanged."""
     src = open(os.path.join(ROOT, "core", "data_engine.py"), encoding="utf-8").read()
-    call = next(n for n in ast.walk(ast.parse(src)) if isinstance(n, ast.Assign)
-                and ast.unparse(n.targets[0]) == "df['weinstein_stage']")
-    labels = [e.value for e in call.value.args[1].elts]
+    # The rule lives in data_engine.weinstein_stage since 2026-10-08 (one rule for stocks and indices).
+    fn = next(n for n in ast.walk(ast.parse(src)) if isinstance(n, ast.FunctionDef) and n.name == "weinstein_stage")
+    call = next(n for n in ast.walk(fn) if isinstance(n, ast.Call) and ast.unparse(n.func) == "np.select")
+    labels = [e.value for e in call.args[1].elts]
     assert len(labels) == 4 and set(labels) == set(S.TREND_SHORT), labels
     df = _universe()
     df["weinstein_stage"] = "❔ Unknown"

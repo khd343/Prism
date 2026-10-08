@@ -20,7 +20,7 @@ from config import (
     MCAP_TIERS, GOVERNANCE_RISK_MULTIPLIERS,
     VALUATION_SIGNALS, PEG_ZONES, PAYBACK_ZONES, MEAN_REVERSION, BAID_SELL_TRIGGERS,
     MASTER_PROFILES, ANALYSIS_MODES, DEFAULT_ANALYSIS_MODE,
-    REGIME_ADJUSTMENTS, get_adaptive_weights,
+    REGIME_ADJUSTMENTS, REGIME_DRIVES_SCORING, get_adaptive_weights,
     EPOCH2_REINVESTMENT, EPOCH3_TAXONOMY, EPOCH4_SQGLP, EPOCH5_MODERN, EPOCH35_UNUSUAL_BILLIONAIRES,
     COST_OF_EQUITY,
 )
@@ -2017,8 +2017,13 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     # M: Market direction gate — stored in df.attrs by run_full_scoring() before this call.
     # detect_market_regime() is called before compute_qglp_score() in run_full_scoring().
     # Fallback to SIDEWAYS (pass) when called outside run_full_scoring() (e.g. unit tests).
-    _regime_fallback = df["_detected_market_regime"].iloc[0] if "_detected_market_regime" in df.columns and len(df) > 0 else "SIDEWAYS"
-    _regime_cs = df.attrs.get("detected_market_regime", _regime_fallback)  # "SIDEWAYS" when called outside run_full_scoring
+    # Reads the SCORING regime (2026-10-08: SIDEWAYS unless config.REGIME_DRIVES_SCORING), so the regime
+    # reaches M exactly when it reaches the weights; a frame without it (unit tests) falls back to the
+    # detected regime, then SIDEWAYS.
+    _regime_col = next((c for c in ("_scoring_regime", "_detected_market_regime") if c in df.columns), None)
+    _regime_fallback = df[_regime_col].iloc[0] if _regime_col and len(df) > 0 else "SIDEWAYS"
+    _regime_cs = df.attrs.get("scoring_regime",
+                              df.attrs.get("detected_market_regime", _regime_fallback))  # "SIDEWAYS" when called outside run_full_scoring
     market_ok_cs = (_regime_cs != "BEAR")   # scalar bool — broadcasts across all rows
     fw_can_slim = (
         (q_eps_cs         >= 25.0)  &   # C: quarterly EPS per share +25%+ YoY (O'Neil Ch.3: EPS not PAT)
@@ -3404,14 +3409,21 @@ def run_full_scoring(
     regime = detect_market_regime(df)
     df.attrs["detected_market_regime"] = regime          # primary: fast scalar lookup
     df["_detected_market_regime"] = regime               # defensive: survives merge/concat
+    # What SCORING uses (2026-10-08): the detected regime only when config.REGIME_DRIVES_SCORING says so;
+    # otherwise SIDEWAYS, every adjustment neutral. Both scoring readers — the adaptive weights below and
+    # CAN SLIM's M — read this, so a regime can never reach the scores by one path and not the other.
+    scoring_regime = regime if REGIME_DRIVES_SCORING else "SIDEWAYS"
+    df.attrs["scoring_regime"] = scoring_regime
+    df["_scoring_regime"] = scoring_regime
 
     # ── Step 1: Get regime-adaptive weights ──
-    adaptive = get_adaptive_weights(scoring_profile, regime)
+    adaptive = get_adaptive_weights(scoring_profile, scoring_regime)
 
     print("\n" + "="*60)
     print(f"🏗️  SCORING ENGINE")
     print(f"   Mode:    {analysis_mode}")
-    print(f"   Profile: {adaptive.get('profile_name')} | Regime: {adaptive.get('regime_label')}")
+    print(f"   Profile: {adaptive.get('profile_name')} | Regime: {adaptive.get('regime_label')}"
+          + ("" if REGIME_DRIVES_SCORING else f" (detected {regime}: shown, not applied)"))
     print(f"   Weights: Q={adaptive['quality_w']:.0%} G={adaptive['growth_w']:.0%} "
           f"L={adaptive['longevity_w']:.0%} P={adaptive['price_w']:.0%}")
     # "QGLP Gates" not "Gates": these regime-adjusted thresholds feed qglp_pass ONLY (via
