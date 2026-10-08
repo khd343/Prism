@@ -966,3 +966,40 @@ def test_the_legend_says_which_reasons_are_measured():
     assert all("not measured" in ln for ln in lines if ln not in measured)
     assert "8 to 11 points" in lines[0] and "+9.8 and +26.6" in lines[1]
 
+
+# ── The local record tool never overwrites a study (2026-10-08) ─────────────────────────────────────
+def test_only_the_short_horizon_scans_are_measured_on_the_snapshots():
+    """tools/scan_records.py measures 25-day snapshot windows. 🌱's evidence horizon is a year and its
+    record is a 3-year study, so it must never be measured there."""
+    flags = {s["key"]: S.measured_on_snapshots(s) for s in S.SCANS}
+    assert flags == {"playbook": True, "leaders": True, "compounder": False}, flags
+    recs = S.load_records()["scans"]
+    for s in S.SCANS:
+        if recs.get(s["key"], {}).get("study"):
+            assert not S.measured_on_snapshots(s), f"{s['key']} has a study, so snapshots must not touch it"
+
+
+def test_the_local_record_tool_leaves_a_study_record_untouched(monkeypatch):
+    """Runs the REAL local tool with the measurement faked to always return a window: without the guard
+    it would write that window into 🌱's record. Skips where the gitignored tool is absent."""
+    import importlib.util
+    path = os.path.join(ROOT, "tools", "scan_records.py")
+    if not os.path.exists(path):
+        pytest.skip("tools/scan_records.py is local-only")
+    spec = importlib.util.spec_from_file_location("_scan_records_tool", path)
+    tool = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(tool)
+    frame = pd.DataFrame({"company_id": ["NSE:A"], "close_price": [1.0]})
+    fake = {"start": "2026-01-01", "end": "2026-02-20", "days": 50, "median_excess_pp": 1.0,
+            "beat_pct": 50, "n": 40}
+    written = {}
+    monkeypatch.setattr(tool.V, "_load_snapshots", lambda: [("2026-01-01", frame), ("2026-02-20", frame)])
+    monkeypatch.setattr(tool.J, "measure_window", lambda *a, **k: dict(fake))
+    monkeypatch.setattr(tool.J, "engine_version", lambda: "test")
+    monkeypatch.setattr(tool.J, "write", lambda new, *a, **k: written.update(new))
+    before = S.load_records()["scans"]["compounder"]
+    tool.main()
+    assert written, "the faked windows must change the short scans, so the tool writes"
+    assert written["scans"]["compounder"] == before, "the tool overwrote 🌱's study record"
+    assert written["scans"]["playbook"]["windows"] == [fake], "the short scans are still measured"
+

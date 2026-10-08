@@ -254,6 +254,14 @@ def scan_start_month(scan: dict):
     return scan.get("start_month")
 
 
+def measured_on_snapshots(scan: dict) -> bool:
+    """True when the scan's design-period record is measured on the saved snapshots by the local
+    tools/scan_records.py, whose windows are MIN_HORIZON_DAYS long. A longer-horizon scan (🌱, a year)
+    carries a study instead: a 25-day window is no evidence for it, and writing one would overwrite the
+    study (2026-10-08)."""
+    return scan_horizon(scan) <= MIN_HORIZON_DAYS
+
+
 def _month_end(year: int, month: int) -> date:
     return date(year + month // 12, month % 12 + 1, 1) - timedelta(days=1)
 

@@ -1,8 +1,8 @@
 {
  "version": 2,
  "designed_on": "2026-10-06",
- "generated": "2026-10-06",
- "engine_version": "61c37dc",
+ "generated": "2026-10-08",
+ "engine_version": "999f9be",
  "latest_snapshot": "2026-10-03",
  "method": "design period (in-sample): saved snapshots, each window to the first snapshot >= 25 days later and to the latest; unseen: PRISM Archive month-end copies after designed_on, re-scored with the current engine; excess = a match's return minus the median of every stock measured; corporate actions excluded; >= 30 matches.",
  "scans": {
@@ -15,7 +15,16 @@
      "days": 66,
      "median_excess_pp": 7.1,
      "beat_pct": 70,
-     "n": 144
+     "n": 144,
+     "dropped_no_return": 0,
+     "dropped_corp_action": 10,
+     "net": {
+      "min_cr": 2.0,
+      "cost_pp": 1.0,
+      "n": 119,
+      "median_excess_pp": 6.1,
+      "beat_pct": 65
+     }
     },
     {
      "start": "2026-06-17",
@@ -23,7 +32,16 @@
      "days": 108,
      "median_excess_pp": 10.3,
      "beat_pct": 69,
-     "n": 141
+     "n": 141,
+     "dropped_no_return": 0,
+     "dropped_corp_action": 13,
+     "net": {
+      "min_cr": 2.0,
+      "cost_pp": 1.0,
+      "n": 116,
+      "median_excess_pp": 8.9,
+      "beat_pct": 67
+     }
     },
     {
      "start": "2026-08-22",
@@ -31,7 +49,16 @@
      "days": 28,
      "median_excess_pp": 3.3,
      "beat_pct": 63,
-     "n": 234
+     "n": 234,
+     "dropped_no_return": 0,
+     "dropped_corp_action": 12,
+     "net": {
+      "min_cr": 2.0,
+      "cost_pp": 1.0,
+      "n": 184,
+      "median_excess_pp": 1.9,
+      "beat_pct": 59
+     }
     },
     {
      "start": "2026-08-22",
@@ -39,7 +66,16 @@
      "days": 42,
      "median_excess_pp": 2.9,
      "beat_pct": 61,
-     "n": 232
+     "n": 232,
+     "dropped_no_return": 0,
+     "dropped_corp_action": 14,
+     "net": {
+      "min_cr": 2.0,
+      "cost_pp": 1.0,
+      "n": 183,
+      "median_excess_pp": 1.4,
+      "beat_pct": 57
+     }
     }
    ],
    "out_of_sample": [],
@@ -336,7 +372,16 @@
      "days": 66,
      "median_excess_pp": 3.9,
      "beat_pct": 62,
-     "n": 65
+     "n": 65,
+     "dropped_no_return": 0,
+     "dropped_corp_action": 8,
+     "net": {
+      "min_cr": 2.0,
+      "cost_pp": 1.0,
+      "n": 37,
+      "median_excess_pp": 1.3,
+      "beat_pct": 51
+     }
     },
     {
      "start": "2026-06-17",
@@ -344,7 +389,16 @@
      "days": 108,
      "median_excess_pp": 11.2,
      "beat_pct": 67,
-     "n": 61
+     "n": 61,
+     "dropped_no_return": 1,
+     "dropped_corp_action": 11,
+     "net": {
+      "min_cr": 2.0,
+      "cost_pp": 1.0,
+      "n": 35,
+      "median_excess_pp": 10.1,
+      "beat_pct": 57
+     }
     },
     {
      "start": "2026-08-22",
@@ -352,7 +406,16 @@
      "days": 28,
      "median_excess_pp": 2.4,
      "beat_pct": 58,
-     "n": 88
+     "n": 88,
+     "dropped_no_return": 0,
+     "dropped_corp_action": 0,
+     "net": {
+      "min_cr": 2.0,
+      "cost_pp": 1.0,
+      "n": 55,
+      "median_excess_pp": 2.4,
+      "beat_pct": 58
+     }
     },
     {
      "start": "2026-08-22",
@@ -360,7 +423,16 @@
      "days": 42,
      "median_excess_pp": 3.4,
      "beat_pct": 64,
-     "n": 84
+     "n": 84,
+     "dropped_no_return": 0,
+     "dropped_corp_action": 4,
+     "net": {
+      "min_cr": 2.0,
+      "cost_pp": 1.0,
+      "n": 52,
+      "median_excess_pp": 1.8,
+      "beat_pct": 56
+     }
     }
    ],
    "out_of_sample": [],
