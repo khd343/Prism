@@ -24,10 +24,13 @@ concurrency:
 
 jobs:
   keepalive:
-    runs-on: ubuntu-latest
+    # Pinned, not ubuntu-latest (2026-10-08): GitHub moves ubuntu-latest to Ubuntu 26 from 2026-10-19,
+    # and a job that writes the out-of-sample record must not change under us. 24.04 is supported
+    # to 2029. Actions on v7, the Node-24 releases (v4 / v5 ran on the retired Node 20).
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Commit only if the repository has been quiet for 40 days
         run: |

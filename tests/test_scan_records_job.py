@@ -249,6 +249,26 @@ def test_the_keepalive_commits_only_after_a_quiet_stretch_and_inside_60_days():
     assert "workflow_dispatch:" in _KA and "contents: write" in _KA
 
 
+# The first Node-24 major of each action, read from each release's action.yml on 2026-10-08
+# (checkout v4 and setup-python v5 still declared node20, which GitHub is retiring).
+_NODE24_FROM = {"actions/checkout": 5, "actions/setup-python": 6}
+
+
+@pytest.mark.parametrize("name,text", [("scan-records.yml", _WF), ("keepalive.yml", _KA)])
+def test_the_workflows_run_on_a_pinned_runner_and_current_actions(name, text):
+    """A job that writes the out-of-sample record must not change under us (2026-10-08): the runner is
+    pinned rather than ubuntu-latest (moved to Ubuntu 26 from 2026-10-19), and every action is on a
+    release that runs on Node 24."""
+    import re
+    runners = re.findall(r"runs-on:\s*(\S+)", text)
+    assert runners and all(re.fullmatch(r"ubuntu-\d\d\.\d\d", r) for r in runners), (name, runners)
+    uses = re.findall(r"uses:\s*([\w./-]+)@v(\d+)", text)
+    assert uses, f"{name}: no actions found — the pattern no longer reads this file"
+    for action, major in uses:
+        assert action in _NODE24_FROM, f"{name}: {action} is not checked for its Node runtime"
+        assert int(major) >= _NODE24_FROM[action], f"{name}: {action}@v{major} runs on Node 20"
+
+
 # ── 7. Each scan on its own clock (🌱, 2026-10-07) ───────────────────────────────────────────────────
 def test_the_compounder_is_only_ever_recorded_on_a_year_or_more():
     comp = next(s for s in S.SCANS if s["key"] == "compounder")
