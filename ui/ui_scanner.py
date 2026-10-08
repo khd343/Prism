@@ -22,6 +22,7 @@ _SCANNER_HEADER_TIPS = {
     "conviction_tier":  _GLOSSARY["Conviction Tier"],
     "data_coverage_pct": _GLOSSARY["Evidence Coverage"],
     "forensic_multiplier": _GLOSSARY["Forensic Mult"],
+    "schilit_pass":     _GLOSSARY["Schilit Pass"],
     "moat_growth_quad": "Where the stock sits on the moat-versus-growth map (e.g. Wealth Creator, Quality Trap, Growth Trap).",
     "fisher_lifecycle_quadrant": "Phil Fisher's growth-versus-quality lifecycle quadrant for the business (e.g. Catalyst Play, Laggard).",
     "cash_score":       "A 0-100 score for how strongly the business converts reported profit into real operating cash.",

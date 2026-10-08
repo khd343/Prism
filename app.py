@@ -946,10 +946,9 @@ with tabs[1]:
 # as header labels, and a width table must not count as a label.
 _DS_W = {
     "rank": 55, "name": 180,
-    # 🏆 Core
-    "verdict_direction": 90, "wealth_tier": 75, "sector": 125, "market_category": 85,
-    "composite_score": 105, "data_coverage_pct": 75, "conviction_tier": 50, "gate_pass": 60,
-    "moat_growth_quad": 125,
+    # 🏆 Core — Improvement and Momentum take their widths from Quality and Technical
+    "verdict_direction": 90, "wealth_tier": 75, "sector": 150, "market_category": 85,
+    "composite_score": 105, "gate_pass": 60,
     # 📊 Quality — its parts read as numbers beside the Quality bar
     "quality_score": 105, "moat_score": 60, "growth_score": 65, "improvement_score": 95,
     "cash_score": 55, "roce": 60, "roce_expansion": 95,
@@ -959,15 +958,16 @@ _DS_W = {
     "pe": 60, "pb_ratio": 55, "peg": 60, "dividend_yield": 80, "fcf_yield": 70, "buy_zone_label": 120,
     "market_cap": 90,   # in no view: shown while the MCap sort is active
     # 🔬 Forensic
-    "red_flag_count": 75, "red_flag_list": 190, "piotroski_fscore": 70, "forensic_multiplier": 90,
-    "cfo_to_pat": 75, "accruals_ratio": 80, "debt_to_equity": 55, "promoter_holdings": 80,
-    "pledged_percentage": 75,
-    # 📈 Technical
+    "red_flag_count": 75, "red_flag_list": 190, "piotroski_fscore": 70, "schilit_pass": 70,
+    "forensic_multiplier": 90, "cfo_to_pat": 75, "accruals_ratio": 80, "debt_to_equity": 55,
+    "data_coverage_pct": 75,
+    # 📈 Technical — Trend 140 and Smart Money 160 (👥 Ownership) still show their longest labels
+    # in full (135px, 156px; measured 2026-10-08) and bring both views inside the screen
     "dist_to_vstop": 60, "momentum_score": 105, "d49_momentum_quality": 110, "rsi_14d": 50,
-    "breakout_score": 105, "d48_breakout_readiness": 90, "dist_ath": 65, "crs_52w": 60, "weinstein_stage": 150,
+    "breakout_score": 105, "d48_breakout_readiness": 90, "dist_ath": 65, "crs_52w": 60, "weinstein_stage": 140,
     # 👥 Ownership
-    "governance_bonus": 90, "change_promoter_1y": 110, "fii_holdings": 55, "change_fii_lq": 80,
-    "dii_holdings": 55, "change_dii_lq": 80, "smart_money_flow": 165,
+    "governance_bonus": 90, "promoter_holdings": 80, "change_promoter_1y": 110, "pledged_percentage": 75,
+    "fii_holdings": 55, "change_fii_lq": 80, "dii_holdings": 55, "change_dii_lq": 80, "smart_money_flow": 160,
     # shown only while its sort is active
     "result_when": 95,
 }
@@ -985,18 +985,29 @@ with tabs[2]:
     # the screen: Smart Money and Governance (a composite leg built from ownership signals) to
     # 👥 Ownership, Price to Valuation only; MCap (size, not value) shows while sorted by and stays
     # in the export; Tsunami (3 of 2,717 stocks) keeps its own Market Pulse tab.
+    # ONE HOME PER COLUMN (2026-10-08): no column shows in two of the five detail views, and a column
+    # sits in the view whose name the Sectors and Industry tables use for it. Core is the overview: it
+    # repeats only Improvement and Momentum, the pair the Sectors and Industry Core views show, in
+    # their order. It lost Conviction (the Score cut into five bands — an exact function of it) and,
+    # by the user's choice, Moat·Growth (its 'Wealth Creator' / 'Wealth Destroyer' words sat beside
+    # the Wealth tier column and read as a second wealth verdict; the label stays a sidebar filter, on
+    # the Tear-Sheet and on the cards, and the Quality view's Moat and Growth scores track its two
+    # inputs — 5-year ROCE and profit growth — at AUC 0.88 / 0.89). Forensic gave Promoter and
+    # Pledged to 👥 Ownership and gained Schilit pass (a separate screen from the red-flag count: rank
+    # correlation −0.61 with it; passers beat failers in all four test windows) and Evidence, the data
+    # coverage behind every reading, from Core.
     # tests/test_deep_scanner_views.py
     _DS_VIEWS = {
         "🏆 Core":      ["rank","name","verdict_direction","wealth_tier","sector","market_category","composite_score",
-                         "data_coverage_pct","conviction_tier","gate_pass","moat_growth_quad"],
+                         "gate_pass","improvement_score","momentum_score"],
         "📊 Quality":   ["rank","name","quality_score","moat_score","growth_score","improvement_score","cash_score",
                          "roce","roce_expansion",
                          "roce_inflection","opm","opm_acceleration"],
         "💰 Valuation": ["rank","name","close_price","fair_value_qglp","valuation_score","expected_excess_return",
                          "pe","pb_ratio","peg","dividend_yield","fcf_yield","buy_zone_label"],
-        "🔬 Forensic":  ["rank","name","red_flag_count","red_flag_list","piotroski_fscore",
+        "🔬 Forensic":  ["rank","name","red_flag_count","red_flag_list","piotroski_fscore","schilit_pass",
                          "forensic_multiplier","cfo_to_pat","accruals_ratio","debt_to_equity",
-                         "promoter_holdings","pledged_percentage"],
+                         "data_coverage_pct"],
         # Technical view: each categorical VERDICT sits directly AFTER the number it interprets
         # (2026-08-30 surfacing — d49 reads momentum/RSI, d48 reads breakout_score's distance
         # inputs), so the table teaches itself: 82 and 🎯 IMMINENT land in the same glance.
@@ -1157,11 +1168,10 @@ with tabs[2]:
             _CC[_sc] = st.column_config.ProgressColumn(
                 _sl, help=_SCANNER_HEADER_TIPS.get(_sc), min_value=0, max_value=100, format="%.0f",
                 width=_DS_W.get(_sc))
-    for _bc, _lbl in {"gate_pass": "✅ Gate"}.items():
+    for _bc, _lbl in {"gate_pass": "✅ Gate", "schilit_pass": "Schilit"}.items():
         if _bc in _display_df.columns:
             _CC[_bc] = st.column_config.CheckboxColumn(_lbl, help=_SCANNER_HEADER_TIPS.get(_bc), width=_DS_W.get(_bc))
     _num_fmt = {
-        "conviction_tier": ("Tier",     "T%.0f"),
         "moat_score":      ("Moat",     "%.0f"),   # Quality's parts, as numbers beside its bar (2026-10-05)
         "growth_score":    ("Growth",   "%.0f"),
         "improvement_score": ("Improvement", "%.0f"),
@@ -1197,7 +1207,7 @@ with tabs[2]:
         "fair_value_qglp": ("Fair ₹",   "%.0f"),     # Valuation: QGLP fair PE × EPS (blank = loss-maker, undefined)
         "dist_to_vstop":   ("Stop Δ",   "%.1f%%"),   # Technical: % above(+)/below(−) the Volatility Stop
         "dist_ath":        ("Off ATH",  "%.1f%%"),   # Technical: % below the all-time high (0 = at it)
-        "data_coverage_pct":      ("Evidence",   "%.0f%%"),   # Core: score-confidence % (high score on thin data = trap)
+        "data_coverage_pct":      ("Evidence",   "%.0f%%"),   # Forensic: score-confidence % (high score on thin data = trap)
         "forensic_multiplier":    ("Forensic ×", "%.2f"),     # Forensic: the penalty cutting composite (1.00 clean → 0.50 high-risk)
     }
     for _nc, (_nl, _nf) in _num_fmt.items():
@@ -1208,7 +1218,7 @@ with tabs[2]:
     for _tc, _tl in {
         "sector": "Sector", "market_category": "Market Cap",
         "verdict_direction": "Soundness", "wealth_tier": "Wealth", "weinstein_stage": "Trend",
-        "moat_growth_quad": "Moat·Growth", "smart_money_flow": "Smart Money",
+        "smart_money_flow": "Smart Money",
         "buy_zone_label": "Buy Zone",
         "red_flag_list": "Which Flags",
         "result_when": "🆕 Results",
@@ -1286,8 +1296,8 @@ with tabs[2]:
                         if c in ds_df.columns]
         _safe_mode = analysis_mode.replace(" ", "_").lower()
         # Encode via the shared _to_csv_bytes (UTF-8-with-BOM) — the SAME Excel-safe path the sidebar
-        # full-dump uses — so the export's emoji decision-columns (moat_growth_quad ⭐💀, smart_money_flow
-        # ⚪✅❌, weinstein_stage, buy_zone_label) render in Excel instead of mojibaking on a BOM-less file.
+        # full-dump uses — so the export's emoji decision-columns (smart_money_flow ⚪✅❌, weinstein_stage,
+        # buy_zone_label, the 🎯 / 🔥 readiness labels) render in Excel instead of mojibaking on a BOM-less file.
         from ui.ui_export import _to_csv_bytes
         st.download_button(
             f"📥 Export {len(ds_df)} stocks · {len(_export_cols)} columns — {analysis_mode}",

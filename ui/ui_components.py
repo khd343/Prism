@@ -739,6 +739,7 @@ _RAW_GLOSSARY = {
     "Red Flags":     "How many accounting/governance warning signs fired, out of all the forensic checks. Fewer is better.",
     "Forensic Scr":  "An overall accounting-cleanliness score (0-100). Higher means fewer warning signs.",
     "Forensic Mult": "The penalty multiplier the forensic flags apply to the final score — 100% means no penalty, lower means the score was cut for risk.",
+    "Schilit Pass":  "Passes Howard Schilit's Financial Shenanigans screen (✓): at most 2 of its 4 accounting checks fired — earnings manipulation, cash-flow distortion, a leverage trap on the balance sheet, and inventory or receivables bloat. A separate screen from the red-flag count: a fail keeps Soundness below SOUND, turns its Forensics reading red and puts a ⚠ beside the Wealth tier.",
     "Accruals Ratio":"The gap between reported profit and real cash. A big positive gap warns profit isn't turning into cash; negative (like -0.10) is healthy/conservative. Profit and cash are taken from the same year: while the cash-flow statement is a year behind the latest profit figures, last year's profit is used.",
     "Econ Profit":   "Economic profit — profit left after charging for the cost of all the capital used. Positive means genuine value creation.",
     "EP Spread":     "Economic-profit spread — the return on capital minus the cost of capital (ROIC − WACC). Positive means it earns more than its capital costs.",

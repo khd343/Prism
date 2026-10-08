@@ -33,6 +33,9 @@ WHAT IS PINNED, each a way this breaks silently:
      carries an unknown; net breadth = % raised − % cut among companies WITH a reading; the note that
      shareholding is filed quarterly shows with the view and only with it; per stock, each stake sits
      beside its change, changes read in percentage points, and the tips are the glossary's own.
+  8. ONE HOME (2026-10-08): a group column sits in the view whose Deep Scanner twin shows the same
+     stock-level column — Piotroski 7+ had sat under 📊 Quality while the F-Score lives in the Deep
+     Scanner's 🔬 Forensic view.
 
 Run with: pytest tests/test_market_pulse_views.py -v
 """
@@ -580,3 +583,25 @@ def test_the_ownership_tips_are_the_glossarys_own():
     for col, key in [("change_promoter_1y", "Promoter 1Y Δ"), ("fii_holdings", "FII %"),
                      ("change_fii_lq", "FII Chg"), ("dii_holdings", "DII %"), ("change_dii_lq", "DII Chg")]:
         assert _SCANNER_HEADER_TIPS.get(col) == _RAW_GLOSSARY[key], f"{col} must read the glossary's {key!r}"
+
+
+# ── 8. One home (2026-10-08) ────────────────────────────────────────────────────────────────────
+_AVG_SOURCE = {"avg_quality": "quality_score", "avg_improvement": "improvement_score",
+               "avg_momentum": "momentum_score", "avg_valuation": "valuation_score"}
+
+
+def test_a_group_column_sits_in_the_view_that_shows_its_stock_column():
+    """Piotroski 7+ sat under 📊 Quality while the Deep Scanner shows the F-Score in 🔬 Forensic: the
+    same reading under two names of home. Core is the overview, so only the five detail views count,
+    and a measure with no stock-level twin on screen (EV/EBITDA, above the 200-DMA) has no rule."""
+    ds = {k: [e.value for e in v.elts] for k, v in _ds_dict("_DS_VIEWS").items() if k != CORE}
+    checked = 0
+    for view, cols in VIEW_MEASURES.items():
+        for c in cols:
+            src = _AVG_SOURCE[c] if c in _AVG_SOURCE else MEASURES[c]["source"]
+            homes = sorted(v for v, dcols in ds.items() if src in dcols)
+            if len(homes) == 1:
+                checked += 1
+                assert homes == [view], (
+                    f"{c} sits in {view}; the Deep Scanner shows {src} in {homes[0]}")
+    assert checked >= 15, f"only {checked} measures have a Deep Scanner twin — the test has lost its teeth"

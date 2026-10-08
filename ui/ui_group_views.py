@@ -96,11 +96,6 @@ MEASURES = {
         help="Share of the group's stocks whose return on capital is rising: the 3-year median ROCE "
              "is above the 10-year median. Counted among stocks with the history to measure it.",
         value=lambda f: _share(f["roce_expansion"] > 0, f["roce_expansion"].notna())),
-    "grp_piotroski_strong": dict(
-        source="piotroski_fscore", stat="share", header="Piotroski 7+", fmt="%.0f%%", bar=True,
-        help="Share of the group's stocks with a Piotroski F-Score of 7 or more out of 9 — healthy, "
-             "improving books.",
-        value=lambda f: _share(f["piotroski_fscore"] >= 7, f["piotroski_fscore"].notna())),
     "grp_opm": dict(
         source="opm", stat="median", header="Median OPM", fmt="%.1f%%", bar=False, width=105,
         help="Operating margin of the group's middle stock, latest full year.",
@@ -136,6 +131,11 @@ MEASURES = {
         help=f"Share of the group's stocks with at most {_FEW_FLAGS} red flags — the ones the forensic "
              f"penalty barely touches (×0.90, or none at all).",
         value=lambda f: _share(f["red_flag_count"] <= _FEW_FLAGS, f["red_flag_count"].notna())),
+    "grp_piotroski_strong": dict(
+        source="piotroski_fscore", stat="share", header="Piotroski 7+", fmt="%.0f%%", bar=True,
+        help="Share of the group's stocks with a Piotroski F-Score of 7 or more out of 9 — healthy, "
+             "improving books.",
+        value=lambda f: _share(f["piotroski_fscore"] >= 7, f["piotroski_fscore"].notna())),
     "grp_schilit_pass": dict(
         source="schilit_pass", stat="share", header="Schilit pass", fmt="%.0f%%", bar=True,
         help="Share passing the Schilit forensic screen: at most 2 of its 4 accounting-shenanigan "
@@ -230,9 +230,11 @@ MEASURES = {
 # Each view's columns after the tab's Count and ranking column. The avg_* entries are each table's
 # own averages; everything else comes from MEASURES. 🏆 Core is each tab's own column list.
 VIEW_MEASURES = {
-    "📊 Quality":   ("avg_quality", "avg_improvement", "grp_roce_rising", "grp_piotroski_strong", "grp_opm"),
+    "📊 Quality":   ("avg_quality", "avg_improvement", "grp_roce_rising", "grp_opm"),
     "💰 Valuation": ("avg_valuation", "grp_pe", "grp_ev_ebitda", "grp_fcf_yield", "grp_pe_vs_history"),
-    "🔬 Forensic":  ("grp_red_flags", "grp_few_flags", "grp_schilit_pass", "grp_high_accruals"),
+    # The same order as the Deep Scanner's 🔬 Forensic view: the flags, then Piotroski, then Schilit.
+    "🔬 Forensic":  ("grp_red_flags", "grp_few_flags", "grp_piotroski_strong", "grp_schilit_pass",
+                     "grp_high_accruals"),
     "📈 Technical": ("grp_above_200dma", "grp_stage2", "grp_near_high", "grp_from_52w_high"),
     OWNERSHIP:      ("grp_promoter", "grp_pledged", "grp_institutions", "grp_fii_net", "grp_dii_net"),
 }

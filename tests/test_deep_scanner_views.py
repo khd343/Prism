@@ -27,12 +27,21 @@ WHAT IS PINNED
 
   5. EVERY VIEW FITS a 1536px laptop screen with the sidebar open, pinned by ARITHMETIC: every column
      has a set width (app.py _DS_W) and, measured in the browser on all six views, the grid's content
-     width was exactly those widths plus 44px for the row selector. Getting there took cuts the user
+     width was exactly those widths plus the 44px row selector, inside a grid re-measured at 1,064px on
+     2026-10-08 (the first measurement read 1,074 and allowed 10px too many). Getting there took cuts the user
      approved after seeing the measurements: E.Yield (P/E inverted, -1.00) and MCap (size, not value;
      still shown when sorted by and still exported) left Valuation; VSTOP (identical to Stop Δ > 0 on
      100% of stocks), Tsunami (3 of 2,717 stocks, and it has its own tab), Price (in Valuation) and
      Smart Money (in Ownership) left Technical; Quality's parts read as numbers beside its bar, and
      Governance — a separate composite leg built from ownership signals — moved to Ownership.
+
+  6. ONE HOME PER COLUMN (2026-10-08). No column shows in two of the five detail views (Promoter and
+     Pledged sat in Forensic AND Ownership). Core is the overview and repeats only Improvement and
+     Momentum — the pair the Sectors and Industry Core views show, in their order. Conviction left
+     Core (the Score cut into five bands, an exact function of it) and so did Moat·Growth (the user's
+     choice: its 'Wealth Creator' words read as a second wealth verdict beside the Wealth column).
+     Forensic gained Schilit pass — a tick, with the glossary's tip, whose words are checked against
+     the engine — and Evidence from Core.
 
 Run with: pytest tests/test_deep_scanner_views.py -v
 """
@@ -155,7 +164,8 @@ def test_the_app_builds_its_columns_through_the_shared_rule():
 def test_repeats_and_approved_cuts_stay_out_of_their_views():
     out = {"🔬 Forensic": ["forensic_score"],
            "📊 Quality": ["piotroski_fscore", "cfo_to_pat", "governance_bonus"],
-           "🏆 Core": ["smart_money_flow"],
+           # Conviction is the Score cut into bands; Moat·Growth left on the user's choice (2026-10-08)
+           "🏆 Core": ["smart_money_flow", "conviction_tier", "moat_growth_quad"],
            "💰 Valuation": ["earnings_yield", "market_cap"],
            "📈 Technical": ["dist_52wh", "vstop_green", "tsunami_signal", "close_price", "smart_money_flow"]}
     for view, cols in out.items():
@@ -164,6 +174,8 @@ def test_repeats_and_approved_cuts_stay_out_of_their_views():
     # …and what moved still lives where it belongs
     assert {"piotroski_fscore", "cfo_to_pat"} <= set(VIEWS["🔬 Forensic"])
     assert {"governance_bonus", "smart_money_flow"} <= set(VIEWS["👥 Ownership"])
+    assert {"promoter_holdings", "pledged_percentage"} <= set(VIEWS["👥 Ownership"])
+    assert {"schilit_pass", "data_coverage_pct"} <= set(VIEWS["🔬 Forensic"])
     assert "close_price" in VIEWS["💰 Valuation"]
     assert "market_cap" in SORTS.values(), "MCap left the Valuation view; its sort must stay so it can still be shown"
 
@@ -189,10 +201,14 @@ def test_the_export_carries_every_sort_column():
 
 
 # ── 5. Every view fits a laptop screen ──────────────────────────────────────────────────────────
-# Measured 2026-10-05 in the browser at a 1536px window with the sidebar open (the user's screen):
-# the grid is 1,074px wide, and on all six views its content width was EXACTLY the sum of the set
-# widths plus 44px (the row-selection column and borders).
-_GRID_PX, _ROW_SELECTOR_PX = 1074, 44
+# Re-measured 2026-10-08 at a 1536px window, sidebar open at its default 300px (stored widths cleared
+# first), from the grid's OWN column state (glide-data-grid props): the grid is 1,064px wide and the
+# row-selection column is 44px. Streamlit gives every column grow:1, so a narrower view is stretched
+# to fill the grid, and a view scrolls sideways only when its set widths + 44 pass 1,064. Technical
+# needed 1,074 and Ownership 1,069 — 10px and 5px of sideways scroll that the 2026-10-05 budget
+# (a 1,074px grid, 10px wider than today's) allowed. (The grid's scroll-area readings vary between
+# renders; its column state does not, so measure that.)
+_GRID_PX, _ROW_SELECTOR_PX = 1064, 44
 W = {k: v.value for k, v in _dict("_DS_W").items()}
 
 
@@ -225,3 +241,75 @@ def test_the_view_switchers_are_segmented_controls(key):
     assert len(calls) == 1, f"expected one widget keyed {key!r}, found {len(calls)}"
     assert ast.unparse(calls[0].func) == "st.segmented_control", (
         f"{key}: a view switcher is a segmented control — pills read as tags or filters")
+
+
+# ── 6. One home per column (2026-10-08) ─────────────────────────────────────────────────────────
+CORE = "🏆 Core"
+DETAIL = [v for v in VIEWS if v != CORE]
+SPINE = {"rank", "name"}
+
+
+def test_no_column_has_two_homes_among_the_detail_views():
+    """Promoter and Pledged sat in 🔬 Forensic AND 👥 Ownership. One home each: a reader who looks
+    for a column finds it in one place, and a view's width goes to columns it alone shows."""
+    homes = {}
+    for v in DETAIL:
+        for c in VIEWS[v]:
+            if c not in SPINE:
+                homes.setdefault(c, []).append(v)
+    two = {c: vs for c, vs in sorted(homes.items()) if len(vs) > 1}
+    assert not two, f"columns shown in two detail views: {two}"
+
+
+def _group_core(name):
+    """The column list of a Market Pulse table's 🏆 Core view, read from app.py (`_sec_order`, `_ind_order`)."""
+    node = next(n.value for n in ast.walk(TREE) if isinstance(n, ast.Assign)
+                and any(isinstance(t, ast.Name) and t.id == name for t in n.targets))
+    return [c.value for c in ast.walk(node) if isinstance(c, ast.Constant) and isinstance(c.value, str)]
+
+
+@pytest.mark.parametrize("group_core", ["_sec_order", "_ind_order"])
+def test_core_repeats_only_the_pair_the_group_core_views_show(group_core):
+    """Core is the overview: of the detail views' columns it repeats Improvement and Momentum and
+    nothing else — side by side, in the order the Sectors and Industry Core views use for them."""
+    detail = {c for v in DETAIL for c in VIEWS[v]} - SPINE
+    shared = [c for c in VIEWS[CORE] if c in detail]
+    twin = {"avg_improvement": "improvement_score", "avg_momentum": "momentum_score"}
+    group_pair = [twin[c] for c in _group_core(group_core) if c in twin]
+    assert len(group_pair) == 2, f"{group_core} no longer shows the Improvement / Momentum pair"
+    assert shared == group_pair, f"Core repeats {shared}; the {group_core} pair reads {group_pair}"
+    i = VIEWS[CORE].index(shared[0])
+    assert VIEWS[CORE][i + 1] == shared[1], "Improvement and Momentum must sit side by side"
+
+
+def test_schilit_pass_reads_as_a_tick_with_the_glossarys_own_tip():
+    from ui.ui_components import _RAW_GLOSSARY
+    from ui.ui_scanner import _SCANNER_HEADER_TIPS
+    loop = next(n for n in ast.walk(_ds_block()) if isinstance(n, ast.For)
+                and ast.unparse(n.target) == "(_bc, _lbl)")
+    boxes = {k.value for k in loop.iter.func.value.keys}
+    assert {"gate_pass", "schilit_pass"} <= boxes, "a pass / fail reads as a tick, like the Gate"
+    assert _SCANNER_HEADER_TIPS.get("schilit_pass") == _RAW_GLOSSARY["Schilit Pass"], (
+        "the tip must be the glossary's own entry, read by key")
+
+
+def test_the_schilit_tip_states_the_engines_rule():
+    """'At most 2 of its 4' is what the engine does: rows that fire 0, 1, 2, 3 and 4 of the four
+    checkers pass, pass, pass, fail, fail. If the rule moves, the tip's words must move with it."""
+    import numpy as np
+    import pandas as pd
+    from core.forensic_engine import compute_schilit_forensic_score
+    from ui.ui_components import _RAW_GLOSSARY
+    k = np.arange(5)
+    f = pd.DataFrame({
+        "accruals_warning":    (k >= 1).astype(int),                                     # 1 · earnings (EMS)
+        "cash_machine_label":  np.where(k >= 2, "📄 Paper Profits", "✅ Cash Machine"),  # 2 · cash flow (CFS)
+        "high_cash_high_debt": (k >= 3).astype(int),                                     # 3 · leverage (KMS)
+        "days_receivable":     np.where(k >= 4, 120.0, 30.0),                            # 4 · bloat (KMS)
+    })
+    out = compute_schilit_forensic_score(f)
+    fired = out[["schilit_ems_flag", "schilit_cfs_flag", "schilit_kms_lev_flag",
+                 "schilit_kms_bloat_flag"]].sum(axis=1).tolist()
+    assert fired == [0, 1, 2, 3, 4], f"the fixture must fire exactly 0 to 4 checkers, fired {fired}"
+    assert out["schilit_pass"].tolist() == [1, 1, 1, 0, 0]
+    assert "at most 2 of its 4" in _RAW_GLOSSARY["Schilit Pass"]
