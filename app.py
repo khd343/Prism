@@ -94,6 +94,7 @@ from ui.ui_scans import (SCANS, CANDIDATES as SCAN_CANDIDATES, LIQUIDITY_STEPS a
                          liquidity_help as scan_liquidity_help, left_scan as scan_left,
                          left_summary as scan_left_summary, left_legend as scan_left_legend,
                          table_columns as scan_table_columns, card_html as scan_card_html,
+                         card_summary_html as scan_card_summary_html,
                          latest_label as scan_latest_label, load_records as load_scan_records,
                          members_label as scan_members_label,
                          record_state as scan_record_state, scan_table, table_config as scan_table_config)
@@ -792,19 +793,27 @@ with tabs[1]:
     _sc_new_label = scan_members_label(_sc_recs)   # the month-end copy 🆕 compares against
     _sc_counts = {s["key"]: int(s["mask"](df).sum()) for s in SCANS}
     st.markdown(
-        "<div class='sec-cap'>Stock lists PRISM has measured, each beside its record: 🚀 and 🌬️ against "
-        "the market median in saved windows of 1–3 months, 🌱 in a 3-year backtest. In-sample records were "
-        "studied while choosing the recipe; unseen windows are added automatically. A list narrows the "
-        "market; the decision stays yours.</div>", unsafe_allow_html=True)
+        "<div class='sec-cap'>Stock lists PRISM has measured, each with its record — in-sample means "
+        "studied while choosing the recipe. A list narrows the market; the decision stays yours.</div>",
+        unsafe_allow_html=True)
     for _sc_col, _sc in zip(st.columns(len(SCANS)), SCANS):
         with _sc_col:
             _sc_state, _sc_rec = scan_record_state(_sc_recs, _sc)
             _sc_on = _sc["key"] == _sc_sel["key"]
-            st.markdown(scan_card_html(_sc, _sc_counts[_sc["key"]], _sc_state, _sc_rec, _sc_on, _sc_latest),
+            st.markdown(scan_card_summary_html(_sc, _sc_counts[_sc["key"]], _sc_state, _sc_rec, _sc_on),
                         unsafe_allow_html=True)
             st.button("✓ Showing" if _sc_on else "Show list", key=f"scan_open_{_sc['key']}",
                       on_click=_pick_scan, args=(_sc["key"],),
                       type="primary" if _sc_on else "secondary", width="stretch")
+    # THE FULL RECORD, ONE CLICK AWAY (2026-10-08). Three full cards side by side were 406 / 408 / 596px
+    # tall and pushed the list ~240px below a laptop's first screen, so the cards above carry one honest
+    # headline each and the SELECTED scan's whole record — every window, after costs, what was left
+    # out, the caveats — sits here at full width, where each line fits on one line.
+    _sc_state_sel, _sc_rec_sel = scan_record_state(_sc_recs, _sc_sel)
+    with st.expander(f"📊 Full record — {_sc_sel['emoji']} {_sc_sel['name']}: every window or year, after "
+                     f"costs, what was left out and the caveats", expanded=False):
+        st.markdown(scan_card_html(_sc_sel, _sc_counts[_sc_sel["key"]], _sc_state_sel, _sc_rec_sel, True,
+                                   _sc_latest, with_head=False), unsafe_allow_html=True)
     # ONE FUNNEL, TOP DOWN (2026-10-06). The card's recipe ranks the WHOLE market, so every listed stock
     # is exactly the match its record measured. Then the traded-value floor and — only while the
     # sidebar actually narrows the market — the same 🎯 opt-in Market Pulse uses; then the shared lens
@@ -827,7 +836,6 @@ with tabs[1]:
             "Liquidity", SCAN_LIQUIDITY_STEPS, key="scan_liq",
             format_func=lambda v: "Any" if v is None else f"₹{v:g} Cr/day",
             help=scan_liquidity_help())
-    _sc_state_sel, _sc_rec_sel = scan_record_state(_sc_recs, _sc_sel)
     _sc_members = _sc_rec_sel.get("members_at_latest") if _sc_state_sel == "measured" else None
     # 📄 window = the days from the 🆕 baseline to the data's own date (the Movers rule): a result
     # declared inside it arrived after the baseline copy was taken.

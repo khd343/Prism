@@ -967,6 +967,89 @@ def test_the_legend_says_which_reasons_are_measured():
     assert "8 to 11 points" in lines[0] and "+9.8 and +26.6" in lines[1]
 
 
+# ── The summary card you choose from (2026-10-08) ────────────────────────────────────────────────────
+def _with_net(rec, nets):
+    for w, v in zip(rec["windows"], nets):
+        w["net"] = {"min_cr": 2.0, "cost_pp": 1.0, "n": 40}
+        if v is not None:
+            w["net"].update(median_excess_pp=v, beat_pct=55)
+    return rec
+
+
+def test_the_summary_names_in_sample_and_gives_both_sides_of_costs():
+    """Three full cards side by side were 406 / 408 / 596px tall; the summary carries one honest
+    headline: in-sample, how many windows it was ahead in, before AND after costs, and when the first
+    out-of-sample test is due."""
+    play = S.SCANS[0]
+    h = S.card_summary_html(play, 235, "measured", _with_net(_record(), [6.1, 8.9, 1.9, 1.4]), True)
+    for s in ("IN-SAMPLE", "4 of 4", "+2.9 to +10.7 pts before costs", "+1.4 to +8.9 after costs",
+              f"first test due about {S._first_unseen_due(play)}", "235"):
+        assert s in h, s
+    assert f"min-height:{S.SUMMARY_MIN_HEIGHT}px" in h, "every summary card is one height, so the buttons align"
+
+
+def test_the_summary_counts_a_losing_window_and_says_when_costs_are_partial():
+    rec = _with_net(_record((7.1, -1.0, 3.3, 2.9)), [6.1, None, 1.9, None])
+    h = S.card_summary_html(S.SCANS[0], 235, "measured", rec, False)
+    assert "3 of 4" in h and "-1.0 to +7.1 pts before costs" in h
+    assert "+1.9 to +6.1 after costs (2 of 4 windows)" in h, "partial net must say how many windows it covers"
+    h = S.card_summary_html(S.SCANS[0], 235, "measured", _record(), False)
+    assert "after costs" not in h, "no net record, no after-costs claim"
+
+
+def test_the_summary_of_a_study_says_how_many_did_not_double():
+    seed = next(s for s in S.SCANS if s["key"] == "compounder")
+    state, rec = S.record_state(S.load_records(), seed)
+    h = S.card_summary_html(seed, 255, state, rec, False)
+    st_ = rec["study"]
+    ahead, total, _ = S.year_claims(st_["years"])
+    for s in ("IN-SAMPLE", st_["title"].upper(), "BEFORE COSTS", f'{st_["match_cagr_pct"]:+.1f}%/yr',
+              f"Ahead in {ahead} of {total} years", f'{100 - st_["match_doubled_pct"]:.0f}% of matches did not double',
+              S._first_unseen_due(seed)):
+        assert s in h, s
+
+
+def test_the_summary_reports_unseen_windows_once_they_exist():
+    rec = _record()
+    rec["out_of_sample"] = [dict(start="2026-10-31", end="2026-12-04", days=34, n=120, median_excess_pp=-1.4,
+                                 beat_pct=47),
+                            dict(start="2026-10-31", end="2027-01-08", days=69, n=118, median_excess_pp=2.0,
+                                 beat_pct=56)]
+    h = S.card_summary_html(S.SCANS[0], 235, "measured", rec, False)
+    assert "ahead in 1 of 2 unseen windows (-1.4 to +2.0 pts)" in h and "pending" not in h
+
+
+def test_a_stale_or_unmeasured_summary_shows_no_numbers():
+    h = S.card_summary_html(S.SCANS[0], 235, "stale", _record(), False)
+    assert "changed since" in h and "+7.1" not in h and "+10.7" not in h
+    assert "Not yet measured" in S.card_summary_html(S.SCANS[0], 235, "unmeasured", None, False)
+
+
+def test_the_cards_are_summaries_and_the_full_record_sits_under_them():
+    """app.py: the card row uses the summary; ONE full-record panel renders card_html for the SELECTED
+    scan without repeating its head; it sits between the cards and the filters."""
+    tree = ast.parse(_APP)
+    block = next(n for n in tree.body if isinstance(n, ast.With)
+                 and ast.unparse(n.items[0].context_expr) == "tabs[1]")
+    calls = [n for n in ast.walk(block) if isinstance(n, ast.Call)]
+    summ = [n for n in calls if ast.unparse(n.func) == "scan_card_summary_html"]
+    full = [n for n in calls if ast.unparse(n.func) == "scan_card_html"]
+    assert len(summ) == 1 and ast.unparse(summ[0].args[0]) == "_sc", "the card row shows the summary"
+    assert len(full) == 1 and ast.unparse(full[0].args[0]) == "_sc_sel", "the full record is the selected scan's"
+    assert any(k.arg == "with_head" and ast.unparse(k.value) == "False" for k in full[0].keywords)
+    panel = next(n for n in calls if ast.unparse(n.func) == "st.expander" and "Full record" in ast.unparse(n))
+    liq = next(n for n in calls if ast.unparse(n.func) == "st.selectbox" and "scan_liq" in ast.unparse(n))
+    assert summ[0].lineno < panel.lineno < full[0].lineno < liq.lineno
+
+
+def test_the_full_record_without_its_head_is_the_same_record():
+    rec = _with_net(_record(), [6.1, 8.9, 1.9, 1.4])
+    with_head = S.card_html(S.SCANS[0], 235, "measured", rec, True, "03 Oct")
+    bare = S.card_html(S.SCANS[0], 235, "measured", rec, True, "03 Oct", with_head=False)
+    assert S.SCANS[0]["recipe"] not in bare and S.SCANS[0]["recipe"] in with_head
+    assert with_head.replace(S._card_head(S.SCANS[0], 235, S.COLORS, __import__("html").escape), "") == bare
+
+
 # ── The local record tool never overwrites a study (2026-10-08) ─────────────────────────────────────
 def test_only_the_short_horizon_scans_are_measured_on_the_snapshots():
     """tools/scan_records.py measures 25-day snapshot windows. 🌱's evidence horizon is a year and its

@@ -127,6 +127,21 @@ def test_every_card_renders_and_the_compounder_list_opens(tab):
     assert sorted(tab.dataframe[0].value["name"]) == sorted(expected["name"])
 
 
+def test_the_full_record_panel_follows_the_chosen_scan(tab):
+    """RUN: the one 'Full record' panel under the cards names the selected scan and holds its record —
+    the windows for 🚀, the study for 🌱 (2026-10-08)."""
+    from ui import ui_scans as S
+    panels = [e for e in tab.expander if e.label.startswith("📊 Full record")]
+    assert len(panels) == 1 and S.SCANS[0]["name"] in panels[0].label
+    assert "DESIGN-PERIOD RECORD" in "".join(m.value for m in panels[0].markdown)
+    tab.button(key="scan_open_compounder").click().run()
+    assert not tab.exception, [e.value for e in tab.exception]
+    panels = [e for e in tab.expander if e.label.startswith("📊 Full record")]
+    seed = next(s for s in S.SCANS if s["key"] == "compounder")
+    assert len(panels) == 1 and seed["name"] in panels[0].label
+    assert "BACKTEST · IN-SAMPLE" in "".join(m.value for m in panels[0].markdown)
+
+
 def test_the_cycle_column_shows_on_the_compounder_table_only(tab):
     """'Cycle ↓' (2026-10-07) reaches the screen through app.py's column_order: shown, beside 🔥, on 🌱;
     absent on 🚀 — read from the rendered table, not from the module."""

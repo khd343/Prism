@@ -803,7 +803,19 @@ def _study_body(scan: dict, rec: dict, c: dict, esc) -> str:
     return body
 
 
-def card_html(scan: dict, n_now: int, state: str, rec, selected: bool, latest: str) -> str:
+def _card_head(scan: dict, n_now: int, c: dict, esc) -> str:
+    """Name, today's count and the recipe in words — the same on the summary card and the full record."""
+    return (f'<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;">'
+            f'<span style="font-size:1.0rem;font-weight:800;color:{c["text_primary"]};">'
+            f'{scan["emoji"]} {esc(scan["name"])}</span>'
+            f'<span style="font-size:1.35rem;font-weight:900;color:{c["gold"]};">{n_now:,}'
+            f'<span style="font-size:0.7rem;font-weight:600;color:{c["text_muted"]};"> now</span></span></div>'
+            f'<div style="font-size:0.76rem;color:{c["text_secondary"]};margin:4px 0 10px 0;line-height:1.35;">'
+            f'{esc(scan["recipe"])}</div>')
+
+
+def card_html(scan: dict, n_now: int, state: str, rec, selected: bool, latest: str,
+              with_head: bool = True) -> str:
     """One scan card: name, today's count, the recipe in words, and two records — the IN-SAMPLE one
     (the design period: windows studied while the recipe was chosen, frozen) and the OUT-OF-SAMPLE one
     (windows that start after DESIGNED_ON, measured automatically from the PRISM Archive). Each shows
@@ -812,13 +824,7 @@ def card_html(scan: dict, n_now: int, state: str, rec, selected: bool, latest: s
     c = COLORS
     esc = html.escape
     border = c["gold"] if selected else c["border"]
-    head = (f'<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;">'
-            f'<span style="font-size:1.0rem;font-weight:800;color:{c["text_primary"]};">'
-            f'{scan["emoji"]} {esc(scan["name"])}</span>'
-            f'<span style="font-size:1.35rem;font-weight:900;color:{c["gold"]};">{n_now:,}'
-            f'<span style="font-size:0.7rem;font-weight:600;color:{c["text_muted"]};"> now</span></span></div>'
-            f'<div style="font-size:0.76rem;color:{c["text_secondary"]};margin:4px 0 10px 0;line-height:1.35;">'
-            f'{esc(scan["recipe"])}</div>')
+    head = _card_head(scan, n_now, c, esc) if with_head else ""
     if state == "measured" and rec and rec.get("study"):
         body = _study_body(scan, rec, c, esc)
     elif state == "measured" and rec and rec.get("windows"):
@@ -871,6 +877,68 @@ def card_html(scan: dict, n_now: int, state: str, rec, selected: bool, latest: s
         body = f'<div style="font-size:0.74rem;color:{c["text_muted"]};">Not yet measured.</div>'
     return (f'<div style="background:{c["bg_secondary"]};border:1px solid {border};border-radius:10px;'
             f'padding:12px 14px;">{head}{body}</div>')
+
+
+def _pts(vals) -> str:
+    """'+2.9 to +10.3' (or one value): points above the market's median stock."""
+    lo, hi = min(vals), max(vals)
+    return f"{lo:+.1f}" if lo == hi else f"{lo:+.1f} to {hi:+.1f}"
+
+
+# Every summary card is this tall, so the three "Show list" buttons line up (measured 2026-10-08: the
+# tallest summary at 345px wide).
+SUMMARY_MIN_HEIGHT = 210
+
+
+def card_summary_html(scan: dict, n_now: int, state: str, rec, selected: bool) -> str:
+    """The card the user CHOOSES from (2026-10-08): name, count, recipe, and one honest headline —
+    in-sample named, before and after costs, how many windows or years it was ahead in, and when the
+    first out-of-sample test is due. Every number here is computed from the same record card_html
+    shows in full under the cards, so the two cannot disagree. Three full cards side by side were
+    406 / 408 / 596px tall and pushed the list ~240px below a laptop's first screen."""
+    c = COLORS
+    esc = html.escape
+    border = c["gold"] if selected else c["border"]
+    label = f'font-size:0.66rem;font-weight:700;color:{c["text_muted"]};letter-spacing:.3px;'
+    main = f'font-size:0.74rem;color:{c["text_secondary"]};margin-top:3px;line-height:1.35;'
+    muted = f'font-size:0.66rem;color:{c["text_muted"]};margin-top:3px;line-height:1.35;'
+    unseen = (rec or {}).get("out_of_sample") or []
+    if unseen:
+        u_ahead = sum(float(w["median_excess_pp"]) > 0 for w in unseen)
+        oos = (f'Out-of-sample: ahead in {u_ahead} of {len(unseen)} unseen window'
+               f'{"s" if len(unseen) != 1 else ""} ({_pts([float(w["median_excess_pp"]) for w in unseen])} pts)')
+    else:
+        oos = f"Out-of-sample: pending · first test due about {_first_unseen_due(scan)}"
+    if state == "measured" and rec and rec.get("study"):
+        st_ = rec["study"]
+        years = st_.get("years") or []
+        ahead, total, _ = year_claims(years) if years else (0, 0, [])
+        body = (f'<div style="{label}">IN-SAMPLE · {esc(st_["title"].upper())} · BEFORE COSTS</div>'
+                f'<div style="{main}"><b>{st_["match_cagr_pct"]:+.1f}%/yr</b> vs '
+                f'{st_["rest_cagr_pct"]:+.1f}%/yr for the rest</div>'
+                f'<div style="{muted}">' + (f'Ahead in {ahead} of {total} years · ' if total else "")
+                + f'{100 - st_["match_doubled_pct"]:.0f}% of matches did not double</div>'
+                f'<div style="{muted}">{esc(oos)}</div>')
+    elif state == "measured" and rec and rec.get("windows"):
+        ws = rec["windows"]
+        gross = [float(w["median_excess_pp"]) for w in ws]
+        nets = [float(w["net"]["median_excess_pp"]) for w in ws
+                if (w.get("net") or {}).get("median_excess_pp") is not None]
+        after = ""
+        if nets:
+            after = f", {_pts(nets)} after costs" + ("" if len(nets) == len(ws) else
+                                                    f" ({len(nets)} of {len(ws)} windows)")
+        body = (f'<div style="{label}">IN-SAMPLE · DESIGN-PERIOD RECORD</div>'
+                f'<div style="{main}">Ahead of the market in <b>{sum(v > 0 for v in gross)} of {len(ws)}</b> '
+                f'windows: {_pts(gross)} pts before costs{after}</div>'
+                f'<div style="{muted}">{esc(oos)}</div>')
+    elif state == "stale":
+        body = (f'<div style="font-size:0.74rem;color:{c["gold"]};">The recipe changed since its record was '
+                f'measured — no record is shown until it is re-measured.</div>')
+    else:
+        body = f'<div style="font-size:0.74rem;color:{c["text_muted"]};">Not yet measured.</div>'
+    return (f'<div style="background:{c["bg_secondary"]};border:1px solid {border};border-radius:10px;'
+            f'padding:12px 14px;min-height:{SUMMARY_MIN_HEIGHT}px;">{_card_head(scan, n_now, c, esc)}{body}</div>')
 
 
 def members_label(records: dict) -> str:
