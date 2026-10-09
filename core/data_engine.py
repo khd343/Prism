@@ -1136,7 +1136,8 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     #   Tier 0: Stable / Buyback (≤0%)        → dilution_flag = 0 (Clean)
     #   Tier 1: ESOP-level    (0% to 3%)       → dilution_flag = 1 (Minor — Watch)
     #   Tier 2: Meaningful    (3% to 10%)      → dilution_flag = 2 (Caution — Penalty)
-    #   Tier 3: Predatory QIP (>10%)           → dilution_flag = 3 (Hard Reject)
+    #   Tier 3: Large issuance (>10%)          → dilution_flag = 3 (Hard Reject) — a placement, a rights
+    #           issue or a bonus below 1.5x: the data cannot tell which (2026-10-09, known-issues)
     # The Hard Gate in config.py is now updated to reject ONLY Tier 3 (>10%).
     _eq     = df.get("equity_shares",     pd.Series(np.nan, index=df.index))
     _eq_1yb = df.get("equity_shares_1yb", pd.Series(np.nan, index=df.index))
@@ -1250,7 +1251,7 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
             _prelisting_baseline,                   # prior count predates listing → unmeasurable
         ],
         [0, 0, 1, 2, 1, 1],
-        default=3                                   # 10-50% → Predatory QIP → Hard Reject
+        default=3                                   # 10-50% → large issuance → Hard Reject
     )
     # Mirrored for the UI so no surface re-derives the rule and drifts from it (Fisher precedent).
     df["dilution_prelisting_baseline"] = _prelisting_baseline.astype(int)
