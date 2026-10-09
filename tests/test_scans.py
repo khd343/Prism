@@ -231,6 +231,79 @@ def test_record_states(tmp_path):
     assert S.record_state(stale, scan)[0] == "stale"
 
 
+# ── The record reads the same on every Python, and never takes the app down (2026-10-09) ──────────────
+# Found on Streamlit Cloud. (1) Lambdas were fingerprinted by their BYTECODE, which differs between Python
+# versions: the 🌬️ record read 55f16d… on 3.13 (here and in the weekly job) and 8a4af4… on 3.14 (Cloud),
+# so the live card said "recipe changed" for a recipe that had not. (2) After a push, Cloud ran the OLD
+# module against the NEW file; inspect.getsource read the wrong lines and the Scans tab — and every tab
+# after it — crashed with "'Assign' object has no attribute 'body'".
+def test_a_lambda_is_fingerprinted_from_its_source_never_its_bytecode():
+    lam = lambda f: f["x"] > 0  # noqa: E731
+    assert S._logic(lam) == ast.dump(ast.parse('lambda f: f["x"] > 0', mode="eval").body), (
+        "the lambda's own source, which is the same on every Python version")
+
+
+def test_a_lambda_that_uses_its_functions_variables_is_read_too():
+    """A closure compiles differently from a top-level lambda; its twin is compiled where it can see the
+    same variables, so it is found, not refused (the Leading-Sector test's own lambda is one)."""
+    limit = 10
+    lam = lambda f: f > limit  # noqa: E731
+    assert S._logic(lam) == ast.dump(ast.parse("lambda f: f > limit", mode="eval").body)
+
+
+def test_two_lambdas_on_one_line_are_told_apart():
+    pair = (lambda f: f + 1, lambda f: f + 2)  # noqa: E731
+    assert S._logic(pair[0]) == ast.dump(ast.parse("lambda f: f + 1", mode="eval").body)
+    assert S._logic(pair[1]) == ast.dump(ast.parse("lambda f: f + 2", mode="eval").body)
+
+
+_PROBE = "def recipe(df):\n    return df['x'] > 0\n\nTABLE = {'v': lambda f: f['y'] > 1}\n"
+
+
+def _load_probe(tmp_path, monkeypatch, name):
+    import importlib
+    path = tmp_path / f"{name}.py"
+    path.write_text(_PROBE, encoding="utf-8")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    monkeypatch.delitem(sys.modules, name, raising=False)
+    mod = importlib.import_module(name)
+    monkeypatch.setitem(sys.modules, name, mod)
+    return mod, path
+
+
+@pytest.mark.parametrize("inserted", ["A = 1\nB = 2\nC = 3\n", "def other(df):\n    return df\n\n"],
+                         ids=["an assignment where the function was", "another function where it was"])
+def test_a_file_changed_under_the_running_code_is_refused_never_misread(tmp_path, monkeypatch, inserted):
+    """The Cloud crash, reproduced: the module is loaded, then its file gains lines above the function
+    (a deploy landing under a running app). The old code's line numbers now point at other lines."""
+    import linecache
+    name = "prism_probe_" + ("assign" if inserted.startswith("A") else "def")
+    mod, path = _load_probe(tmp_path, monkeypatch, name)
+    fn, lam = mod.recipe, mod.TABLE["v"]
+    assert S._logic(fn) and S._logic(lam), "readable while the file matches the running code"
+    path.write_text(inserted + _PROBE, encoding="utf-8")
+    linecache.checkcache(str(path))
+    for f in (fn, lam):
+        with pytest.raises(S.SourceMismatch):
+            S._logic(f)
+
+
+@pytest.mark.parametrize("error", [S.SourceMismatch("file changed"), OSError("no source"), SyntaxError("mid-write")],
+                         ids=lambda e: type(e).__name__)
+def test_a_record_that_cannot_be_checked_is_unverified_never_a_crash(monkeypatch, error):
+    scan = S.SCANS[0]
+    rec = {**_record(), "fingerprint": S.recipe_fingerprint(scan)}
+
+    def unreadable(_scan):
+        raise error
+
+    monkeypatch.setattr(S, "recipe_fingerprint", unreadable)
+    assert S.record_state({"scans": {scan["key"]: rec}}, scan) == ("unverified", rec)
+    for h in (S.card_summary_html(scan, 10, "unverified", rec, False),
+              S.card_html(scan, 10, "unverified", rec, False, "03 Oct")):
+        assert "could not be checked" in h and "+7.1" not in h, "no numbers from a record nobody could check"
+
+
 def test_a_bad_records_file_loads_as_no_records(tmp_path):
     p = tmp_path / "r.json"
     assert S.load_records(p) == {}

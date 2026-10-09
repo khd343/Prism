@@ -300,24 +300,83 @@ def _is_project(obj) -> bool:
     return (getattr(obj, "__module__", None) or "").split(".")[0] in _PROJECT_MODULES
 
 
+class SourceMismatch(RuntimeError):
+    """The file on disk no longer holds the code that is running — the app was updated while it ran
+    (Streamlit Cloud, 2026-10-09: the old module stayed in memory, the new file arrived, and reading
+    the logic by the old line numbers crashed the Scans tab and every tab after it). No fingerprint is
+    made from a mismatch; the record is shown as one that could not be checked."""
+
+
+def _same_code(a, b) -> bool:
+    """Two code objects that do the same thing: instructions, names and constants (nested code compared
+    the same way). Line numbers are not compared — they are what a twin compiled elsewhere differs in."""
+    if a.co_code != b.co_code or a.co_names != b.co_names or len(a.co_consts) != len(b.co_consts):
+        return False
+    return all(_same_code(x, y) if inspect.iscode(x) and inspect.iscode(y) else repr(x) == repr(y)
+               for x, y in zip(a.co_consts, b.co_consts))
+
+
+def _twin(node: ast.Lambda, code):
+    """The lambda's source compiled again, like for like: a lambda that uses its enclosing function's
+    variables (a closure) is compiled inside a function that binds them, as where it was written."""
+    if code.co_freevars:
+        outer = ast.FunctionDef(
+            name="_outer", args=ast.arguments(posonlyargs=[], args=[], kwonlyargs=[], kw_defaults=[], defaults=[]),
+            body=[ast.Assign(targets=[ast.Name(id=v, ctx=ast.Store())], value=ast.Constant(None))
+                  for v in code.co_freevars] + [ast.Return(value=node)],
+            decorator_list=[], type_params=[])
+        compiled = compile(ast.fix_missing_locations(ast.Module(body=[outer], type_ignores=[])),
+                           code.co_filename, "exec")
+    else:
+        compiled = compile(ast.Expression(body=node), code.co_filename, "eval")
+    todo = [compiled]
+    while todo:
+        for c in todo.pop().co_consts:
+            if inspect.iscode(c):
+                if c.co_name == "<lambda>":
+                    return c
+                todo.append(c)
+    return None
+
+
+def _lambda_node(fn) -> ast.Lambda:
+    """A lambda's own source node: found in its module by the line it starts on, and confirmed by
+    compiling it back to the code that is running — so two lambdas on one line are told apart and a
+    file that changed under the running code is refused, never misread."""
+    code = fn.__code__
+    try:
+        tree = ast.parse(inspect.getsource(inspect.getmodule(fn)))
+    except (OSError, TypeError, SyntaxError) as e:
+        raise SourceMismatch(f"no readable source for the lambda at line {code.co_firstlineno}") from e
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Lambda) and node.lineno == code.co_firstlineno:
+            twin = _twin(node, code)
+            if twin is not None and _same_code(twin, code):
+                return node
+    raise SourceMismatch(f"{code.co_filename}:{code.co_firstlineno} no longer holds this lambda")
+
+
 def _logic(fn) -> str:
-    """A named function's LOGIC: its parsed code without the docstring or its own name, so a reworded
+    """A function's LOGIC: its parsed SOURCE without the docstring or its own name, so a reworded
     comment or a rename keeps a record valid and a changed threshold does not. A lambda (one that sits
-    inside a settings table, e.g. a Sectors measure) has no source of its own, so its compiled code
-    stands in: instructions, constants and names, never line numbers."""
+    inside a settings table, e.g. a Sectors measure) is read from its module's source the same way.
+    Never the compiled bytecode: it differs between Python versions (3.13 here and in the weekly job,
+    3.14 on Streamlit Cloud), and a record must read the same everywhere — on bytecode the 🌬️ record
+    read 'recipe changed' on the live app from 2026-10-07 to 2026-10-09."""
     if fn.__name__ == "<lambda>":
-        return _code_logic(fn.__code__)
-    node = ast.parse(textwrap.dedent(inspect.getsource(fn))).body[0]
+        return ast.dump(_lambda_node(fn))
+    try:
+        node = ast.parse(textwrap.dedent(inspect.getsource(fn))).body[0]
+    except (OSError, TypeError, SyntaxError) as e:
+        raise SourceMismatch(f"no readable source for {fn.__module__}.{fn.__qualname__}") from e
+    if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) or node.name != fn.__name__:
+        raise SourceMismatch(f"{fn.__module__}.{fn.__qualname__}: line {fn.__code__.co_firstlineno} of its "
+                             f"file no longer holds it")
     if (node.body and isinstance(node.body[0], ast.Expr)
             and isinstance(node.body[0].value, ast.Constant) and isinstance(node.body[0].value.value, str)):
         node.body = node.body[1:]
     node.name = "_"
     return ast.dump(node)
-
-
-def _code_logic(code) -> str:
-    consts = [_code_logic(c) if inspect.iscode(c) else repr(c) for c in code.co_consts]
-    return f"{code.co_code.hex()}|{consts}|{code.co_names}"
 
 
 def _canon(obj, found: list) -> str:
@@ -415,14 +474,19 @@ def load_records(path: Path = RECORDS_PATH) -> dict:
 
 
 def record_state(records: dict, scan: dict):
-    """("measured", rec) · ("stale", rec) when the recipe changed since it was measured ·
-    ("unmeasured", None)."""
+    """("measured", rec) · ("stale", rec) when the recipe changed since it was measured · ("unverified",
+    rec) when the recipe's logic could not be read just now · ("unmeasured", None). A record nobody
+    could check shows no numbers, and it never takes the app down: on Streamlit Cloud a push can land
+    while the app runs (old code in memory, new files on disk), and on 2026-10-09 reading the logic
+    then crashed the Scans tab and every tab after it. A page reload clears it."""
     rec = (records.get("scans") or {}).get(scan["key"])
     if not rec:
         return "unmeasured", None
-    if rec.get("fingerprint") != recipe_fingerprint(scan):
-        return "stale", rec
-    return "measured", rec
+    try:
+        current = recipe_fingerprint(scan)
+    except Exception:          # SourceMismatch, or a file unreadable mid-deploy: never a crash
+        return "unverified", rec
+    return ("measured" if rec.get("fingerprint") == current else "stale"), rec
 
 
 # ── The list ───────────────────────────────────────────────────────────────────────────────────────
@@ -935,6 +999,9 @@ def card_html(scan: dict, n_now: int, state: str, rec, selected: bool, latest: s
                      f'{u_beat} of matches beat the market · before costs · the most trustworthy record</div></div>'
                      f'<div style="display:flex;gap:4px;align-items:flex-end;">{_bars(unseen, c, esc)}</div></div>'
                      f'{_extras(unseen, c, esc)}{_vs_index(scan, unseen, c, esc)}')
+    elif state == "unverified":
+        body = (f'<div style="font-size:0.74rem;color:{c["text_muted"]};">The record could not be checked against '
+                f'the recipe just now — the app may be updating. Reload the page in a minute.</div>')
     elif state == "stale":
         body = (f'<div style="font-size:0.74rem;color:{c["gold"]};">The recipe changed since its record was '
                 f'measured — no record is shown until it is re-measured.</div>')
@@ -1007,6 +1074,9 @@ def card_summary_html(scan: dict, n_now: int, state: str, rec, selected: bool) -
                 f'<div style="{main}">Ahead of the market in <b>{sum(v > 0 for v in gross)} of {len(ws)}</b> '
                 f'windows: {_pts(gross)} pts before costs{after}</div>'
                 f'<div style="{muted}">{esc(oos)}</div>')
+    elif state == "unverified":
+        body = (f'<div style="font-size:0.74rem;color:{c["text_muted"]};">The record could not be checked against '
+                f'the recipe just now — the app may be updating. Reload the page in a minute.</div>')
     elif state == "stale":
         body = (f'<div style="font-size:0.74rem;color:{c["gold"]};">The recipe changed since its record was '
                 f'measured — no record is shown until it is re-measured.</div>')

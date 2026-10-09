@@ -1,8 +1,8 @@
 {
  "version": 2,
  "designed_on": "2026-10-06",
- "generated": "2026-10-08",
- "engine_version": "e8c7a49",
+ "generated": "2026-10-09",
+ "engine_version": "6ddc76a",
  "latest_snapshot": "2026-10-03",
  "method": "design period (in-sample): saved snapshots, each window to the first snapshot >= 25 days later and to the latest; unseen: PRISM Archive month-end copies after designed_on, re-scored with the current engine; excess = a match's return minus the median of every stock measured; corporate actions excluded; >= 30 matches.",
  "scans": {
@@ -364,7 +364,7 @@
    ]
   },
   "leaders": {
-   "fingerprint": "55f16d9f46fede49",
+   "fingerprint": "a5fa9c66bfd431e0",
    "windows": [
     {
      "start": "2026-06-17",
