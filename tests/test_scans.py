@@ -1087,3 +1087,88 @@ def test_the_local_record_tool_leaves_a_study_record_untouched(monkeypatch):
     assert written["scans"]["compounder"] == before, "the tool overwrote 🌱's study record"
     assert written["scans"]["playbook"]["windows"] == [fake], "the short scans are still measured"
 
+
+# ── Against the index fund you could hold instead (2026-10-08, December plan rule 23) ──────────────
+def test_each_scan_is_judged_against_the_index_the_plan_declared_before_any_result():
+    """docs/december-2026-plan.md rule 23, written 2026-10-08 before any result: 🚀 Playbook against the
+    Nifty500 Momentum 50 (a momentum list across the market), 🌬️ Leading-Sector against the Nifty 500
+    (whole sectors, every size), 🌱 against the Smallcap250 Momentum Quality 100 (the main test).
+    Changing one after results arrive would be choosing the yardstick that flatters."""
+    from config import BENCHMARK_INDICES
+    assert {s["key"]: s["benchmark"] for s in S.SCANS} == {
+        "playbook": "NSE:NIF500MO50", "leaders": "NSE:CNX500", "compounder": "NSE:NS250MQ100"}
+    assert all(s["benchmark"] in BENCHMARK_INDICES for s in S.SCANS)
+    assert S.FUND_FEE_PCT_YR == 0.2, "declared before any result: the cheapest direct plans, Oct 2026"
+
+
+def _vs(portfolio, index, code="NSE:NIF500MO50", n=60, others=None):
+    """A recorded comparison. The indices sit in config order, as the job writes them — so the scan's
+    own index is NOT first for the Playbook, and a card reading 'the first index' would show."""
+    from config import BENCHMARK_INDICES
+    given = {code: index, **(others or {})}
+    v = dict(fee_pct_yr=S.FUND_FEE_PCT_YR, cost_pp=S.NET_COST_PP, min_cr=S.NET_MIN_CR, n=n,
+             indices={k: given[k] for k in BENCHMARK_INDICES if k in given})
+    if portfolio is not None:
+        v["portfolio_pp"] = portfolio
+    return v
+
+
+def _unseen(*vs, days=(28, 61)):
+    ends = ("2026-11-28", "2026-12-31")
+    return [dict(start="2026-10-31", end=ends[k], days=days[k], n=120, median_excess_pp=1.0, beat_pct=55,
+                 **({"vs_index": v} if v else {})) for k, v in enumerate(vs)]
+
+
+def test_the_full_record_sets_each_unseen_window_against_the_scans_own_index():
+    import html as _html
+    rec = _record()
+    rec["out_of_sample"] = _unseen(_vs(5.0, 2.0, others={"NSE:CNX500": 1.0}), _vs(1.0, 3.5))
+    h = _html.unescape(S.card_html(S.SCANS[0], 235, "measured", rec, selected=False, latest="03 Oct"))
+    assert "Against the Nifty500 Momentum 50 index fund" in h, "the scan's own index, by name"
+    assert "+3.0" in h and "-2.5" in h and "ahead in 1 of 2" in h, "portfolio minus index, per window"
+    assert ">+3.0</span>" in h and ">+4.0</span>" not in h, (
+        "the number on show is against the scan's OWN index; the others are only in the hover")
+    assert "after costs" in h and "the verdict needs 3+ years" in h, "a progress reading, never a verdict"
+    assert "Nifty 500 +4.0" in h, "every recorded index is one hover away"
+    assert h.index("NEVER SAW") < h.index("Against the Nifty500"), "it reads under the unseen record"
+
+
+def test_a_window_without_a_portfolio_shows_a_dash_and_is_not_counted():
+    import html as _html
+    rec = _record()
+    rec["out_of_sample"] = _unseen(_vs(None, 2.0, n=12), _vs(4.0, 1.0))
+    h = _html.unescape(S.card_html(S.SCANS[0], 235, "measured", rec, selected=False, latest="03 Oct"))
+    assert "ahead in 1 of 1" in h and "fewer than 30 liquid matches" in h
+
+
+def test_no_index_line_until_a_window_carries_the_comparison():
+    rec = _record()
+    rec["out_of_sample"] = _unseen(None)
+    for h in (S.card_html(S.SCANS[0], 235, "measured", rec, selected=False, latest="03 Oct"),
+              S.card_summary_html(S.SCANS[0], 235, "measured", rec, False)):
+        assert "Nifty500 Momentum 50" not in h and "index fund" not in h
+
+
+def test_the_summary_reports_the_index_comparison_once_it_exists():
+    """Once unseen windows carry it, the comparison IS the summary's out-of-sample line — after costs,
+    against the fund — in the space the before-costs line used, so the three cards stay one height
+    (measured 2026-10-09: 207 / 207 / 224px); the full record below keeps both readings."""
+    import html as _html
+    rec = _record()
+    rec["out_of_sample"] = _unseen(_vs(5.0, 2.0, others={"NSE:CNX500": 1.0}), _vs(1.0, 3.5))
+    h = _html.unescape(S.card_summary_html(S.SCANS[0], 235, "measured", rec, False))
+    assert ("Out-of-sample, after costs: ahead of the Nifty500 Momentum 50 index fund in 1 of 2 windows "
+            "(-2.5 to +3.0 pts)") in h
+    assert "unseen windows (" not in h, "the before-costs line is replaced, not repeated"
+
+
+def test_the_compounder_is_set_against_its_own_index_on_both_cards():
+    import html as _html
+    comp = _scan("compounder")
+    rec = _study_record()
+    rec["out_of_sample"] = [dict(start="2026-10-31", end="2027-10-31", days=365, n=300, median_excess_pp=4.2,
+                                 beat_pct=58, vs_index=_vs(9.0, 6.5, code="NSE:NS250MQ100"))]
+    full = _html.unescape(S.card_html(comp, 320, "measured", rec, selected=False, latest="03 Oct"))
+    summ = _html.unescape(S.card_summary_html(comp, 320, "measured", rec, False))
+    for h in (full, summ):
+        assert "Nifty Smallcap250 Momentum Quality 100 index fund" in h and "+2.5" in h

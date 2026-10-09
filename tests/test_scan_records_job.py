@@ -411,9 +411,8 @@ def _reference_window(early, late, flagged):
                 dropped_corp_action=sum(1 for cid in flagged if cid in corp), net=net)
 
 
-@pytest.mark.parametrize("seed", [1, 2, 3, 4, 5])
-def test_measure_window_agrees_with_an_independent_recalculation(seed):
-    """Random markets with every awkward case: matches that vanish (no end row), a zero or missing end
+def _random_market(seed):
+    """A random market with every awkward case: matches that vanish (no end row), a zero or missing end
     price, share counts that move (splits, issues) or wobble inside the tolerance, illiquid matches."""
     rng = np.random.default_rng(seed)
     n = 400
@@ -426,7 +425,175 @@ def test_measure_window_agrees_with_an_independent_recalculation(seed):
     late.loc[rng.random(n) < 0.06, "equity_shares"] *= rng.choice([2.0, 10.0, 1.3])      # corporate actions
     late.loc[rng.random(n) < 0.06, "equity_shares"] *= 1.01                              # wobble, inside tolerance
     late = late.drop(index=late.index[rng.random(n) < 0.05])                               # vanished at the end
-    scan = {"key": "toy", "mask": lambda d: d["flag"].astype(bool)}
+    return early, late
+
+
+_RANDOM_SCAN = {"key": "toy", "mask": lambda d: d["flag"].astype(bool)}
+
+
+@pytest.mark.parametrize("seed", [1, 2, 3, 4, 5])
+def test_measure_window_agrees_with_an_independent_recalculation(seed):
+    """Random markets with every awkward case (see _random_market)."""
+    early, late = _random_market(seed)
+    scan = _RANDOM_SCAN
     got = J.measure_window(early, late, scan, "2026-10-31", "2027-10-31")
     want = _reference_window(early, late, set(early.loc[early["flag"], "company_id"]))
     assert {k: got[k] for k in want} == want
+
+
+# ── 7. Against the index fund you could hold instead (2026-10-08, December plan rule 23) ──────────────
+# Written before any result: each scan's liquid matches as ONE equal-weight portfolio, each window
+# charged the NET_COST_PP round trip, against every declared index's plain price change less
+# S.FUND_FEE_PCT_YR pro-rated to the window. The index rows reach the job beside each archive copy
+# (core.load_market: one download), never as stocks.
+from config import BENCHMARK_INDICES  # noqa: E402
+
+
+def _bench(prices: dict) -> pd.DataFrame:
+    return pd.DataFrame({"company_id": list(prices), "close_price": list(prices.values())})
+
+
+def test_an_index_return_is_its_price_change_less_the_fund_fee_for_the_window():
+    early = _bench({"NSE:CNX500": 100.0, "NSE:NIF500MO50": 200.0})
+    late = _bench({"NSE:CNX500": 110.0, "NSE:NIF500MO50": 190.0})
+    assert J.index_returns(early, late, 365) == {
+        "NSE:CNX500": pytest.approx(10.0 - S.FUND_FEE_PCT_YR, abs=0.006),
+        "NSE:NIF500MO50": pytest.approx(-5.0 - S.FUND_FEE_PCT_YR, abs=0.006)}
+    assert J.index_returns(early, late, 28)["NSE:CNX500"] == pytest.approx(
+        10.0 - S.FUND_FEE_PCT_YR * 28 / 365, abs=0.006), "the fee is charged for the window's days, not a year"
+
+
+def test_an_index_missing_or_unpriced_at_either_end_is_left_out():
+    early = _bench({"NSE:CNX500": 100.0, "NSE:SMALLCA250": 0.0, "NSE:NFMICRO250": 50.0,
+                    "NSE:NOTANINDEX": 10.0})
+    late = _bench({"NSE:CNX500": 101.0, "NSE:SMALLCA250": 90.0, "NSE:NOTANINDEX": 12.0})
+    assert list(J.index_returns(early, late, 30)) == ["NSE:CNX500"], (
+        "no price at the start, no row at the end, or not a declared index: no reading")
+    assert J.index_returns(_bench({}), late, 30) == {} and J.index_returns(None, None, 30) == {}
+
+
+def test_the_indices_are_recorded_in_the_declared_order():
+    early = _bench({k: 100.0 for k in reversed(list(BENCHMARK_INDICES))})
+    late = _bench({k: 103.0 for k in BENCHMARK_INDICES})
+    assert list(J.index_returns(early, late, 30)) == list(BENCHMARK_INDICES)
+
+
+def _liquid_frames():
+    """30 liquid matches (S01..S29 and S99; S00 splits out), one of them up 300% and the rest up 20%:
+    an equal-weight portfolio earns the MEAN, which a median-based record would hide."""
+    early, late = _frames(80)
+    early["vol_sma_20d"] = 0.0
+    early.loc[early["flag"] == 1, "vol_sma_20d"] = 1_000_000.0          # x ₹100 = ₹10 Cr a day
+    late.loc[late["company_id"] == "S05", "close_price"] = 400.0
+    early = pd.concat([early, early.iloc[[1]].assign(company_id="S99")], ignore_index=True)
+    late = pd.concat([late, late.iloc[[1]].assign(company_id="S99")], ignore_index=True)
+    return early, late
+
+
+_MEAN = (29 * 20.0 + 300.0) / 30          # the liquid matches' equal-weight return, %
+
+
+def test_the_portfolio_is_the_equal_weight_mean_of_liquid_matches_after_the_round_trip():
+    early, late = _liquid_frames()
+    r = J.measure_window(early, late, _SCAN, "2026-10-31", "2026-11-28",
+                         _bench({"NSE:CNX500": 100.0}), _bench({"NSE:CNX500": 102.0}))
+    vs = r["vs_index"]
+    assert (vs["fee_pct_yr"], vs["cost_pp"], vs["min_cr"]) == (S.FUND_FEE_PCT_YR, S.NET_COST_PP, S.NET_MIN_CR)
+    assert vs["n"] == r["net"]["n"] == 30, "the same liquid matches as the net record"
+    assert vs["portfolio_pp"] == pytest.approx(_MEAN - S.NET_COST_PP, abs=0.006), (
+        "an equal-weight portfolio earns the mean (28.3 here) — the median would read 19.0")
+    assert vs["indices"] == {"NSE:CNX500": pytest.approx(2.0 - S.FUND_FEE_PCT_YR * 28 / 365, abs=0.006)}
+
+
+def test_an_illiquid_match_stays_out_of_the_portfolio():
+    early, late = _liquid_frames()
+    early = pd.concat([early, early.iloc[[2]].assign(company_id="S98", vol_sma_20d=1_000.0)], ignore_index=True)
+    late = pd.concat([late, late.iloc[[2]].assign(company_id="S98", close_price=1_000.0)], ignore_index=True)
+    vs = J.measure_window(early, late, _SCAN, "2026-10-31", "2026-11-28",
+                          _bench({"NSE:CNX500": 100.0}), _bench({"NSE:CNX500": 102.0}))["vs_index"]
+    assert vs["n"] == 30 and vs["portfolio_pp"] == pytest.approx(_MEAN - S.NET_COST_PP, abs=0.006), (
+        "a ₹0.01 Cr-a-day match up 900% cannot be held in size: it is not in the portfolio")
+
+
+def test_too_few_liquid_matches_carry_the_index_readings_but_no_portfolio():
+    early, late = _frames(80)
+    early = pd.concat([early, early.iloc[[1]].assign(company_id="S99")], ignore_index=True)
+    late = pd.concat([late, late.iloc[[1]].assign(company_id="S99")], ignore_index=True)
+    vs = J.measure_window(early, late, _SCAN, "2026-10-31", "2026-11-28",
+                          _bench({"NSE:CNX500": 100.0}), _bench({"NSE:CNX500": 99.0}))["vs_index"]
+    assert vs["n"] == 0 and "portfolio_pp" not in vs and list(vs["indices"]) == ["NSE:CNX500"]
+
+
+def test_without_index_readings_at_both_ends_there_is_no_comparison():
+    early, late = _liquid_frames()
+    for be, bl in ((None, None), (_bench({}), _bench({})), (_bench({"NSE:CNX500": 100.0}), _bench({}))):
+        r = J.measure_window(early, late, _SCAN, "2026-10-31", "2026-11-28", be, bl)
+        assert "vs_index" not in r, "a window with no index reading at both ends compares with nothing"
+    assert "vs_index" not in J.measure_window(early, late, _SCAN, "2026-10-31", "2026-11-28")
+
+
+@pytest.mark.parametrize("seed", [1, 2, 3])
+def test_the_index_comparison_agrees_with_an_independent_recalculation(seed):
+    """The awkward random market again, with every declared index at random levels: the portfolio is the
+    plain mean of the liquid matches' returns (same corporate-action rule as the headline) less the
+    round trip, and each index its price change less the fee for the window's days."""
+    from core.forward_returns import SHARE_TOL
+    early, late = _random_market(seed)
+    rng = np.random.default_rng(seed + 100)
+    codes = list(BENCHMARK_INDICES)
+    be = _bench(dict(zip(codes, rng.uniform(100, 30_000, len(codes)))))
+    bl = be.assign(close_price=be["close_price"] * rng.uniform(0.7, 1.4, len(codes)))
+    got = J.measure_window(early, late, _RANDOM_SCAN, "2026-10-31", "2027-02-14", be, bl)["vs_index"]
+    end = {r.company_id: r for r in late.itertuples()}
+    rets = []
+    for r in early.itertuples():
+        e = end.get(r.company_id)
+        if not r.flag or e is None or not (r.close_price > 0 and e.close_price > 0):
+            continue
+        if r.equity_shares > 0 and abs(e.equity_shares / r.equity_shares - 1.0) > SHARE_TOL:
+            continue
+        if r.vol_sma_20d * r.close_price / 1e7 >= S.NET_MIN_CR:
+            rets.append((e.close_price / r.close_price - 1.0) * 100)
+    assert got["n"] == len(rets) >= J.MIN_N, "the fixture must give a measurable portfolio"
+    assert got["portfolio_pp"] == pytest.approx(sum(rets) / len(rets) - S.NET_COST_PP, abs=0.0051)
+    fee = S.FUND_FEE_PCT_YR * 106 / 365
+    want = {c: (b / a - 1.0) * 100 - fee for c, a, b in zip(codes, be["close_price"], bl["close_price"])}
+    assert got["indices"] == {c: pytest.approx(v, abs=0.0051) for c, v in want.items()}
+
+
+def test_the_job_reads_the_indices_beside_each_copy_and_records_the_comparison(monkeypatch):
+    """main() end to end on fake archive copies: each copy is ONE load (stocks and index rows), only the
+    stocks are scored, and every unseen window carries the comparison read from ITS OWN two copies."""
+    import ui.ui_movers as M
+    dates = ["2026-09-30", "2026-10-31", "2026-11-28", "2026-12-04"]
+    early, late = _liquid_frames()
+    stocks = {"2026-09-30": early, "2026-10-31": early, "2026-11-28": late, "2026-12-04": late}
+    level = {"2026-09-30": 90.0, "2026-10-31": 100.0, "2026-11-28": 104.0, "2026-12-04": 108.0}
+    loads = []
+
+    def fake_load(source, files, sheet_id):
+        d = sheet_id.removeprefix("id-")
+        loads.append(d)
+        return stocks[d].copy(), _bench({"NSE:NIF500MO50": level[d]})
+
+    monkeypatch.setattr(J, "load_market", fake_load)
+    monkeypatch.setattr(J, "run_scoring_pipeline", lambda df: df)
+    monkeypatch.setattr(M, "load_index", lambda _id: pd.DataFrame(
+        {"vintage_date": dates, "spreadsheet_id": [f"id-{d}" for d in dates]}))
+    toy = {"key": "toy", "emoji": "T", "name": "Toy", "mask": lambda d: d["flag"] == 1,
+           "benchmark": "NSE:NIF500MO50"}
+    monkeypatch.setattr(S, "SCANS", (toy,))
+    monkeypatch.setattr(S, "recipe_fingerprint", lambda scan: "fp")
+    monkeypatch.setattr(S, "load_records", lambda: {"version": S.RECORD_VERSION,
+                                                    "scans": {"toy": {"fingerprint": "fp", "windows": []}}})
+    written = {}
+    monkeypatch.setattr(J, "write", lambda rec: written.update(rec))
+    monkeypatch.setenv("ARCHIVE_INDEX_SHEET_ID", "x" * 44)
+    assert J.main() == 0
+    assert len(loads) == len(set(loads)), f"a copy was downloaded twice: {loads}"
+    oos = written["scans"]["toy"]["out_of_sample"]
+    assert [(w["start"], w["end"]) for w in oos] == [("2026-10-31", "2026-11-28"), ("2026-10-31", "2026-12-04")]
+    for w, lvl in zip(oos, (104.0, 108.0)):
+        assert w["vs_index"]["indices"]["NSE:NIF500MO50"] == pytest.approx(
+            (lvl / 100.0 - 1.0) * 100 - S.FUND_FEE_PCT_YR * w["days"] / 365, abs=0.006)
+        assert w["vs_index"]["portfolio_pp"] == pytest.approx(_MEAN - S.NET_COST_PP, abs=0.006)

@@ -12,6 +12,10 @@ every scan with the SAME recipe function the tab runs (ui/ui_scans.py — one de
   🌱 Compounder Candidates) and to the latest copy. These are windows the
   recipes were never chosen on — the most trustworthy record a card shows.
 - 🆕 baseline: the scan's members on the latest frozen month-end copy, and its date.
+- Against the index fund you could hold instead (2026-10-08, December plan rule 23): each unseen window
+  also records the scan's liquid matches as one equal-weight portfolio after a round trip, and every
+  declared benchmark index's price change after a fund fee, read from the index rows each archive copy
+  carries (set aside from the stocks by core.load_market, from the same download).
 
 The DESIGN-PERIOD windows (in-sample, from the saved snapshots) are written only by the local tool
 tools/scan_records.py; this job never touches them. If a recipe changed since they were measured the
@@ -29,7 +33,8 @@ from datetime import date
 
 import pandas as pd
 
-from core import fetch_and_clean_data, run_scoring_pipeline
+from config import BENCHMARK_INDICES
+from core import load_market, run_scoring_pipeline
 from core.forward_returns import MIN_HORIZON_DAYS, forward_returns
 from ui import ui_scans as S
 
@@ -81,7 +86,27 @@ def baseline_date(dates):
     return f[-1] if f else None
 
 
-def measure_window(early: pd.DataFrame, late: pd.DataFrame, scan: dict, start: str, end: str):
+def _closes(bench) -> pd.Series:
+    """Each index's level in one copy's benchmark table, keyed by its id; empty without one."""
+    if bench is None or bench.empty or not {"company_id", "close_price"} <= set(bench.columns):
+        return pd.Series(dtype=float)
+    b = bench.drop_duplicates("company_id")
+    return pd.Series(pd.to_numeric(b["close_price"], errors="coerce").to_numpy(), index=b["company_id"].astype(str))
+
+
+def index_returns(bench_early, bench_late, days: int) -> dict:
+    """Each declared index's level change over a window, %, less the fund fee for the window's days
+    (S.FUND_FEE_PCT_YR a year), in config.BENCHMARK_INDICES order. An index missing at either end, or
+    without a positive level, has no reading. The PLAIN index, not a total-return one: the matches'
+    returns are price changes too, so neither side counts dividends."""
+    both = pd.DataFrame({"a": _closes(bench_early), "b": _closes(bench_late)}).dropna()
+    both = both[(both["a"] > 0) & (both["b"] > 0)]
+    r = (both["b"] / both["a"] - 1.0) * 100 - S.FUND_FEE_PCT_YR * days / 365
+    return {k: round(float(r[k]), 2) for k in BENCHMARK_INDICES if k in r.index}
+
+
+def measure_window(early: pd.DataFrame, late: pd.DataFrame, scan: dict, start: str, end: str,
+                   bench_early=None, bench_late=None):
     """The scan's record over one window. The recipe runs on the WHOLE early frame (as the tab runs it
     on the whole market); returns exclude corporate actions; excess = a match's return minus the
     median of every stock measured. None when fewer than MIN_N matches have a return.
@@ -90,7 +115,12 @@ def measure_window(early: pd.DataFrame, late: pd.DataFrame, scan: dict, start: s
     the end (delisted, suspended or missing: their fate is unknown, so they cannot be scored and the
     headline is the survivors' record) and dropped_corp_action = matches whose share count moved.
     And net = the same reading on matches trading at least S.NET_MIN_CR a day, each charged
-    S.NET_COST_PP; its median and beat rate only when it has MIN_N matches, else just its n."""
+    S.NET_COST_PP; its median and beat rate only when it has MIN_N matches, else just its n.
+
+    vs_index (2026-10-08, December plan rule 23), when the two copies' benchmark tables give at least
+    one index reading: those same liquid matches as ONE equal-weight portfolio — the mean return, which
+    is what a portfolio earns, less S.NET_COST_PP (portfolio_pp, only with MIN_N of them) — and every
+    index's return less the fund fee for the window (index_returns)."""
     fr = forward_returns(early, late, "company_id")
     corp = early["company_id"].isin(set(fr.loc[fr["corp_action"], "company_id"]))
     m = fr[~fr["corp_action"]][["company_id", "fwd_return"]]
@@ -107,13 +137,21 @@ def measure_window(early: pd.DataFrame, late: pd.DataFrame, scan: dict, start: s
         kept = excess[liquid] - S.NET_COST_PP
         net.update(median_excess_pp=round(float(kept.median()), 1),
                    beat_pct=int(round(float((kept > 0).mean() * 100))))
-    return dict(start=start, end=end, days=_days(start, end),
-                median_excess_pp=round(float(excess[match].median()), 1),
-                beat_pct=int(round(float((excess[match] > 0).mean() * 100))),
-                n=int(match.sum()),
-                dropped_no_return=int((in_scan & ret.isna() & ~corp).sum()),
-                dropped_corp_action=int((in_scan & corp).sum()),
-                net=net)
+    out = dict(start=start, end=end, days=_days(start, end),
+               median_excess_pp=round(float(excess[match].median()), 1),
+               beat_pct=int(round(float((excess[match] > 0).mean() * 100))),
+               n=int(match.sum()),
+               dropped_no_return=int((in_scan & ret.isna() & ~corp).sum()),
+               dropped_corp_action=int((in_scan & corp).sum()),
+               net=net)
+    indices = index_returns(bench_early, bench_late, _days(start, end))
+    if indices:
+        vs = dict(fee_pct_yr=S.FUND_FEE_PCT_YR, cost_pp=S.NET_COST_PP, min_cr=S.NET_MIN_CR, n=net["n"],
+                  indices=indices)
+        if vs["n"] >= MIN_N:
+            vs["portfolio_pp"] = round(float(ret[liquid].mean()) - S.NET_COST_PP, 2)
+        out["vs_index"] = vs
+    return out
 
 
 def members(frame: pd.DataFrame, scan: dict) -> list:
@@ -201,19 +239,26 @@ def main() -> int:
     base = baseline_date(dates)
     need = sorted({d for ws in windows.values() for w in ws for d in w} | ({base} if base else set()))
     print(f"archive copies {dates}\nunseen windows {windows}\n🆕 baseline {base}")
-    frames = {}
+    frames, benches = {}, {}
     for d in need:
-        frames[d] = run_scoring_pipeline(fetch_and_clean_data("sheet", None, ids[d]))
-        print(f"  scored {d}: {len(frames[d])} stocks")
+        # ONE download per copy: the stocks (benchmark rows set aside) and the index rows beside them.
+        stocks, benches[d] = load_market("sheet", None, ids[d])
+        frames[d] = run_scoring_pipeline(stocks)
+        print(f"  scored {d}: {len(frames[d])} stocks, {len(benches[d])} benchmark indices")
     updates = {}
     for scan in S.SCANS:
-        rows = [r for a, b in windows[scan["key"]] if (r := measure_window(frames[a], frames[b], scan, a, b))]
+        rows = [r for a, b in windows[scan["key"]]
+                if (r := measure_window(frames[a], frames[b], scan, a, b, benches[a], benches[b]))]
         updates[scan["key"]] = {"out_of_sample": rows}
         if base:
             updates[scan["key"]]["members_at_latest"] = members(frames[base], scan)
-        print(f"{scan['emoji']} {scan['name']}: {len(rows)} unseen window(s)"
-              + "".join(f"\n   {r['start']} -> {r['end']} {r['median_excess_pp']:+.1f}pp beat {r['beat_pct']}% n {r['n']}"
-                        for r in rows))
+        print(f"{scan['emoji']} {scan['name']}: {len(rows)} unseen window(s)")
+        for r in rows:
+            vs, code = r.get("vs_index") or {}, scan.get("benchmark")
+            idx = (vs.get("indices") or {}).get(code)
+            tail = (f" · vs {BENCHMARK_INDICES[code]} {vs['portfolio_pp'] - idx:+.1f}pp after costs"
+                    if idx is not None and "portfolio_pp" in vs else "")
+            print(f"   {r['start']} -> {r['end']} {r['median_excess_pp']:+.1f}pp beat {r['beat_pct']}% n {r['n']}{tail}")
     top = {"generated": date.today().isoformat(), "engine_version": engine_version()}
     if base:
         top["members_date"] = base

@@ -37,7 +37,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from config import COLORS
+from config import BENCHMARK_INDICES, COLORS
 from core.forward_returns import MIN_HORIZON_DAYS
 from core.scoring_engine import _compute_improvement_score, compute_momentum_score, strong_quarter
 from ui.ui_group_views import MEASURES, group_measures
@@ -48,6 +48,15 @@ RECORDS_PATH = Path(__file__).with_name("scan_records.json")
 # impact). The benchmark (the market median) is charged nothing, so the cost side errs conservative.
 NET_MIN_CR = 2.0
 NET_COST_PP = 1.0
+# Each scan against the index fund you could hold instead (2026-10-08, docs/december-2026-plan.md rule
+# 23, written before any result). The portfolio you would actually hold — the scan's NET_MIN_CR+ matches,
+# equal-weighted, charged the NET_COST_PP round trip each window — against the fund you would actually
+# own: the index's PLAIN level change (not total return; the matches' returns carry no dividends either)
+# less FUND_FEE_PCT_YR for the window's days. 0.2% a year is about what the cheapest direct plans charge
+# (Nifty 500 ~0.17%, Nifty500 Momentum 50 0.16-0.19%, Oct 2026); funds on the smaller factor indices
+# charge more (Smallcap250 Momentum Quality 100: 0.47-0.64%), so for those the test errs strict — it
+# never flatters a scan. Each scan's main index is its `benchmark`; every declared index is recorded.
+FUND_FEE_PCT_YR = 0.2
 RECORD_VERSION = 2
 # The day the recipes were chosen. Every window that STARTS on or after it is out of sample: data
 # nobody looked at while choosing. Windows before it are the design-period record (in sample).
@@ -206,12 +215,16 @@ SCANS = (
     # hundreds of columns, so following it would stale the record on every unrelated engine change.
     # Nor is the regime momentum boost in run_scoring_pipeline (one factor for every stock, so it
     # moves no percentile below the 100 clip).
+    # `benchmark`: the index fund each scan is judged against on its card — fixed 2026-10-08, before any
+    # result (December plan rule 23). Not part of the recipe, so not in the fingerprint.
     dict(key="playbook", emoji="🚀", name="Playbook Shortlist", mask=playbook_shortlist,
+         benchmark="NSE:NIF500MO50",                  # a momentum list across the whole market
          uses=(strong_quarter, _pct, _num), inputs=(compute_momentum_score, _compute_improvement_score),
          fixed=("_strong_q",), widths={"name": 190, "sector": 130},
          recipe="Momentum and Breakout in the top third of the market, a 🔥 Strong Quarter, Improvement "
                 "in the top half, and the price above its stop."),
     dict(key="leaders", emoji="🌬️", name="Leading-Sector Stocks", mask=leading_sector_stocks,
+         benchmark="NSE:CNX500",                      # whole sectors, every size
          uses=(leading_sectors, group_measures, strong_quarter),
          # It reads two of the Sectors measures, so it follows those two, not the whole table: a new
          # Sectors column must not stale this record (2026-10-07).
@@ -222,6 +235,7 @@ SCANS = (
     # 🌱 (2026-10-07): a LONG-horizon list. Its record is a 3-year backtest, not saved windows, so its
     # unseen windows are 12 months long (`horizon_days`) and start after its own design date.
     dict(key="compounder", emoji="🌱", name="Compounder Candidates", mask=compounder_candidates,
+         benchmark="NSE:NS250MQ100",                  # the plan's main test for 🌱
          uses=(revenue_led, _growth, _num), designed_on="2026-10-07", horizon_days=365,
          # One unseen window a YEAR, starting each October (2026-10-07): annual results are public by
          # then, as in the yearly backtest. A window from every month-end would put ~12 bars on the card
@@ -689,6 +703,57 @@ def _extras(ws, c, esc) -> str:
     return out
 
 
+def _index_readings(scan: dict, ws) -> list:
+    """For each unseen window that carries the comparison: (window, edge) — the portfolio's return after
+    costs minus the scan's own index after the fund fee, in points; edge None where the window had too
+    few liquid matches for a portfolio or no reading of that index."""
+    code = scan.get("benchmark")
+    out = []
+    for w in ws:
+        v = w.get("vs_index")
+        if not code or not v:
+            continue
+        p, i = v.get("portfolio_pp"), (v.get("indices") or {}).get(code)
+        out.append((w, None if p is None or i is None else float(p) - float(i)))
+    return out
+
+
+def _vs_index(scan: dict, ws, c: dict, esc) -> str:
+    """Under the unseen record (December plan rule 23): the scan's liquid matches as one equal-weight
+    portfolio against the index fund it is judged on, both after costs, per window — every recorded
+    index one hover away. A progress reading: the plan's verdict needs 3+ years. Empty until a window
+    carries the comparison (the indices are archived from 2026-10-08)."""
+    rows = _index_readings(scan, ws)
+    if not rows:
+        return ""
+    code = scan["benchmark"]
+    name = BENCHMARK_INDICES.get(code, code)
+    cells = []
+    for w, edge in rows:
+        v = w["vs_index"]
+        if edge is None:
+            why = "fewer than 30 liquid matches" if v.get("portfolio_pp") is None else f"no {name} reading"
+            cells.append(f'<span title="{esc(why)}">–</span>')
+            continue
+        p = float(v["portfolio_pp"])
+        every = " · ".join(f"{BENCHMARK_INDICES.get(k, k)} {p - float(x):+.1f}" for k, x in v["indices"].items())
+        tip = (f'{w["start"]} → {w["end"]}: portfolio {p:+.1f}% vs {name} {float(v["indices"][code]):+.1f}%, '
+               f'both after costs, {int(v["n"])} stocks. Against every index: {every}')
+        col = c["green"] if edge > 0 else c["red"]
+        cells.append(f'<span title="{esc(tip)}" style="color:{col};font-weight:700;">{edge:+.1f}</span>')
+    measured = [e for _, e in rows if e is not None]
+    tail = (f' · ahead in {sum(e > 0 for e in measured)} of {len(measured)}' if measured
+            else ' · too few liquid matches to measure')
+    v0 = rows[0][0]["vs_index"]
+    return (f'<div style="font-size:0.7rem;color:{c["text_secondary"]};margin-top:5px;">Against the '
+            f'{esc(name)} index fund — what you could hold instead — after costs: {" / ".join(cells)} pts'
+            f'{tail} · a progress reading, the verdict needs 3+ years</div>'
+            f'<div style="font-size:0.66rem;color:{c["text_muted"]};margin-top:2px;">Equal-weight portfolio of '
+            f'the ₹{float(v0["min_cr"]):g} Cr+/day matches, charged a {float(v0["cost_pp"]):.1f}pp round trip '
+            f'each window, against the plain index (no dividends, like the stocks) less a '
+            f'{float(v0["fee_pct_yr"]):.1f}%/yr fund fee. Hover a number for every index.</div>')
+
+
 def _year_bars(years: list, cleanest: str, c: dict, esc) -> str:
     """One bar per one-year window: the matches' median return above the market's median stock, in
     points. Green above, red below; scaled to the largest year, so the years compare by height. The
@@ -792,7 +857,7 @@ def _study_body(scan: dict, rec: dict, c: dict, esc) -> str:
                  f'<div style="font-size:0.74rem;color:{c["text_secondary"]};margin-top:3px;">'
                  f'{u_beat} of matches beat the market · before costs · the most trustworthy record</div></div>'
                  f'<div style="display:flex;gap:4px;align-items:flex-end;">{_bars(unseen, c, esc)}</div></div>'
-                 f'{_extras(unseen, c, esc)}')
+                 f'{_extras(unseen, c, esc)}{_vs_index(scan, unseen, c, esc)}')
     else:
         body += (f'<div style="border-top:1px solid {c["border"]};margin-top:8px;padding-top:7px;{muted}">'
                  f'<b style="color:{c["text_secondary"]};">Out-of-sample: pending</b> — this list is judged '
@@ -869,7 +934,7 @@ def card_html(scan: dict, n_now: int, state: str, rec, selected: bool, latest: s
                      f'<div style="font-size:0.74rem;color:{c["text_secondary"]};margin-top:3px;">'
                      f'{u_beat} of matches beat the market · before costs · the most trustworthy record</div></div>'
                      f'<div style="display:flex;gap:4px;align-items:flex-end;">{_bars(unseen, c, esc)}</div></div>'
-                     f'{_extras(unseen, c, esc)}')
+                     f'{_extras(unseen, c, esc)}{_vs_index(scan, unseen, c, esc)}')
     elif state == "stale":
         body = (f'<div style="font-size:0.74rem;color:{c["gold"]};">The recipe changed since its record was '
                 f'measured — no record is shown until it is re-measured.</div>')
@@ -885,9 +950,11 @@ def _pts(vals) -> str:
     return f"{lo:+.1f}" if lo == hi else f"{lo:+.1f} to {hi:+.1f}"
 
 
-# Every summary card is this tall, so the three "Show list" buttons line up (measured 2026-10-08: the
-# tallest summary at 345px wide).
-SUMMARY_MIN_HEIGHT = 210
+# Every summary card is this tall, so the three "Show list" buttons line up: the tallest summary any
+# record can produce, at 345px wide. Measured 2026-10-09 in the app at 1536px: today 192 / 192 / 210;
+# with the out-of-sample line against the index fund, Playbook and Leading-Sector 207 and 🌱 224 (its
+# long fund name takes a second line from Oct 2027). 224 keeps them aligned in every state.
+SUMMARY_MIN_HEIGHT = 224
 
 
 def card_summary_html(scan: dict, n_now: int, state: str, rec, selected: bool) -> str:
@@ -909,6 +976,14 @@ def card_summary_html(scan: dict, n_now: int, state: str, rec, selected: bool) -
                f'{"s" if len(unseen) != 1 else ""} ({_pts([float(w["median_excess_pp"]) for w in unseen])} pts)')
     else:
         oos = f"Out-of-sample: pending · first test due about {_first_unseen_due(scan)}"
+    # Once the unseen windows carry the index comparison (December plan rule 23), it IS the out-of-sample
+    # line: after costs, against the fund the user could hold instead — the strictest reading, in the
+    # same space, so the three cards stay one height (the full record below keeps both readings).
+    edges = [e for _, e in _index_readings(scan, unseen) if e is not None]
+    if edges:
+        oos = (f"Out-of-sample, after costs: ahead of the {BENCHMARK_INDICES.get(scan['benchmark'], scan['benchmark'])}"
+               f" index fund in {sum(e > 0 for e in edges)} of {len(edges)} window{'s' if len(edges) != 1 else ''}"
+               f" ({_pts(edges)} pts)")
     if state == "measured" and rec and rec.get("study"):
         st_ = rec["study"]
         years = st_.get("years") or []
