@@ -935,8 +935,10 @@ def _get_flag_context(stock: pd.Series, rf_col: str) -> str:
         _sh_gr = stock.get("shares_gr_yoy")
         _tier_d = int(_g(stock, "dilution_flag", 0))
         # Not "predatory" (2026-10-09): a bonus or rights issue below 1.5x lands in Tier 3 too, and the
-        # data cannot tell them from a placement (docs/known-issues.md, the dilution entry).
-        _tier_txt = ("Tier 3 (>10% in a year: a placement, rights issue or bonus — the data can't tell which)"
+        # data cannot tell them from a placement (docs/known-issues.md, the dilution entry). Nor from shares
+        # held by an employee trust: today's count includes them, last year's (EPS basis) does not.
+        _tier_txt = ("Tier 3 (>10% in a year: a placement, rights issue, bonus or shares held by an employee "
+                     "trust that only this year's count includes — the data can't tell which)"
                      if _tier_d >= 3 else "Tier 2 (3–10%)")
         if pd.notna(_sh_gr):
             return f"share count grew: {float(_sh_gr):.1f}%  ·  {_tier_txt}  ·  threshold: >3%"

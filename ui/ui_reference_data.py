@@ -392,7 +392,7 @@ CONCEPT_REFERENCE = {
         ("Pledge Direction (gate)", "Hard gate: promoter pledging is NOT rising quarter-on-quarter — a rising pledge is an early governance warning."),
         ("Promoter Alignment (gate)", "Hard gate: promoter holding ≥ 30% — the founders must keep meaningful skin in the game."),
         ("Cash Quality (gate)", "Hard gate: operating cash flow ≥ 70% of reported profit — earnings must be backed by real cash, not just accounting accruals."),
-        ("No Dilution (gate)", "Hard gate: the share count may not grow more than 10% in a year — small ESOP-level issues pass. A bigger jump fails whether it was a placement, a rights issue or a bonus: PRISM's data cannot tell them apart. A jump of 1.5x or more is treated as a bonus or split and passes."),
+        ("No Dilution (gate)", "Hard gate: the share count may not grow more than 10% in a year — small ESOP-level issues pass. A bigger jump fails whether it was a placement, a rights issue, a bonus or shares held by an employee trust that only this year's count includes: PRISM's data cannot tell them apart. A jump of 1.5x or more is treated as a bonus or split and passes."),
         ("Positive OCF (gate)", "Hard gate: operating cash flow must be positive — the business has to actually generate cash from its operations."),
         ("Positive PAT (gate)", "Hard gate: annual profit after tax above zero — loss-making companies do not pass the screen."),
         ("Revenue Floor (gate)", "Hard gate: revenue growth of at least −20% year-on-year — excludes businesses in revenue freefall."),

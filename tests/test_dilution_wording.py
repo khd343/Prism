@@ -6,12 +6,19 @@ rights issue from a placement. Restated EPS and "clean" ratios both failed again
 CONCOR's 25% jump is a real 1:4 bonus, Swiss Military's and MITCON's are rights issues, two more have no
 corporate action on record. So the penalty stays — a jump of more than 10% below 1.5x is Tier 3 — but the
 WORDS called every such jump "predatory" and "a QIP", which is a claim the data cannot make. These pins
-keep the wording to what is known: the size of the jump, and the three things it could be.
+keep the wording to what is known: the size of the jump, and the four things it could be.
+
+The fourth, found the same day: the two counts are on different bases. Today's (market cap ÷ price) is
+every share issued; last year's is the EPS basis, which leaves out shares held by an employee trust. So
+Tech Mahindra and M&M read as >10% dilution with no new shares issued. The live test at the bottom fails
+the day the vendor's counts stop showing it, so the words cannot outlive the reason.
 
 Run with: pytest tests/test_dilution_wording.py -v
 """
 import ast
+import contextlib
 import glob
+import io
 import os
 import re
 import sys
@@ -22,7 +29,7 @@ import pytest
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 sys.path.insert(0, ROOT)
 
-_POSSIBILITIES = ("placement", "rights issue", "bonus")
+_POSSIBILITIES = ("placement", "rights issue", "bonus", "employee trust")
 _CLAIMS = re.compile(r"\bpredatory\b|\bQIP\b", re.I)
 
 
@@ -56,6 +63,7 @@ def test_the_glossary_says_a_bonus_below_1_5x_still_counts():
     from ui.ui_components import _RAW_GLOSSARY
     text = _RAW_GLOSSARY["Dilution Flag"].lower()
     assert "below 1.5x" in text and "bonus" in text and "rights issue" in text and "can't tell" in text
+    assert "employee trust" in text
 
 
 def _screen_strings(path):
@@ -67,8 +75,34 @@ def _screen_strings(path):
             and id(n) not in docs]
 
 
+def test_the_employee_trust_case_is_still_in_the_data():
+    """Tech Mahindra: today's count is every issued share, last year's is the EPS basis (no trust shares).
+
+    Measured 2026-10-09: today/last year 1.108 (Tier 3), last year's count = the FY25 EPS-implied count
+    (pat × 1e7 ÷ eps) to 0.1%, and the EPS-implied count grew 0.7% FY25 -> FY26 — no ~10% issue happened
+    (public record: 97,96,60,627 issued after a 45,105-share ESOP allotment in Nov 2025). If this fails,
+    the vendor's two counts now agree: take 'employee trust' out of the Tier 3 wording and this file.
+    """
+    from core import fetch_and_clean_data
+    with contextlib.redirect_stdout(io.StringIO()):
+        raw = fetch_and_clean_data("local").set_index("company_id")
+    if "NSE:TECHM" not in raw.index:
+        pytest.skip("Tech Mahindra is not in the local data")
+    r = raw.loc["NSE:TECHM"]
+    issued_vs_last_year = r["equity_shares"] / r["equity_shares_1yb"]
+    eps_count_now = r["pat"] * 1e7 / r["eps"]
+    eps_count_last_year = r["pat_1yb"] * 1e7 / r["eps_1yb"]
+    assert r["dilution_flag"] == 3 and issued_vs_last_year > 1.08, (
+        "Tech Mahindra no longer reads as a >10% jump — the counts may share one basis now; "
+        "revisit the employee-trust wording")
+    assert abs(r["equity_shares_1yb"] / eps_count_last_year - 1) < 0.01, "last year's count is not the EPS basis"
+    assert abs(eps_count_now / eps_count_last_year - 1) < 0.02, "the EPS-basis count moved — a real issue?"
+
+
+# config.py too: its HARD_GATES descriptions are printed on the Config tab (app.py, the gate list) —
+# 'Hard reject only predatory QIP >10%' survived the first sweep there, found in the browser 2026-10-09.
 @pytest.mark.parametrize("path", sorted(glob.glob(os.path.join(ROOT, "ui", "*.py")))
-                         + [os.path.join(ROOT, "app.py")], ids=os.path.basename)
+                         + [os.path.join(ROOT, "app.py"), os.path.join(ROOT, "config.py")], ids=os.path.basename)
 def test_no_screen_text_calls_a_share_jump_predatory_or_a_qip(path):
     bad = [s for s in _screen_strings(path) if _CLAIMS.search(s)]
     assert not bad, f"{os.path.basename(path)}: {bad}"

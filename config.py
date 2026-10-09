@@ -202,11 +202,11 @@ HARD_GATES = {
     # The signal lives in TREND_SIGNALS["above_sma200"] and `d45_trend_structure`.
 
     "no_dilution": {
-        "column": "dilution_flag",   # 0=Clean, 1=ESOP-level, 2=Meaningful, 3=Predatory QIP
+        "column": "dilution_flag",   # 0=Clean, 1=ESOP-level, 2=Meaningful, 3=Large (>10%)
         "operator": "<",
         "threshold": 3,
         "source": "Fisher Point 13 — Materiality-adjusted",
-        "description": "Dilution <10% tolerated (ESOPs pass). Hard reject only predatory QIP >10%.",
+        "description": "Dilution <10% a year tolerated (ESOPs pass). 10–50% fails, whatever the cause. 1.5x+ passes as a bonus or split.",
     },
     "positive_ocf": {
         "column": "operating_cash_flow",
