@@ -134,6 +134,54 @@ def test_music_licensing_is_tiered_like_its_media_peers():
         assert INDUSTRY_TIER[peer] == "B", f"{peer} moved off B; re-judge Music Licensing with it"
 
 
+# ── the vendor's October 2026 names (2026-10-10) ─────────────────────────────────────────────────
+# Early October the vendor regrouped and renamed its industries. core/taxonomy.py translates the plain
+# relabels back; the 25 it keeps as written (regroupings, new categories) fell to their SECTOR's tier —
+# 7.9% of the live stocks, found by the daily data check on its first run. The map now carries them,
+# each tier read from its FAMILY in the map (classify() gained five name patterns for the new spellings:
+# "it services", "railway", "learning", "food ingredient", "biotechnology"; re-tiering zero of the 384
+# existing names). Measured on the live sheet: 7 stocks' tier moved, composite / rank / fair P/E / gate /
+# verdict / wealth on 0 of 2,712 — no name is tier A, the only tier that caps the fair P/E.
+_VENDOR_OCTOBER_2026 = {
+    "Airport Restaurants and Lounges": "B", "Auto Parts Distribution": "B", "Biotechnology": "C",
+    "Cryogenic Equipment": "B", "Cutting Tools and Machine Tools": "B", "Engineering and Infrastructure": "B",
+    "FMCG and Soap Ingredients": "C", "General Electric Equipment": "B", "IT Services": "D",
+    "Insurance Distribution": "E", "Machine Tools": "B", "Medical Equipment and Diagnostic Technology": "C",
+    "Natural Extracts and Food Ingredients": "C", "Pharma Distribution": "C", "Pharma Formulations": "C",
+    "Pharma Gelatin Capsules": "C", "Pharma IV Fluids": "C", "Pharma Integrated": "C",
+    "Publishing and Learning Services": "D", "Railway Equipment": "D", "Restaurants": "B",
+    "Secure Printing and Payment Cards": "B", "Solar Power and EPC": "D", "Technology Distribution": "B",
+    "Telecommunications Equipment and Network EPC": "B",
+}
+
+
+def test_the_vendors_october_names_are_tiered_by_their_family():
+    wrong = {k: (INDUSTRY_TIER.get(k), want) for k, want in _VENDOR_OCTOBER_2026.items()
+             if INDUSTRY_TIER.get(k) != want}
+    assert not wrong, f"missing or re-tiered (got, expected): {wrong}"
+    # each beside the family it was judged against: break the family, re-judge the name
+    for new, peer in [("IT Services", "IT - Software"), ("Railway Equipment", "Railways"),
+                      ("Natural Extracts and Food Ingredients", "Food - Processing - Others"),
+                      ("Publishing and Learning Services", "Computer Education"),
+                      ("Telecommunications Equipment and Network EPC", "Telecommunications - Equipment"),
+                      ("Machine Tools", "Machine Tools - Others"), ("Solar Power and EPC", "Solar EPC"),
+                      ("Restaurants", "Quick Service Restaurant - QSR"), ("Pharma Distribution", "Pharmacy Distribution")]:
+        assert INDUSTRY_TIER[new] == INDUSTRY_TIER[peer], f"{new} no longer matches its family ({peer})"
+    assert not {k for k in _VENDOR_OCTOBER_2026 if INDUSTRY_TIER[k] == "A"}, (
+        "a vendor relabel must not newly cap a fair P/E")
+    assert SECTOR_TIER_FALLBACK.get("Insurance") == "E" and SECTOR_TIER_FALLBACK.get("Alcoholic Beverages") == "C"
+
+
+def test_the_map_never_drops_a_name_an_older_copy_carries():
+    """The archived copies Movers re-scores carry the names of their own day (2026-09-18 and before):
+    a name that left the live sheet must keep its tier, or an old copy's stocks change tier in a diff."""
+    for old_name, tier in [("IT - Software", "D"), ("Pharma - Formulators", "C"), ("Hotels", "B"),
+                           ("Pharmaceuticals Bulk Drugs & Formulation", "C"), ("Pharmacy Distribution", "C")]:
+        assert INDUSTRY_TIER.get(old_name) == tier, old_name
+    assert "Telecom-Handsets/Mobile" in SECTOR_TIER_FALLBACK, "a sector only older copies carry was dropped"
+    assert len(INDUSTRY_TIER) >= 409, f"the map shrank to {len(INDUSTRY_TIER)} — a regeneration dropped names"
+
+
 def test_every_lender_like_industry_is_tier_E():
     """A RULE-level pin, not a list of names: anything whose name says bank / NBFC / insurance /
     microfinance / gold loan / MSME lending / AMC belongs in Financials. Catches a mis-tier in a

@@ -93,40 +93,35 @@ def test_the_translation_never_merges_two_names_the_vendor_keeps_apart(column):
 
 
 # ── 2. on the names the vendor actually sent ─────────────────────────────────────────────────
-def test_every_live_name_is_a_prism_name_or_a_known_new_one():
-    """Kept as the vendor wrote them: industries the vendor regrouped or created (their tier comes
-    from the translated sector), and two sectors PRISM never had. A new name here is a decision —
-    add a rename only when it is a plain relabel."""
+def test_every_live_name_is_a_prism_name():
+    """Until 2026-10-10, 25 industries the vendor regrouped or created ("IT Services", "Pharma
+    Formulations", …) and two sectors PRISM never had ("Alcoholic Beverages", "Insurance") were kept as
+    the vendor wrote them and took their tier from the sector. The cyclicality map now carries them,
+    tiered by their family (tests/test_cyclicality.py), so every name the vendor sent is a PRISM name.
+    A NEW name here is a decision: a rename when it is a plain relabel, else regenerate the map."""
     _, out = _live()
-    assert sorted(set(out["sector"]) - T.VOCABULARY["sector"]) == ["Alcoholic Beverages", "Insurance"]
-    assert sorted(set(out["industry"]) - T.VOCABULARY["industry"]) == [
-        "Airport Restaurants and Lounges", "Auto Parts Distribution", "Biotechnology",
-        "Cryogenic Equipment", "Cutting Tools and Machine Tools", "Engineering and Infrastructure",
-        "FMCG and Soap Ingredients", "General Electric Equipment", "IT Services", "Insurance Distribution",
-        "Machine Tools", "Medical Equipment and Diagnostic Technology",
-        "Natural Extracts and Food Ingredients", "Pharma Distribution", "Pharma Formulations",
-        "Pharma Gelatin Capsules", "Pharma IV Fluids", "Pharma Integrated",
-        "Publishing and Learning Services", "Railway Equipment", "Restaurants",
-        "Secure Printing and Payment Cards", "Solar Power and EPC", "Technology Distribution",
-        "Telecommunications Equipment and Network EPC",
-    ]
+    assert sorted(set(out["sector"]) - T.VOCABULARY["sector"]) == []
+    assert sorted(set(out["industry"]) - T.VOCABULARY["industry"]) == []
 
 
-def test_only_one_live_stock_reaches_the_catch_all_without_a_tier():
-    """Before: 1,043 stocks ended in "F", 758 of them only because their names had changed. Now
-    one does: the vendor's first insurance distributor, in a sector PRISM has never had."""
+def test_no_live_stock_is_left_without_a_tier():
+    """Before the translation 1,043 stocks ended in "F", 758 only because their names had changed;
+    after it, one (the vendor's first insurance distributor, in a sector PRISM had never had). Since
+    2026-10-10, none: "Insurance Distribution" is tiered E, and the Insurance sector has a fallback."""
     _, out = _live()
     untiered = out[[i not in INDUSTRY_TIER and s not in SECTOR_TIER_FALLBACK
                     for i, s in zip(out["industry"], out["sector"])]]
-    assert untiered[["sector", "industry", "stocks"]].values.tolist() == [
-        ["Insurance", "Insurance Distribution", 1]]
+    assert untiered[["sector", "industry", "stocks"]].values.tolist() == []
 
 
 def test_tiers_on_the_live_vintage():
     sent, out = _live()
     out["tier"] = [_tier(i, s) for i, s in zip(out["industry"], out["sector"])]
+    # 2026-10-10, the 25 vendor names in the map: 7 stocks move to their family's tier (3 IT Services
+    # outside the IT sector B→D, the solar EPC C→D, a pharma distributor B→C, the telecom equipment
+    # maker C→B, the insurance distributor F→E); A is untouched, so no fair-P/E cap moves.
     assert out.groupby("tier")["stocks"].sum().to_dict() == {
-        "A": 363, "B": 1285, "C": 394, "D": 340, "E": 45, "F": 285}
+        "A": 363, "B": 1282, "C": 393, "D": 344, "E": 46, "F": 284}
     tier = {(s, i): t for (s, i), t in zip(zip(sent["sector"], sent["industry"]), out["tier"])}
     assert tier[("Chemicals", "Specialty Chemicals")] == "D"           # was A: P/E capped by mistake
     assert tier[("IT Software", "IT Services")] == "D"                  # was F
