@@ -1,0 +1,39 @@
+# 🩺 Data check — the live sheet, checked every morning (ui/data_check_job.py).
+# The vendor changed its data four times in one quarter without a word, and each break was found late,
+# by accident. This loads the live sheet through PRISM's own loader and engine and fails on a break —
+# GitHub emails the repository owner. It reads the repository, never writes to it.
+name: Data check
+
+on:
+  schedule:
+    - cron: "41 2 * * *"      # daily 02:41 UTC = 08:11 IST, after the evening data; off the busy :00 / :30
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: data-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    # Pinned, not ubuntu-latest (moves to Ubuntu 26 from 2026-10-19); actions on the Node-24 releases.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install the pinned engine
+        run: pip install -r requirements.txt
+
+      - name: Check the live sheet
+        env:
+          SHEET_ID: ${{ secrets.SHEET_ID }}
+          PYTHONUTF8: "1"
+        run: python -m ui.data_check_job

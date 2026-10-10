@@ -254,7 +254,18 @@ def test_the_keepalive_commits_only_after_a_quiet_stretch_and_inside_60_days():
 _NODE24_FROM = {"actions/checkout": 5, "actions/setup-python": 6}
 
 
-@pytest.mark.parametrize("name,text", [("scan-records.yml", _WF), ("keepalive.yml", _KA)])
+# EVERY workflow in the folder (2026-10-10, when the daily data check joined): a hand-kept list let a
+# new workflow skip the rule below without anything failing.
+_ALL_WF = sorted((ROOT / ".github" / "workflows").glob("*.yml"))
+
+
+def test_the_workflow_list_is_read_from_the_folder():
+    names = {p.name for p in _ALL_WF}
+    assert {"scan-records.yml", "keepalive.yml", "data-check.yml"} <= names, names
+
+
+@pytest.mark.parametrize("name,text", [(p.name, p.read_text(encoding="utf-8")) for p in _ALL_WF],
+                         ids=[p.name for p in _ALL_WF])
 def test_the_workflows_run_on_a_pinned_runner_and_current_actions(name, text):
     """A job that writes the out-of-sample record must not change under us (2026-10-08): the runner is
     pinned rather than ubuntu-latest (moved to Ubuntu 26 from 2026-10-19), and every action is on a
