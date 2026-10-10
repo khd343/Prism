@@ -33,6 +33,33 @@ def engine_version() -> str:
         return "unknown"
 
 
+def engine_signature(root: Path = _REPO_ROOT) -> str:
+    """WHICH CODE IS RUNNING, for cache keys: a hash of config.py and every core/*.py — or 'unknown'.
+
+    WHY (2026-10-10): after a push the app kept serving numbers the OLD engine had derived until someone
+    pressed Clear Cache & Reload — the data caches were keyed on the data alone (the new Liquidity
+    column waited on exactly that). engine_version above is the wrong key: it needs a git binary and a
+    .git folder, may read 'unknown' where neither exists, and moves on commits that change no engine
+    code. This hash needs neither and moves exactly when the code that derives and scores does. It is
+    redone only when a file's time or size moves (~9 ms a time; the app reruns on every click)."""
+    files = [root / "config.py", *sorted((root / "core").glob("*.py"))]
+    try:
+        stats = tuple((str(p), p.stat().st_mtime_ns, p.stat().st_size) for p in files)
+        return _hash_sources(stats)
+    except OSError:
+        return "unknown"
+
+
+@lru_cache(maxsize=8)
+def _hash_sources(stats) -> str:
+    """The content hash behind engine_signature, cached on the files' times and sizes."""
+    h = hashlib.sha1()
+    for path, _mtime, _size in stats:
+        h.update(Path(path).name.encode())
+        h.update(Path(path).read_bytes())
+    return h.hexdigest()[:12]
+
+
 def stamp_snapshot(df: pd.DataFrame, vintage, source, analysis_mode=None) -> pd.DataFrame:
     """THE ONE snapshot format — five provenance columns in front of the untouched full frame:
 

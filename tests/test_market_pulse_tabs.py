@@ -179,9 +179,11 @@ def test_movers_previous_side_is_rescored_by_the_same_engine_behind_a_click():
     # PHASED (2026-09-04): download+derive is cached on the copy alone, scoring on
     # copy+engine+mode+profile — so a profile switch re-scores without re-downloading, and the
     # st.status shows where the minute goes. The same-engine rule is unchanged.
-    assert "_score_vintage(" in blk and "_mv_pick, _mv_engine(), analysis_mode, scoring_profile, _mv_clean)" in blk, (
+    # Keyed on the engine's CODE (engine_signature) since 2026-10-10; the commit stays the on-screen label.
+    assert "_score_vintage(" in blk and "_mv_pick, engine_signature(), analysis_mode, scoring_profile, _mv_clean)" in blk, (
         "the previous vintage is not re-scored with the live engine/mode/profile")
-    assert "_mv_clean = _load_vintage_clean(_mv_pick)" in blk, "the archived copy no longer takes the live loader"
+    assert "_mv_clean = _load_vintage_clean(_mv_pick, engine_signature())" in blk, (
+        "the archived copy no longer takes the live loader, keyed on the engine's code")
     assert blk.index('key="mp_mv_go"') < blk.index("_load_vintage_clean("), "the load is not gated behind the button"
     assert "_mv_ph.status(" in blk and blk.index("_mv_ph.status(") < blk.index("_load_vintage_clean("), (
         "the phased progress container is gone — a bare minute reads as a hang")

@@ -132,7 +132,9 @@ def test_download_is_named_by_the_data_vintage_and_stamped():
     assert "scored_universe_csv(_dl_sig, filt, _vintage, st.session_state.data_source)" in blk, (
         "the export is no longer stamped with vintage + source")
     sig = blk[blk.index("_dl_sig = ("):blk.index("st.download_button(")]
-    assert "_vintage" in sig and "engine_version()" in sig, (
+    # The engine enters as its CODE signature since 2026-10-10 (tests/test_engine_signature.py): the git
+    # commit needs a git binary and may read 'unknown' on the host, which would never change the key.
+    assert "_vintage" in sig and "engine_signature()" in sig, (
         "vintage and engine must be in the cache key — a stale CSV would otherwise survive a refresh")
 
 

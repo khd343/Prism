@@ -139,6 +139,7 @@ from ui.ui_group_views import (MEASURES, OWNERSHIP, OWNERSHIP_GROUP_NOTE, OWNERS
                                VIEW_MEASURES, VIEWS, group_measures)
 from ui.ui_reference_data import CONCEPT_REFERENCE, WCS_STUDIES
 from ui.ui_tearsheet import _FLAG_DISPLAY, _FW_META
+from ui.ui_export import engine_signature
 from ui.ui_scans import (SCANS, CANDIDATES as SCAN_CANDIDATES, LIQUIDITY_STEPS as SCAN_LIQUIDITY_STEPS,
                          step_label as liquidity_step_label,
                          liquidity_help as scan_liquidity_help, left_scan as scan_left,
@@ -164,10 +165,12 @@ _first_party_file_times().update(_file_times(sys.modules, _first_party(sys.modul
 # Tier 3: run_forensic_analysis— NOT cached. Instant.
 # ═══════════════════════════════════════════════════════════════
 @st.cache_data(show_spinner=False)
-def get_clean_data(data_source, file_signature: str, sheet_id, _uploaded_dict=None):
+def get_clean_data(data_source, file_signature: str, sheet_id, engine: str, _uploaded_dict=None):
     """Tier-1: Expensive data fetch + clean. Heavily cached.
     file_signature (stable string: name+size per file) is NOT underscored, so Streamlit HASHES it —
     it is the real cache key that busts the cache when a different file is uploaded.
+    engine (ui_export.engine_signature — the engine's own code, 2026-10-10) is hashed too, so a deploy
+    that changes how the data is derived never serves the old engine's frame.
     _uploaded_dict IS underscored so Streamlit skips hashing the raw, unhashable stream objects.
     """
     t0 = time.time()
@@ -224,12 +227,13 @@ def get_scored_data(clean_df: pd.DataFrame, analysis_mode: str, scoring_profile:
 
 
 @st.cache_data(show_spinner=False, max_entries=3)
-def _load_vintage_clean(copy_id: str):
+def _load_vintage_clean(copy_id: str, engine: str):
     """🔁 Movers, phase 1: an ARCHIVED vintage (a Drive copy of the data sheet, by id) through
     the IDENTICAL loader the live sheet takes — XLSX download, six tabs by name, merge, coerce,
-    derive. Cached on the copy id alone: the clean frame does not depend on mode or profile, so
-    switching profiles re-scores (phase 2) without re-downloading. max_entries=3 — each entry is
-    a full 2,100 × ~700 frame."""
+    derive. Cached on the copy id and the engine's code (engine_signature, 2026-10-10 — the derived
+    columns are the engine's): the clean frame does not depend on mode or profile, so switching
+    profiles re-scores (phase 2) without re-downloading. max_entries=3 — each entry is a full
+    2,100 × ~700 frame."""
     return fetch_and_clean_data("sheet", None, copy_id)
 
 
@@ -240,7 +244,7 @@ def _score_vintage(copy_id: str, engine: str, analysis_mode: str, scoring_profil
     difference can only be the company changing. A scored file from the past would confound
     "the company moved" with "we fixed a bug"; this never can.
 
-    Cached on (copy id, engine hash, mode, profile); `_clean` is underscored so Streamlit does
+    Cached on (copy id, engine code signature, mode, profile); `_clean` is underscored so Streamlit does
     not hash the frame on every call — the four strings ARE the identity. The regime is returned
     beside the frame because a cached DataFrame's `.attrs` is not a contract worth relying on
     across pickling."""
@@ -382,7 +386,7 @@ with st.spinner("🔄 Loading data..."):
         else:
             file_sig = f"local_{sheet_id or 'default'}"
         clean_df, bench_df, load_time = get_clean_data(
-            st.session_state.data_source, file_sig, sheet_id, _uploaded_dict=uploaded_dict
+            st.session_state.data_source, file_sig, sheet_id, engine_signature(), _uploaded_dict=uploaded_dict
         )
     except Exception as e:
         st.error(f"❌ Error loading data: {e}")
@@ -499,7 +503,7 @@ with st.sidebar:
     # your sidebar filters (every column), or the whole universe when nothing is filtered. Distinct
     # from the Deep Scanner's curated (~40-col) export and the All-Data single-row export.
     from datetime import date as _date
-    from ui.ui_export import engine_version, scored_universe_csv, universe_signature
+    from ui.ui_export import scored_universe_csv, universe_signature
     _scored_dl_ph = st.empty()
 
     # The market box (2026-10-08): the benchmark indices' Weinstein stages, and under them the
@@ -526,7 +530,7 @@ with _scored_dl_ph.container():
     # the cache key so a refreshed sheet or a redeployed engine can never be served stale bytes.
     _vintage = _fresh.data_date.isoformat() if _fresh.is_known else None
     _fname_date = _vintage or _date.today().isoformat()
-    _dl_sig = (f"{_score_key}|{universe_signature(filt['name'])}|{_vintage}|{engine_version()}"
+    _dl_sig = (f"{_score_key}|{universe_signature(filt['name'])}|{_vintage}|{engine_signature()}"
                f"|{_date.today().isoformat()}")
     st.download_button(
         f"📥 Download {len(filt):,} stocks · all {df.shape[1]} cols",
@@ -3134,12 +3138,12 @@ def _render_market_pulse():
                         try:
                             _t0 = time.perf_counter()
                             _mv_st.update(label="① Downloading the archived copy and deriving signals…")
-                            _mv_clean = _load_vintage_clean(_mv_pick)
+                            _mv_clean = _load_vintage_clean(_mv_pick, engine_signature())
                             _t1 = time.perf_counter()
                             _mv_st.write(f"① Downloaded + derived: {len(_mv_clean):,} stocks · {_t1 - _t0:.0f}s")
                             _mv_st.update(label=f"② Scoring with engine {_mv_engine()} ({analysis_mode})…")
                             _mv_prev_df, _mv_prev_regime = _score_vintage(
-                                _mv_pick, _mv_engine(), analysis_mode, scoring_profile, _mv_clean)
+                                _mv_pick, engine_signature(), analysis_mode, scoring_profile, _mv_clean)
                             _t2 = time.perf_counter()
                             _mv_st.write(f"② Scored · regime {_mv_prev_regime} · {_t2 - _t1:.0f}s")
                             _mv_st.update(label="③ Diffing against today's data…")
