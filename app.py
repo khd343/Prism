@@ -63,6 +63,54 @@ warnings.filterwarnings('ignore')
 import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
+# ── One version of PRISM's code per run (2026-10-10) ──
+# Streamlit Cloud re-reads app.py on every run but keeps the first-party modules it imported before a
+# push, so a NEW app.py can meet an OLD module. The live app went down that way twice, each time until a
+# reboot: 2026-10-09 (AttributeError in ui_scans._logic) and 2026-10-10 (ImportError: cannot import name
+# 'step_label' from 'ui.ui_scans'). When any config/core/ui module's file has changed since this process
+# imported it, ALL of them are dropped, so this run imports one consistent version — dropping only the
+# changed one would leave the others holding its old objects. tests/test_fresh_modules.py
+_FIRST_PARTY = ("config", "core", "ui")
+
+
+def _first_party(modules):
+    """The loaded first-party modules that come from a file, sorted."""
+    return sorted(n for n, m in list(modules.items())
+                  if n.split(".")[0] in _FIRST_PARTY and getattr(m, "__file__", None))
+
+
+def _file_times(modules, names):
+    """Each module's file time now; None when the file cannot be read."""
+    out = {}
+    for n in names:
+        try:
+            out[n] = os.path.getmtime(modules[n].__file__)
+        except OSError:
+            out[n] = None
+    return out
+
+
+def _drop_stale_first_party(modules, seen):
+    """Drop every first-party module when one has changed since it was recorded in `seen` (the first run
+    of a process has nothing recorded, so nothing is stale). Returns the changed names."""
+    names = _first_party(modules)
+    now = _file_times(modules, names)
+    stale = [n for n in names if n in seen and now[n] != seen[n]]
+    if stale:
+        for n in names:
+            modules.pop(n, None)
+        seen.clear()
+    return stale
+
+
+@st.cache_resource(show_spinner=False)
+def _first_party_file_times():
+    """This process's record of each first-party module file's time at import (a reboot clears it)."""
+    return {}
+
+
+_drop_stale_first_party(sys.modules, _first_party_file_times())
+
 from core import (fetch_and_clean_data, load_market, run_full_scoring, compute_forensic_signals,
                   apply_forensic_penalty, compute_verdict, run_scoring_pipeline)
 from ui.ui_market import market_box_html
@@ -106,6 +154,7 @@ from config import (COLORS, TIER_COLORS, CONVICTION_TIERS, UI, HARD_GATES,
                     BAID_SELL_TRIGGERS, MEAN_REVERSION, PEG_ZONES,
                     ANALYSIS_MODES, DEFAULT_ANALYSIS_MODE, FORENSIC_MAX_FLAGS,
                     FORENSIC_PENALTY_TIERS, GOVERNANCE_RISK_MULTIPLIERS)
+_first_party_file_times().update(_file_times(sys.modules, _first_party(sys.modules)))
 
 
 # ═══════════════════════════════════════════════════════════════
