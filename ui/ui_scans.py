@@ -38,9 +38,13 @@ import pandas as pd
 import streamlit as st
 
 from config import BENCHMARK_INDICES, COLORS
+from core.data_engine import traded_value_cr        # ONE liquidity number (moved there 2026-10-09)
 from core.forward_returns import MIN_HORIZON_DAYS
 from core.scoring_engine import _compute_improvement_score, compute_momentum_score, strong_quarter
 from ui.ui_group_views import MEASURES, group_measures
+# LIQUIDITY_STEPS and step_label are also re-exported for app.py's Scans selector (its one ui_scans import).
+from ui.ui_liquidity import (HEADER as LIQUIDITY_HEADER, LIQUIDITY_STEPS, ORDER_SHARE, SURVEILLANCE_NOTE,
+                             order_guide, order_size_lakh, step_label)
 
 RECORDS_PATH = Path(__file__).with_name("scan_records.json")
 # The net record (2026-10-07): what a buyer could have kept. Only matches trading at least NET_MIN_CR
@@ -67,12 +71,6 @@ def _num(df: pd.DataFrame, col: str) -> pd.Series:
     """The column as numbers; all-NaN when absent, so a missing input passes nothing."""
     return (pd.to_numeric(df[col], errors="coerce") if col in df.columns
             else pd.Series(np.nan, index=df.index))
-
-
-def traded_value_cr(df: pd.DataFrame) -> pd.Series:
-    """Average daily traded value over 20 days (average volume × price), ₹ crore; NaN when unknown. One
-    definition for the list's floor and the net record."""
-    return _num(df, "vol_sma_20d") * _num(df, "close_price") / 1e7
 
 
 def _pct(df: pd.DataFrame, col: str) -> pd.Series:
@@ -492,30 +490,19 @@ def record_state(records: dict, scan: dict):
 # ── The list ───────────────────────────────────────────────────────────────────────────────────────
 MEASURED_FLAGS = {"rf_wc_double_squeeze": "Squeeze", "rf_receivables_bloat": "Receivables",
                   "rf_negative_fcf": "Neg FCF"}
-LIQUIDITY_STEPS = (None, 0.5, 1.0, 2.0, 5.0)    # ₹ crore a day; None = any
-# Which step to pick depends on the buyer's order, not on the stock (2026-10-07): keep one order under
-# ORDER_SHARE of a day's traded value — a common, cautious rule of thumb for an order the market takes
-# without moving the price much. The help derives each step's order size from LIQUIDITY_STEPS, so the
-# guide cannot drift from the steps. Guidance only: it filters nothing and touches no record.
-ORDER_SHARE = 0.05
-
-
-def order_size_lakh(cr_per_day: float) -> float:
-    """The largest order (₹ lakh) that stays under ORDER_SHARE of cr_per_day (₹ crore = 100 lakh)."""
-    return round(cr_per_day * ORDER_SHARE * 100, 2)
+# The liquidity floor's steps, the order-size rule and the traded-value number itself are shared with
+# the sidebar, the Deep Scanner and the Tear-Sheet (ui/ui_liquidity.py, core.data_engine.traded_value_cr).
 
 
 def liquidity_help() -> str:
     """The Liquidity selector's help: what the number is, that it is a preference, and which step fits
     an order size — plus the one tradability risk the data cannot see."""
-    guide = "\n".join(f"- ₹{s:g} Cr/day → orders up to about ₹{order_size_lakh(s):g} lakh"
-                      for s in LIQUIDITY_STEPS if s is not None)
+    guide = order_guide()
     return ("Minimum average daily traded value over 20 days (average volume × price). Your preference, "
             "not part of the record: the record counts every match.\n\n"
             f"**Which step?** Keep one order under about {ORDER_SHARE:.0%} of a day's traded value, so the "
             f"market can take it without moving the price much:\n\n{guide}\n\n"
-            "Small or BSE-only stock: check the exchange's surveillance status (ASM/GSM) before buying — "
-            "traded value cannot show it.")
+            + SURVEILLANCE_NOTE)
 
 TABLE_COLUMNS = ("rank", "_new", "name", "sector", "composite_score", "momentum_score",
                  "improvement_score", "_strong_q", "_measured_flags", "weinstein_stage", "_liq_cr")
@@ -685,7 +672,7 @@ def table_config(members_date_label: str, scan: dict = None) -> dict:
                  "Oct 2026), ahead of 🌱 stocks without it (in-sample). A year-old improvement did not help, "
                  "so a company whose balance sheet is still last year's stays blank until it updates. A "
                  "reading aid, not part of 🌱's recipe or record."),
-        "_liq_cr": cc.NumberColumn("₹ Cr/day", format="%.1f", width=w["_liq_cr"],
+        "_liq_cr": cc.NumberColumn(LIQUIDITY_HEADER, format="%.2f", width=w["_liq_cr"],
                                    help="Average daily traded value over 20 days (average volume × price), "
                                         f"in ₹ crore. Keep one order under about {ORDER_SHARE:.0%} of it: "
                                         f"2.0 → about ₹{order_size_lakh(2.0):g} lakh."),

@@ -822,6 +822,21 @@ def insider_net_buyer(insider_trading) -> pd.Series:
     return (pd.to_numeric(insider_trading, errors="coerce") > 0).astype(int)
 
 
+def traded_value_cr(df: pd.DataFrame) -> pd.Series:
+    """Liquidity: the average value traded a day over 20 days (average volume × price), ₹ crore; NaN
+    when either is unknown — never 0, which would claim the stock does not trade.
+
+    ONE definition (2026-10-09), moved verbatim from ui/ui_scans.py so the engine can materialise it as
+    `traded_value_cr`: the Scans floor and its net-of-costs record, the sidebar filter, the Deep Scanner
+    column and the Tear-Sheet line all read this number. DISPLAY ONLY — a buyability check, not a signal:
+    liquid and illiquid stocks did about as well on median across four windows, and no score, gate, flag
+    or verdict reads it (tests/test_liquidity.py). Not `daily_value_cr`, which is ONE day's volume."""
+    def _num(col):
+        return (pd.to_numeric(df[col], errors="coerce") if col in df.columns
+                else pd.Series(np.nan, index=df.index))
+    return _num("vol_sma_20d") * _num("close_price") / 1e7
+
+
 def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     """Compute all 36+ derived signals. Pure vectorized Pandas."""
     print("\n🧮 Computing derived signals...")
@@ -1682,6 +1697,7 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     )
     df["daily_value"] = _vol * _close_t  # in raw ₹
     df["daily_value_cr"] = df["daily_value"] / 1e7  # in ₹ Crores
+    df["traded_value_cr"] = traded_value_cr(df)      # 20-day average, ₹ Cr a day — display only
     df["crs_aligned"] = (
         (_crs50d > 0) & (_crs26w > 0) & (_crs52w > 0)
     ).astype(int)

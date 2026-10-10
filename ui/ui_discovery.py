@@ -12,13 +12,15 @@ import pandas as pd
 import streamlit as st
 
 from config import COLORS, FRAMEWORK_CATEGORIES, STALE_RESULT_DAYS
+from core.data_engine import traded_value_cr
+from ui.ui_liquidity import LIQUIDITY_STEPS, ORDER_SHARE, SURVEILLANCE_NOTE, order_guide, step_label, step_value
 
 
 # ── Active-filter chips: registry + pure detector (unit-tested) ───────────────
 # (sb_key, chip label, kind). kind drives BOTH the active-check and the label. MUST cover every key
 # in the funnel's _active_n total (pinned by test) so no filter is ever active-but-chipless.
 _CHIP_META = [
-    ("sb_mcap", "Market Cap", "ms"), ("sb_sector", "Sector", "sel"), ("sb_industry", "Industry", "sel"),
+    ("sb_mcap", "Market Cap", "ms"), ("sb_liq", "Liquidity", "liq"), ("sb_sector", "Sector", "sel"), ("sb_industry", "Industry", "sel"),
     ("sb_cyc", "Cyclicality", "ms"), ("sb_capphase", "Capital Phase", "ms"), ("sb_tier", "Tier", "ms"),
     ("sb_verdict", "Soundness", "ms"), ("sb_wealthtier", "Wealth Tier", "ms"), ("sb_corpclass", "Corp Class", "ms"),
     ("sb_capalloc", "Capital Allocation", "ms"), ("sb_floatfunded", "Float-Funded", "bool"), ("sb_maxrf", "Max Red Flags", "max"),
@@ -52,6 +54,9 @@ def _compute_active_chips(state, rf_max):
         elif kind == "bool":
             if v:
                 out.append((key, human))
+        elif kind == "liq":                                  # a ₹ Cr/day floor; None = Any
+            if v:
+                out.append((key, f"{human}: ≥{step_label(v)}"))
         elif kind == "ms_count":
             if v:
                 out.append((key, f"{human}: {len(v)} selected"))
@@ -399,7 +404,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
         # slider range is stable across the cascade); _active_n treats this value as the show-all state.
         _RF_MAX = int(df["red_flag_count"].max()) if "red_flag_count" in df.columns else 28
 
-        with _grp("🏢 Universe", "sb_mcap", "sb_sector", "sb_industry", "sb_cyc", "sb_capphase", expanded=False):
+        with _grp("🏢 Universe", "sb_mcap", "sb_liq", "sb_sector", "sb_industry", "sb_cyc", "sb_capphase", expanded=False):
             # 1. Market Category — cascade root (only categories present in the data)
             _ALL_MCAPS = ["Mega Cap", "Large Cap", "Mid Cap", "Small Cap", "Micro Cap", "Nano Cap"]
             _mcap_opts = _ordered_present(_cf, "market_category", _ALL_MCAPS)
@@ -408,6 +413,25 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                                    count_col="market_category")
             if sel_mcap:
                 _cf = _narrow(_cf, _label_mask(_cf["market_category"], sel_mcap), "Market Cap")
+
+            # 1b. Liquidity (2026-10-09) — size, then whether you can buy it in your size. Measured:
+            # 42% of stocks trade under ₹1 Cr a day, and so do 16 of the top 50 by rank; Market Cap cannot
+            # stand in (a Small-cap-and-above pick keeps 308 illiquid stocks and drops 85 liquid micro
+            # caps). A floor on the engine's own number (core.data_engine.traded_value_cr), the same steps
+            # as the Scans tab. Once a floor is set, unknown liquidity is not passed. tests/test_liquidity.py
+            st.session_state.setdefault("sb_liq", None)          # seed-before-instantiate
+            # A round-tripped label ("₹1 Cr/day") maps back to its step before the widget reads it.
+            st.session_state["sb_liq"] = step_value(st.session_state["sb_liq"])
+            sel_liq = st.select_slider(
+                "Liquidity", options=list(LIQUIDITY_STEPS), key="sb_liq", format_func=step_label,
+                help=("Hides stocks that trade less than this a day — the average value traded over the "
+                      "last 20 days (average volume × price). Any = no floor; once a floor is set, a stock "
+                      "with no volume data is hidden too.\n\n"
+                      f"**Which step?** Keep one order under about {ORDER_SHARE:.0%} of a day's traded "
+                      f"value, so the market can take it without moving the price much:\n\n{order_guide()}"
+                      f"\n\n{SURVEILLANCE_NOTE}"))
+            if sel_liq:
+                _cf = _narrow(_cf, traded_value_cr(_cf) >= sel_liq, "Liquidity")
 
             # 2. Sector — only sectors within the chosen market categories
             # SEED-BEFORE-INSTANTIATE (2026-08-29, the user's Steel repro): deleting a widget
@@ -1062,7 +1086,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
     _uni_n, _fin_n = len(df), len(filt)
     _pct = (_fin_n / _uni_n) if _uni_n else 0.0
     _active_total = _active_n(
-        "sb_mcap", "sb_sector", "sb_industry", "sb_cyc", "sb_capphase", "sb_tier", "sb_verdict",
+        "sb_mcap", "sb_liq", "sb_sector", "sb_industry", "sb_cyc", "sb_capphase", "sb_tier", "sb_verdict",
         "sb_wealthtier", "sb_corpclass", "sb_capalloc",
         "sb_maxrf", "sb_piotier", "sb_cashmach", "sb_mincov", "sb_hidestale",
         "sb_fwfam", "sb_fw_exclude", "sb_fw_include", "sb_fw_combine", "sb_moat", "sb_peg_zone", "sb_buy_zone",

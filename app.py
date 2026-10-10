@@ -92,6 +92,7 @@ from ui.ui_group_views import (MEASURES, OWNERSHIP, OWNERSHIP_GROUP_NOTE, OWNERS
 from ui.ui_reference_data import CONCEPT_REFERENCE, WCS_STUDIES
 from ui.ui_tearsheet import _FLAG_DISPLAY, _FW_META
 from ui.ui_scans import (SCANS, CANDIDATES as SCAN_CANDIDATES, LIQUIDITY_STEPS as SCAN_LIQUIDITY_STEPS,
+                         step_label as liquidity_step_label,
                          liquidity_help as scan_liquidity_help, left_scan as scan_left,
                          left_summary as scan_left_summary, left_legend as scan_left_legend,
                          table_columns as scan_table_columns, card_html as scan_card_html,
@@ -833,7 +834,7 @@ with tabs[1]:
     with _sc_lc:
         _sc_min = st.selectbox(
             "Liquidity", SCAN_LIQUIDITY_STEPS, key="scan_liq",
-            format_func=lambda v: "Any" if v is None else f"₹{v:g} Cr/day",
+            format_func=liquidity_step_label,
             help=scan_liquidity_help())
     _sc_members = _sc_rec_sel.get("members_at_latest") if _sc_state_sel == "measured" else None
     # 📄 window = the days from the 🆕 baseline to the data's own date (the Movers rule): a result
@@ -945,9 +946,14 @@ with tabs[1]:
 # is a click away. Kept OUTSIDE the tab block on purpose: the label-map scans there read dict keys
 # as header labels, and a width table must not count as a label.
 _DS_W = {
-    "rank": 55, "name": 180,
-    # 🏆 Core — Improvement and Momentum take their widths from Quality and Technical
-    "verdict_direction": 90, "wealth_tier": 75, "sector": 150, "market_category": 85,
+    "rank": 50, "name": 180,
+    # 🏆 Core — Improvement and Momentum take their widths from Quality and Technical. Liquidity (2026-10-09)
+    # took 65px from space no text used, measured in the grid's own font (13px Source Sans + 16px): its
+    # header needs 62; Rank's widest value "2712" 42 (55 → 50, every view gains 5); Soundness's header 78
+    # (90 → 80); Wealth's widest "WATCH★" 66 (75 → 70); Market Cap's header 80 (85 → 80); and Sector
+    # 150 → 130 still shows the full sector name for 78% of stocks (79% at 150).
+    "verdict_direction": 80, "wealth_tier": 70, "sector": 130, "market_category": 80,
+    "traded_value_cr": 65,
     "composite_score": 105, "gate_pass": 60,
     # 📊 Quality — its parts read as numbers beside the Quality bar
     "quality_score": 105, "moat_score": 60, "growth_score": 65, "improvement_score": 95,
@@ -996,10 +1002,12 @@ with tabs[2]:
     # Pledged to 👥 Ownership and gained Schilit pass (a separate screen from the red-flag count: rank
     # correlation −0.61 with it; passers beat failers in all four test windows) and Evidence, the data
     # coverage behind every reading, from Core.
-    # tests/test_deep_scanner_views.py
+    # LIQUIDITY (2026-10-09) sits right after Market Cap — size, then whether you can buy it in your size:
+    # 16 of the top 50 by rank trade under ₹1 Cr a day. The engine's traded_value_cr, display only.
+    # tests/test_deep_scanner_views.py · tests/test_liquidity.py
     _DS_VIEWS = {
-        "🏆 Core":      ["rank","name","verdict_direction","wealth_tier","sector","market_category","composite_score",
-                         "gate_pass","improvement_score","momentum_score"],
+        "🏆 Core":      ["rank","name","verdict_direction","wealth_tier","sector","market_category","traded_value_cr",
+                         "composite_score","gate_pass","improvement_score","momentum_score"],
         "📊 Quality":   ["rank","name","quality_score","moat_score","growth_score","improvement_score","cash_score",
                          "roce","roce_expansion",
                          "roce_inflection","opm","opm_acceleration"],
@@ -1199,6 +1207,7 @@ with tabs[2]:
         "dividend_yield":  ("Div Yield", "%.2f%%"),   # Valuation: vendor TTM yield beside E.Yield; 0.00% = does not pay (2026-09-19)
         "fcf_yield":       ("FCF Yld",  "%.1f%%"),
         "market_cap":      ("MCap ₹Cr", "%.0f"),
+        "traded_value_cr": ("₹ Cr/day", "%.2f"),     # Core: liquidity, the Scans table's header (ui_liquidity.HEADER)
         "red_flag_count":  ("🚩 Flags","%.0f"),
         "accruals_ratio":  ("Accruals", "%.2f"),
         "crs_52w":         ("RS 52W",   "%.0f"),

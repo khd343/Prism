@@ -20,6 +20,7 @@ from config import (COLORS, CONVICTION_TIERS, TIER_COLORS, FORENSIC_MAX_FLAGS,
 # Re-imported here so this module's renderers AND existing `from ui.ui_tearsheet import ...` callers
 # (the scanner, the tests) resolve against the SAME objects — one definition, zero drift.
 from ui.ui_components import help_chip, _RAW_GLOSSARY
+from ui.ui_liquidity import trade_line
 # MIRROR, never restate: rf_high_receivables fires on a PER-SECTOR DSO gate, so the evidence row
 # reads the engine's own table. A local copy would drift the moment a sector norm is retuned —
 # which is exactly how the ">75d / >120d" string below got stranded (see the handler's comment).
@@ -2229,6 +2230,10 @@ def render_stock_hero(stock: pd.Series, regime: str = "SIDEWAYS", tier_colors: d
     _px_hero   = stock.get("close_price")
     px_chip    = (f' &nbsp;·&nbsp; ₹{float(_px_hero):,.2f}'
                   if pd.notna(_px_hero) and float(_px_hero) > 0 else "")
+    # Liquidity (2026-10-09): can you buy it in your size? The engine's 20-day traded value and the order
+    # that stays under ui_liquidity.ORDER_SHARE of it. Unknown -> omitted (no fabricated zero).
+    _liq_line  = trade_line(pd.to_numeric(stock.get("traded_value_cr"), errors="coerce"))
+    liq_chip   = f' &nbsp;·&nbsp; {_liq_line}{help_chip("Liquidity")}' if _liq_line else ""
     mcat       = _esc(stock.get("market_category", "") or "")
     mg_quad    = _esc(stock.get("moat_growth_quad", "") or "")
     # Selective forensic badge (forensic_score + red_flag_count) — the forensic_label column reads
@@ -2415,7 +2420,7 @@ def render_stock_hero(stock: pd.Series, regime: str = "SIDEWAYS", tier_colors: d
           <div style="font-size:2.1rem;font-weight:900;color:{COLORS['text_primary']};
                       line-height:1.1;word-break:break-word;">{name}</div>
           <div style="font-size:0.78rem;color:{COLORS['text_muted']};margin-top:4px;">
-            {industry} &nbsp;·&nbsp; ₹{mcap:,.0f} Cr{px_chip}
+            {industry} &nbsp;·&nbsp; ₹{mcap:,.0f} Cr{px_chip}{liq_chip}
           </div>
           <div style="margin-top:12px;">{badges_html}</div>
         </div>

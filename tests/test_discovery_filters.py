@@ -591,6 +591,8 @@ def _all_filters_app():
         "name": ["A", "B", "C"],
         # ── 🏢 Universe
         "market_category":   lab("Mega Cap", "Nano Cap"),
+        "vol_sma_20d":       [1e5, 1e3, 1e5],                 # × ₹1,000 = ₹10 / ₹0.1 / ₹10 Cr a day
+        "close_price":       [1000.0, 1000.0, 1000.0],
         "sector":            lab("P", "Q"),
         "industry":          lab("P-ind", "Q-ind"),
         "cyclicality_tier":  lab("Defensive", "Cyclical"),
@@ -639,6 +641,7 @@ def _all_filters_app():
 # control sits at its show-all default, so a case measures that filter alone.
 _FILTER_CASES = [
     ("sb_mcap",        {"sb_mcap": ["Mega Cap"]},                    ["A", "C"]),
+    ("sb_liq",         {"sb_liq": 1.0},                              ["A", "C"]),
     ("sb_sector",      {"sb_sector": "P"},                           ["A", "C"]),
     ("sb_industry",    {"sb_industry": "Q-ind"},                     ["B"]),
     ("sb_cyc",         {"sb_cyc": ["Defensive"]},                    ["A", "C"]),
@@ -739,6 +742,7 @@ def test_every_non_multiselect_widget_seeds_its_key_before_instantiating():
     # the old `not in st.session_state or not in <opts>` form ALSO reset a stored pick to "All"
     # whenever the cascade narrowed it out (the selectbox form of the silent widening).
     for key, seed in [
+        ("sb_liq",       'st.session_state.setdefault("sb_liq"'),
         ("sb_sector",    'st.session_state.setdefault("sb_sector"'),
         ("sb_industry",  'st.session_state.setdefault("sb_industry"'),
         ("sb_maxrf",     'st.session_state.setdefault("sb_maxrf"'),
