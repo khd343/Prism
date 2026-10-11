@@ -412,6 +412,7 @@ CONCEPT_REFERENCE = {
         ("📚 Fundamental Only", "Analysis Mode — pure business quality, setting price action aside. For long-term, buy-and-hold Coffee Can investors."),
         ("📈 Technical Only", "Analysis Mode — pure price action and institutional money flow (O'Neil rules), with fundamentals set aside."),
         ("⚡ Quantamental + Breakout", "Analysis Mode — quality, momentum and breakout in equal thirds, which puts price strength at roughly two thirds of the composite (breakout is already part of momentum). The default: it out-predicted the Hybrid blend on every forward window measured so far, and the first six-month window in December reviews that."),
+        ("🚀 Momentum + Breakout", "Analysis Mode — momentum and breakout in halves, with quality left out of the blend; the forensic penalty, hard gates and framework boosts still act on the score. It ranked the stocks that went on to do best more accurately than the equal-thirds blend on three of the four forward windows measured so far — all flat or falling markets, the longest about three and a half months — so it is offered to compare, and the six-month window in December decides whether it earns more."),
     ],
     # ── The QGLP screen — config.MASTER_PROFILES, now a CONSTANT not a selector. ──
     # The eight-profile "Scoring Profile" control was removed 2026-09-20: it re-ranked nothing

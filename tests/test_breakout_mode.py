@@ -81,13 +81,13 @@ def test_breakout_mode_is_equal_thirds_and_well_formed():
     assert "allowed_profiles" not in m, "the Breakout mode must not reintroduce a profile list"
 
 
-def test_only_the_breakout_mode_carries_a_third_leg():
-    """Every other mode is unchanged: no breakout_w key at all (not 0.0 — the leg must not exist
-    there, so nothing can quietly grow one)."""
-    for name, m in C.ANALYSIS_MODES.items():
-        if name == "Breakout":
-            continue
-        assert "breakout_w" not in m, f"{name} grew a breakout_w — the third leg is Breakout-only"
+def test_only_the_declared_modes_carry_a_third_leg():
+    """The other modes are unchanged: no breakout_w key at all (not 0.0 — the leg must not exist
+    there, so nothing can quietly grow one). Repointed 2026-10-10, not loosened: the fifth mode,
+    Momentum + Breakout (tests/test_momentum_breakout_mode.py), carries the leg by design, and
+    the set is still exact, so any OTHER mode growing one fails here."""
+    carriers = sorted(n for n, m in C.ANALYSIS_MODES.items() if "breakout_w" in m)
+    assert carriers == ["Breakout", "MomentumBreakout"], f"third-leg carriers: {carriers}"
 
 
 def test_the_default_mode_is_breakout_and_lives_in_exactly_one_place():
@@ -248,7 +248,7 @@ def test_config_tab_shows_the_breakout_weight_only_for_modes_that_carry_it():
     # caught by the browser, not the tests: the FORMULA line above the rows still read
     # "Quality × F + Momentum × M + Governance" — incomplete for the mode that has a third leg
     assert "Breakout × B" in src, "the composite formula line does not name the third leg"
-    assert "F, M and B (B in the Breakout mode only)" in src
+    assert "F, M and B (B only in the modes that carry it)" in src
 
 
 def test_validate_reconstructs_every_mode_from_whatever_mode_a_snapshot_used():

@@ -619,6 +619,31 @@ ANALYSIS_MODES = {
                        "forward windows, which rank Hybrid #56/#60/#60 of 66 weightings. December's "
                        "6-month window reviews it",
     },
+    # ── SELECTABLE, NOT THE DEFAULT (2026-10-10) ────────────────────────────────────────────
+    # Momentum and breakout in halves, quality OUT of the blend. Measured in exactly this form
+    # (governance 15%, framework boosts, governance shield and forensic multiplier all kept) on
+    # the four forward windows PRISM holds — rank-IC, all stocks / stocks trading >= Rs 1 Cr a day:
+    #                               typical stock   Breakout 33/33/33   THIS MODE
+    #   06-17→08-22 (66 days)            +0.2%       +0.147 / +0.132     +0.143 / +0.137
+    #   08-22→09-19 (28 days)            -2.0%       +0.091 / +0.072     +0.135 / +0.134
+    #   06-29→10-09 (102 days, archive)  -6.2%       +0.110 / +0.073     +0.133 / +0.111
+    #   06-17→10-03 (108 days)           -3.6%       +0.128 / +0.126     +0.157 / +0.172
+    # Ties the default once, beats it three times, wins all four on the buyable stocks.
+    # NOT THE DEFAULT because the two long windows overlap almost entirely, three of the four were
+    # falling markets (where price strength protects best) and the longest is ~3.5 months against
+    # a multi-year aim. December's 6-month window decides (docs/december-2026-plan.md rule 26).
+    # Quality + Breakout (no momentum), measured the same day, trailed the default in three of four
+    # and is not a mode. Contract: tests/test_momentum_breakout_mode.py.
+    "MomentumBreakout": {
+        "label": "🚀 Momentum + Breakout",
+        "fundamental_w": 0.0,
+        "momentum_w":    0.5,
+        "breakout_w":    0.5,
+        "description": "Momentum and breakout in halves, quality left out of the blend — the forensic "
+                       "penalty, hard gates and framework boosts still apply. Measured ahead of "
+                       "33/33/33 on 3 of 4 forward windows (all falling or flat markets, the longest "
+                       "~3.5 months); December's 6-month window decides whether it earns more",
+    },
 }
 
 # ═══════════════════════════════════════════════════════════════

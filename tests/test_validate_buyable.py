@@ -7,9 +7,11 @@ size is worth far less than its headline, so tools/validate.py now prints, besid
 rank-IC on the stocks that were buyable AT THE START of the window (the engine's own traded_value_cr,
 the ₹1 Cr step the app's Liquidity controls use) — fixed now, before December's data exists.
 
-And three PRICE-ONLY weightings join the four real modes as December candidates (momentum only,
-breakout only, momentum + breakout), built in exactly the engine's form like the modes (the 2026-09-19
-lesson: a bare blend flatters every candidate). Measured, not shipped: no mode, no app change.
+Momentum + Breakout, first registered here as a price-only candidate, became the FIFTH Analysis Mode
+the same day (selectable, not the default; tests/test_momentum_breakout_mode.py), so the harness now
+measures it as a mode, rebuilt in exactly the engine's form like every mode (the 2026-09-19 lesson: a
+bare blend flatters every candidate). The momentum-only and breakout-only candidates were dropped: the
+user asked for the two blends only, and Quality + Breakout trailed the default.
 
 Run with: pytest tests/test_validate_buyable.py -v
 """
@@ -35,10 +37,11 @@ from core.data_engine import traded_value_cr  # noqa: E402
 from ui.ui_liquidity import LIQUIDITY_STEPS  # noqa: E402
 
 
-def test_the_price_only_candidates_are_registered_for_december():
-    for name in ("composite_cand_momentum", "composite_cand_breakout", "composite_cand_mom_brk", "breakout_score"):
+def test_momentum_breakout_is_measured_as_a_mode_for_december():
+    for name in ("composite_mode_momentumbreakout", "composite_mode_breakout", "breakout_score"):
         assert name in V._DEFAULT_SIGNALS, f"{name} is not measured on every window"
-    assert V._PRICE_ONLY == {"momentum": (0.0, 1.0, 0.0), "breakout": (0.0, 0.0, 1.0), "mom_brk": (0.0, 0.5, 0.5)}
+    assert not hasattr(V, "_PRICE_ONLY"), "the side list of candidates came back beside the modes"
+    assert not any(s.startswith("composite_cand_") for s in V._DEFAULT_SIGNALS)
 
 
 def _hybrid_snapshot(n=6):
@@ -52,14 +55,12 @@ def _hybrid_snapshot(n=6):
                          "composite_score": stored}), (M, B, G, boost, F, GM, gov)
 
 
-def test_the_price_only_candidates_are_built_in_the_engines_exact_form():
+def test_momentum_breakout_is_rebuilt_in_the_engines_exact_form():
     """Governance share, framework boosts and BOTH multiplicative tails kept — only the blend changes."""
     snap, (M, B, G, boost, F, GM, gov) = _hybrid_snapshot()
     out = V._add_candidates(snap)
-    for col, blend in [("composite_cand_momentum", M), ("composite_cand_breakout", B),
-                       ("composite_cand_mom_brk", 0.5 * M + 0.5 * B)]:
-        want = np.clip((blend * (1 - gov) + G * gov + boost) * F * GM, 0, 100)
-        assert np.allclose(out[col], want, atol=1e-9), col
+    want = np.clip(((0.5 * M + 0.5 * B) * (1 - gov) + G * gov + boost) * F * GM, 0, 100)
+    assert np.allclose(out["composite_mode_momentumbreakout"], want, atol=1e-9)
 
 
 def test_buyable_means_the_engines_number_at_the_start_and_unknown_is_not_buyable():

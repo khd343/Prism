@@ -1138,7 +1138,7 @@ def compute_composite_score(
         fundamental_w: Weight for quality/fundamental score (Analysis Mode)
         momentum_w: Weight for momentum score (Analysis Mode)
         breakout_w: Weight for breakout_score — the THIRD leg (2026-09-19). 0.0 in every mode
-            but "Breakout", and when it is 0.0 the leg is NOT added at all (not multiplied by
+            but "Breakout" and "MomentumBreakout" (2026-10-10), and when it is 0.0 the leg is NOT added at all (not multiplied by
             zero), so the other modes are byte-identical to before and a synthetic frame with
             no breakout_score column still scores. Pinned by tests/test_breakout_mode.py.
     """
@@ -3511,7 +3511,7 @@ def run_full_scoring(
     # ── Layer 4: Composite — blend per Analysis Mode ──
     fundamental_w = mode["fundamental_w"]
     momentum_w    = mode["momentum_w"]
-    breakout_w    = mode.get("breakout_w", 0.0)      # only the "Breakout" mode carries a third leg
+    breakout_w    = mode.get("breakout_w", 0.0)      # only Breakout and MomentumBreakout carry a third leg
     df = compute_composite_score(df, fundamental_w=fundamental_w, momentum_w=momentum_w,
                                  breakout_w=breakout_w)
 

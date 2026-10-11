@@ -3243,7 +3243,8 @@ with tabs[5]:
             key="cfg_mode",
             help="Blend of the composite — the one control that re-ranks the universe "
                  "(Breakout 33/33/33 quality·momentum·breakout, the default since 2026-09-19 · "
-                 "Hybrid 70/30 · Fundamental 100/0 · Technical 10/90). December's 6-month window "
+                 "Momentum + Breakout 0/50/50 · Hybrid 70/30 · Fundamental 100/0 · Technical 10/90). "
+                 "December's 6-month window "
                  "reviews the default; see the note in config.ANALYSIS_MODES.",
         )
     # The description renders OUTSIDE the column, at full width. Browser-checked 2026-09-20: with
@@ -3297,11 +3298,13 @@ with tabs[5]:
     # governance is fixed and F+M fill (1-gov_w), split by analysis mode (from ANALYSIS_MODES — DRY).
     _gov_w  = COMPOSITE_WEIGHTS.get("governance", 0.15)
     _scale  = 1.0 - _gov_w
-    _mode_icon = {"Hybrid": "🧭", "Fundamental": "📊", "Technical": "📈", "Breakout": "⚡"}
+    _mode_icon = {"Hybrid": "🧭", "Fundamental": "📊", "Technical": "📈", "Breakout": "⚡",
+                  "MomentumBreakout": "🚀"}
+    _mode_name = {"MomentumBreakout": "Momentum + Breakout"}   # a key that does not read as words
     _mode_rows = "".join(
         f'<div style="display:flex;justify-content:space-between;font-size:0.72rem;padding:3px 0;'
         f'border-bottom:1px solid rgba(255,255,255,0.04);">'
-        f'<span style="color:{COLORS["text_secondary"]};">{_mode_icon.get(_m, "•")} {_m}</span>'
+        f'<span style="color:{COLORS["text_secondary"]};">{_mode_icon.get(_m, "•")} {_mode_name.get(_m, _m)}</span>'
         f'<span style="color:{COLORS["text_muted"]};">Quality '
         f'<strong style="color:{COLORS["purple"]};">{_v["fundamental_w"]*100:.0f}%</strong> : '
         f'Momentum <strong style="color:{COLORS["orange"]};">{_v["momentum_w"]*100:.0f}%</strong>'
@@ -3317,7 +3320,7 @@ with tabs[5]:
         f'Composite = Quality × F &nbsp;+&nbsp; Momentum × M &nbsp;(+&nbsp;Breakout × B)&nbsp;+&nbsp; '
         f'Governance × <span style="color:{COLORS["gold"]};">{_gov_w*100:.0f}%</span></div>'
         f'<div style="font-size:0.68rem;color:{COLORS["text_muted"]};margin-bottom:8px;">'
-        f'Governance is fixed at {_gov_w*100:.0f}%; F, M and B (B in the Breakout mode only) split the remaining {_scale*100:.0f}% by analysis mode:</div>'
+        f'Governance is fixed at {_gov_w*100:.0f}%; F, M and B (B only in the modes that carry it) split the remaining {_scale*100:.0f}% by analysis mode:</div>'
         f'{_mode_rows}'
         f'<div style="font-size:0.68rem;color:{COLORS["text_muted"]};margin-top:8px;'
         f'border-top:1px solid {COLORS["border"]};padding-top:8px;">'
