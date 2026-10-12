@@ -56,6 +56,7 @@ FLOAT_FORMAT = "%.10g"
 _MEASURED_BOUNDS = (100, 450)
 MIN_ROWS, MAX_ROWS = _MEASURED_BOUNDS
 SYMBOL = re.compile(r"(NSE|BSE):[A-Z0-9&_.-]+")
+GITATTRIBUTES = b"* -text\n"
 
 
 class FeedError(Exception):
@@ -175,4 +176,9 @@ def write_session(feed: Path, session: str, csv: bytes, meta: dict) -> bool:
     readme = Path(feed) / "README.md"
     if not readme.exists() or readme.read_text(encoding="utf-8") != readme_text():
         readme.write_text(readme_text(), encoding="utf-8", newline="\n")
+    # Windows git (core.autocrlf) would check a session out with CRLF, breaking its sha256 and making an
+    # identical re-publish read as "different content". The branch forbids any conversion.
+    attrs = Path(feed) / ".gitattributes"
+    if not attrs.exists() or attrs.read_bytes() != GITATTRIBUTES:
+        attrs.write_bytes(GITATTRIBUTES)
     return True

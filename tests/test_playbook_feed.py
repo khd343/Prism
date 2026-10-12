@@ -195,6 +195,15 @@ def test_a_csv_without_its_manifest_is_completed(tmp_path):
     assert json.loads((tmp_path / "sessions" / "2026-10-12.json").read_text(encoding="utf-8"))["rows"] == 10
 
 
+def test_the_branch_tells_git_never_to_touch_the_bytes(tmp_path):
+    """Windows git (core.autocrlf) would check a session out with CRLF: its sha256 would stop matching
+    its manifest and an identical re-publish would read as 'different content'. `* -text` forbids it."""
+    frame = F.build_frame(_scored())
+    csv = F.to_csv_bytes(frame)
+    F.write_session(tmp_path, "2026-10-12", csv, _meta(frame, csv))
+    assert (tmp_path / ".gitattributes").read_bytes() == b"* -text\n"
+
+
 def test_the_readme_lists_the_contract():
     text = F.readme_text()
     assert all(f"`{c}`" in text for c in F.COLUMNS) and "never modified" in text
