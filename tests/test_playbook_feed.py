@@ -476,3 +476,70 @@ def test_the_commit_message_reaches_git_through_the_environment():
     """Never `${{ }}`-interpolated into the shell: an output is data, not script."""
     y = _wf()
     assert 'git commit -m "$MSG"' in y and "MSG: ${{ steps.publish.outputs.message }}" in y
+
+
+# ── 12. A stale copy is not a session (2026-10-12) ────────────────────────────────────────────────
+# The sync named two NSE HOLIDAYS as sessions (14 Sep, 2 Oct) and the feed published them: 90% and 87% of their
+# closes were identical to the day before, against ~2% on real trading days. A copy of yesterday is refused.
+def _on_branch(feed, day, df):
+    frame = F.build_frame(df)
+    csv = F.to_csv_bytes(frame)
+    F.write_session(feed, day, csv, _meta(frame, csv, session=day))
+
+
+def test_a_copy_of_the_previous_session_is_refused(tmp_path, monkeypatch):
+    monkeypatch.setattr(F, "MIN_COMMON", 5)
+    _on_branch(tmp_path, "2026-10-09", _scored())
+    problem = F.stale_problem(F.build_frame(_scored()), tmp_path, "2026-10-12")
+    assert "stale" in problem and "2026-10-09" in problem and "100%" in problem
+
+
+def test_half_identical_is_the_measured_line(tmp_path, monkeypatch):
+    monkeypatch.setattr(F, "MIN_COMMON", 5)
+    df = _scored()
+    _on_branch(tmp_path, "2026-10-09", df)
+    m = S.playbook_shortlist(df)
+    members = df.index[m]
+    half = df.copy(); half.loc[members[:5], "close_price"] += 1.0          # 5 of 10 moved: 50% same
+    assert "stale" in F.stale_problem(F.build_frame(half), tmp_path, "2026-10-12")
+    most = df.copy(); most.loc[members[:6], "close_price"] += 1.0          # 6 of 10 moved: 40% same
+    assert F.stale_problem(F.build_frame(most), tmp_path, "2026-10-12") == ""
+
+
+def test_the_first_session_or_a_small_overlap_cannot_be_judged(tmp_path, monkeypatch):
+    assert F.stale_problem(F.build_frame(_scored()), tmp_path, "2026-10-12") == ""   # nothing before it
+    _on_branch(tmp_path, "2026-10-09", _scored())
+    monkeypatch.setattr(F, "MIN_COMMON", 11)                                       # 10 shared < 11
+    assert F.stale_problem(F.build_frame(_scored()), tmp_path, "2026-10-12") == ""
+
+
+def test_only_an_earlier_session_is_compared(tmp_path, monkeypatch):
+    monkeypatch.setattr(F, "MIN_COMMON", 5)
+    _on_branch(tmp_path, "2026-10-13", _scored())                     # LATER than the one being judged
+    assert F.stale_problem(F.build_frame(_scored()), tmp_path, "2026-10-12") == ""
+
+
+def test_publish_refuses_a_stale_session_and_writes_nothing(monkeypatch, tmp_path):
+    monkeypatch.setattr(F, "MIN_COMMON", 5)
+    _all_pass(monkeypatch)
+    monkeypatch.setattr(F, "score", lambda wb: ({}, None, None, _scored()))
+    assert F.publish(b"wb", "PRISM 2026-10-09 Fri", "2026-10-09", tmp_path, origin="recorded",
+                     trigger="dispatch", now=NOW) is True
+    with pytest.raises(F.FeedError, match="stale"):
+        F.publish(b"wb", "PRISM 2026-10-12 Mon", "2026-10-12", tmp_path, origin="recorded",
+                  trigger="dispatch", now=NOW)
+    assert F.sessions_on_branch(tmp_path) == ["2026-10-09"]
+
+
+_A = ROOT / "Other Resources" / "archive-cache"
+
+
+@pytest.mark.skipif(not (_A / "PRISM 2026-09-14.xlsx").exists(), reason="the archive copies are local only")
+def test_the_real_holiday_is_refused_and_the_next_real_day_is_not(monkeypatch, tmp_path):
+    monkeypatch.setattr(F, "MIN_ROWS", F._MEASURED_BOUNDS[0])
+    pub = lambda d: F.publish((_A / f"PRISM {d}.xlsx").read_bytes(), f"PRISM {d}", d, tmp_path,   # noqa: E731
+                              origin="backfilled", trigger="backfill", now=NOW)
+    assert pub("2026-09-11") is True
+    with pytest.raises(F.FeedError, match="stale"):
+        pub("2026-09-14")                                             # Ganesh Chaturthi: NSE closed
+    assert pub("2026-09-15") is True                                  # a real session after the holiday

@@ -222,6 +222,37 @@ def gate(datasets, stocks, bench, scored, backfill: bool) -> dict:
             "warnings": [f"{r.name}: {r.detail}" for r in results if r.status == "warn" or r in tolerated]}
 
 
+# A STALE COPY IS NOT A SESSION. The sync names a session by the weekday, with no holiday calendar, so on an
+# exchange holiday it fetched the vendor's unchanged data and named it as that day: 14 Sep and 2 Oct 2026 were
+# published, with 90% and 87% of their closes identical to the day before -- against about 2% on real trading
+# days (measured on all 22 daily sessions, 2026-10-12). Half identical is the line, with room on both sides. A
+# vendor that fails to update on a real trading day is caught the same way: nothing is published, and Kite's
+# 08:45 alarm says there is no list -- no trade on stale data. Kite also checks the exchange calendar itself.
+STALE_SHARE = 0.5
+MIN_COMMON = 50          # fewer shared stocks than this and two lists are too different to be copies
+
+
+def stale_problem(frame: pd.DataFrame, feed: Path, session: str) -> str:
+    """Why `frame` is a stale copy of the latest session published before `session`, or "" when it is not (or
+    cannot be judged: nothing before it, or too few stocks in common). Closes are compared as the exact text the
+    feed writes, so floating-point noise can neither hide a copy nor invent one."""
+    before = [d for d in sessions_on_branch(feed) if d < session]
+    if not before:
+        return ""
+    prev = before[-1]
+    old = pd.read_csv(Path(feed) / SESSIONS / f"{prev}.csv", dtype=str, keep_default_na=False)
+    new = pd.read_csv(io.BytesIO(to_csv_bytes(frame)), dtype=str, keep_default_na=False)
+    old, new = old.set_index("symbol")["close_price"], new.set_index("symbol")["close_price"]
+    common = new.index.intersection(old.index)
+    if len(common) < MIN_COMMON:
+        return ""
+    same = float((new.loc[common] == old.loc[common]).mean())
+    if same < STALE_SHARE:
+        return ""
+    return (f"stale: {same:.0%} of the {len(common)} stocks in both lists close exactly as on {prev} -- not a new "
+            f"trading session (an exchange holiday, or the vendor did not update)")
+
+
 def publish(workbook: bytes, title: str, session: str, feed: Path, *, origin: str, trigger: str,
             now: datetime) -> bool:
     """Score, gate, select, validate, write once. True when a new session was written."""
@@ -229,6 +260,9 @@ def publish(workbook: bytes, title: str, session: str, feed: Path, *, origin: st
     checks = gate(datasets, stocks, bench, scored, backfill=origin == "backfilled")
     frame = build_frame(scored)
     validate(frame)
+    problem = stale_problem(frame, feed, session)
+    if problem:
+        raise FeedError(problem)
     csv = to_csv_bytes(frame)
     return write_session(feed, session, csv, manifest(frame, csv, session, title, workbook, origin, trigger,
                                                       checks, now))
