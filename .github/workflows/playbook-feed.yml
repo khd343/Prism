@@ -1,0 +1,67 @@
+# 🚀 Playbook feed — PRISM's daily list for Kite Algo (ui/playbook_feed_job.py).
+# stockscans-sync starts this the moment a session is ingested (workflow_dispatch, trigger=dispatch); the two
+# crons are only the backstop for a lost dispatch — GitHub cron runs 4-7 hours late, which is why it is not
+# the trigger. Each run publishes at most one session to the playbook-feed branch, never to main, so the
+# Streamlit app (which deploys main) never restarts for it. A failed check publishes nothing and fails the
+# run; GitHub emails the repository owner.
+name: Playbook feed
+
+on:
+  workflow_dispatch:
+    inputs:
+      trigger:
+        description: "Who started this run (stockscans-sync passes 'dispatch')"
+        type: choice
+        options: [manual, dispatch]
+        default: manual
+  schedule:
+    - cron: "5 14 * * 1-5"    # 19:35 IST, lands ~00:15 at the measured delay
+    - cron: "30 21 * * *"     # 03:00 IST, lands ~07:40 — before Kite's 08:45 alarm
+
+permissions:
+  contents: write
+
+concurrency:
+  group: playbook-feed
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    # Pinned, not ubuntu-latest (moves to Ubuntu 26 from 2026-10-19); actions on the Node-24 releases.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/checkout@v7
+        with:
+          ref: playbook-feed
+          path: feed
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install the pinned engine
+        run: pip install -r requirements.txt
+
+      - name: Publish the session
+        id: publish
+        env:
+          SHEET_ID: ${{ secrets.SHEET_ID }}
+          FEED_TRIGGER: ${{ github.event_name == 'schedule' && 'schedule' || inputs.trigger }}
+          PYTHONUTF8: "1"
+        run: python -m ui.playbook_feed_job --feed feed
+
+      - name: Commit and push it
+        if: steps.publish.outputs.session != ''
+        working-directory: feed
+        env:
+          MSG: ${{ steps.publish.outputs.message }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .gitattributes README.md sessions
+          git commit -m "$MSG"
+          git push origin HEAD:playbook-feed

@@ -437,3 +437,42 @@ def test_a_real_archive_publishes_within_bounds_and_deterministically(monkeypatc
     assert a == (tmp_path / "b" / "sessions" / "2026-10-09.csv").read_bytes()
     meta = json.loads((tmp_path / "a" / "sessions" / "2026-10-09.json").read_text(encoding="utf-8"))
     assert 262 <= meta["rows"] <= 288 and meta["checks"]["warnings"] == []
+
+
+# ── 11. The workflow ──────────────────────────────────────────────────────────────────────────────
+_WF_PATH = ROOT / ".github" / "workflows" / "playbook-feed.yml"
+
+
+def _wf():
+    return _WF_PATH.read_text(encoding="utf-8")
+
+
+def test_the_workflow_is_dispatched_with_a_backstop_schedule():
+    y = _wf()
+    assert "workflow_dispatch:" in y and re.search(r"options:\s*\[manual, dispatch\]", y)
+    assert re.findall(r'cron:\s*"([^"]+)"', y) == ["5 14 * * 1-5", "30 21 * * *"]
+
+
+def test_the_workflow_writes_only_the_feed_branch():
+    y = _wf()
+    assert "contents: write" in y and "permissions:" in y
+    assert "ref: playbook-feed" in y and "path: feed" in y
+    pushes = re.findall(r"git push\s+(.+)", y)
+    assert pushes == ["origin HEAD:playbook-feed"], pushes
+    assert "main" not in " ".join(pushes)
+    assert "git add .gitattributes README.md sessions" in y, "the no-conversion rule travels with the files"
+
+
+def test_the_workflow_runs_the_job_serially_on_a_pinned_runner():
+    y = _wf()
+    assert re.search(r"concurrency:\s*\n\s+group: playbook-feed\s*\n\s+cancel-in-progress: false", y)
+    assert re.findall(r"runs-on:\s*(\S+)", y) == ["ubuntu-24.04"]
+    assert "python -m ui.playbook_feed_job --feed feed" in y
+    assert "SHEET_ID: ${{ secrets.SHEET_ID }}" in y
+    assert re.findall(r"secrets\.(\w+)", y) == ["SHEET_ID"], "no other secret is handed to this job"
+
+
+def test_the_commit_message_reaches_git_through_the_environment():
+    """Never `${{ }}`-interpolated into the shell: an output is data, not script."""
+    y = _wf()
+    assert 'git commit -m "$MSG"' in y and "MSG: ${{ steps.publish.outputs.message }}" in y
