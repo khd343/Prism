@@ -255,3 +255,185 @@ def test_warnings_are_recorded_not_blocking(monkeypatch, tmp_path):
     meta = json.loads((tmp_path / "sessions" / "2026-10-12.json").read_text(encoding="utf-8"))
     assert meta["checks"]["warnings"] == ["Industry names: 3 unmapped (0.4%)"]
     assert meta["origin"] == "recorded" and meta["trigger"] == "dispatch"
+
+
+# ── 8. The live run: the session comes from the sheet, read with the data ─────────────────────────
+class _Sheet:
+    """A fake sheet: `titles` is what successive name reads return; downloads return `download_title`."""
+
+    def __init__(self, monkeypatch, titles, download_title=None):
+        self.titles, self.downloads = list(titles), 0
+        self.download_title = download_title
+        monkeypatch.setattr(F, "fetch_sheet_title", self._title)
+        monkeypatch.setattr(F, "download", self._download)
+        monkeypatch.setattr(F, "publish", self._publish)
+        self.published = []
+
+    def _title(self, sheet_id):
+        return self.titles.pop(0) if len(self.titles) > 1 else self.titles[0]
+
+    def _download(self, sheet_id):
+        self.downloads += 1
+        t = self.download_title if self.download_title is not None else self.titles[0]
+        return t, b"xlsx"
+
+    def _publish(self, workbook, title, session, feed, *, origin, trigger, now):
+        self.published.append((title, session, origin, trigger))
+        return True
+
+
+def _published(tmp_path, *sessions):
+    (tmp_path / "sessions").mkdir(parents=True, exist_ok=True)
+    for s in sessions:
+        (tmp_path / "sessions" / f"{s}.csv").write_bytes(b"x")
+
+
+def test_a_new_session_is_published_with_its_name(monkeypatch, tmp_path):
+    _published(tmp_path, "2026-10-09")
+    sheet = _Sheet(monkeypatch, ["PRISM 2026-10-12 Mon"])
+    assert F.run_live("id", tmp_path, trigger="dispatch", now=NOW) == "2026-10-12"
+    assert sheet.published == [("PRISM 2026-10-12 Mon", "2026-10-12", "recorded", "dispatch")]
+
+
+def test_an_already_published_session_is_a_no_op_without_a_download(monkeypatch, tmp_path):
+    _published(tmp_path, "2026-10-12")
+    sheet = _Sheet(monkeypatch, ["PRISM 2026-10-12 Mon"])
+    assert F.run_live("id", tmp_path, trigger="schedule", now=NOW) is None
+    assert sheet.downloads == 0
+
+
+def test_a_dispatch_waits_for_the_rename(monkeypatch, tmp_path):
+    _published(tmp_path, "2026-10-09")
+    sheet = _Sheet(monkeypatch, ["PRISM 2026-10-09 Fri", "PRISM 2026-10-09 Fri", "PRISM 2026-10-12 Mon"])
+    naps = []
+    assert F.run_live("id", tmp_path, trigger="dispatch", now=NOW, sleep=naps.append) == "2026-10-12"
+    assert naps == [F.WAIT_STEP, F.WAIT_STEP]
+
+
+def test_a_dispatch_gives_up_after_the_wait(monkeypatch, tmp_path):
+    _published(tmp_path, "2026-10-09")
+    sheet = _Sheet(monkeypatch, ["PRISM 2026-10-09 Fri"])
+    naps = []
+    assert F.run_live("id", tmp_path, trigger="dispatch", now=NOW, sleep=naps.append) is None
+    assert sum(naps) == F.WAIT_SECONDS and sheet.downloads == 0
+
+
+def test_a_scheduled_run_never_waits(monkeypatch, tmp_path):
+    _published(tmp_path, "2026-10-09")
+    _Sheet(monkeypatch, ["PRISM 2026-10-09 Fri"])
+    naps = []
+    assert F.run_live("id", tmp_path, trigger="schedule", now=NOW, sleep=naps.append) is None
+    assert naps == []
+
+
+def test_an_unreadable_sheet_name_fails_loudly(monkeypatch, tmp_path):
+    _Sheet(monkeypatch, [None])
+    with pytest.raises(F.FeedError, match="no session date"):
+        F.run_live("id", tmp_path, trigger="schedule", now=NOW)
+
+
+@pytest.mark.parametrize("title", ["PRISM 2026-10-12 Mon", "PRISM 2026-10-12"])
+def test_both_name_forms_give_the_session(monkeypatch, tmp_path, title):
+    sheet = _Sheet(monkeypatch, [title])
+    assert F.run_live("id", tmp_path, trigger="manual", now=NOW) == "2026-10-12"
+    assert sheet.published[0][1] == "2026-10-12"
+
+
+def test_a_rename_during_the_download_is_read_again(monkeypatch, tmp_path):
+    _published(tmp_path, "2026-10-09")
+    sheet = _Sheet(monkeypatch, ["PRISM 2026-10-12 Mon"], download_title="PRISM 2026-10-13 Tue")
+    with pytest.raises(F.FeedError, match="renamed"):
+        F.run_live("id", tmp_path, trigger="manual", now=datetime(2026, 10, 13, 21, 0, tzinfo=IST))
+    assert sheet.downloads == 2 and sheet.published == []
+
+
+def test_an_older_sheet_is_nothing_to_do_and_a_future_one_fails(monkeypatch, tmp_path):
+    _published(tmp_path, "2026-10-12")
+    _Sheet(monkeypatch, ["PRISM 2026-10-09 Fri"])
+    assert F.run_live("id", tmp_path, trigger="manual", now=NOW) is None
+    _Sheet(monkeypatch, ["PRISM 2026-10-14 Wed"])
+    with pytest.raises(F.FeedError, match="ahead"):
+        F.run_live("id", tmp_path, trigger="manual", now=NOW)
+
+
+# ── 9. Back-fill and the command line ─────────────────────────────────────────────────────────────
+def test_backfill_publishes_each_archive_once_and_reports_refusals(monkeypatch, tmp_path):
+    archives = tmp_path / "archive"
+    archives.mkdir()
+    for name in ["PRISM 2026-06-29.xlsx", "PRISM 2026-09-10.xlsx", "PRISM 2026-10-09.xlsx", "notes.xlsx"]:
+        (archives / name).write_bytes(name.encode())
+    feed = tmp_path / "feed"
+    _published(feed, "2026-10-09")                                   # already recorded: never re-written
+    seen = []
+
+    def fake_publish(workbook, title, session, feed_, *, origin, trigger, now):
+        if session == "2026-06-29":
+            raise F.FeedError("Cash-flow year decided: 36.7% undecided")
+        seen.append((title, session, origin, trigger))
+        return True
+
+    monkeypatch.setattr(F, "publish", fake_publish)
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        assert F.backfill(archives, feed, now=NOW) == ["2026-09-10"]
+    assert seen == [("PRISM 2026-09-10", "2026-09-10", "backfilled", "backfill")]
+    assert "2026-06-29" in out.getvalue() and "36.7%" in out.getvalue()
+
+
+_SECRET = "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcd"
+
+
+def test_main_writes_the_outputs_and_never_prints_the_id(monkeypatch, tmp_path):
+    feed = tmp_path / "feed"
+    (feed / "sessions").mkdir(parents=True)
+    (feed / "sessions" / "2026-10-12.json").write_text(json.dumps({"rows": 271}), encoding="utf-8")
+    monkeypatch.setattr(F, "run_live", lambda sid, f, *, trigger: "2026-10-12" if sid == _SECRET else None)
+    gh_out = tmp_path / "out.txt"
+    monkeypatch.setenv("SHEET_ID", f'SHEET_ID = "{_SECRET}"')
+    monkeypatch.setenv("FEED_TRIGGER", "dispatch")
+    monkeypatch.setenv("GITHUB_OUTPUT", str(gh_out))
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        assert F.main(["--feed", str(feed)]) == 0
+    assert _SECRET not in out.getvalue()
+    assert gh_out.read_text(encoding="utf-8") == (
+        "session=2026-10-12\nmessage=feed: 2026-10-12 · 271 stocks · recorded (dispatch)\n")
+
+
+def test_main_turns_a_refusal_into_a_failed_run(monkeypatch, tmp_path):
+    def refuse(*a, **k):
+        raise F.FeedError("data check failed — Universe: 12 stocks")
+    monkeypatch.setattr(F, "run_live", refuse)
+    monkeypatch.setenv("SHEET_ID", _SECRET)
+    monkeypatch.delenv("FEED_TRIGGER", raising=False)
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        assert F.main(["--feed", str(tmp_path)]) == 1
+    assert "Universe: 12 stocks" in out.getvalue()
+
+
+def test_main_refuses_a_missing_secret_or_an_unknown_trigger(monkeypatch, tmp_path):
+    monkeypatch.delenv("SHEET_ID", raising=False)
+    with pytest.raises(SystemExit):
+        F.main(["--feed", str(tmp_path)])
+    monkeypatch.setenv("SHEET_ID", _SECRET)
+    monkeypatch.setenv("FEED_TRIGGER", "cron")
+    with pytest.raises(SystemExit):
+        F.main(["--feed", str(tmp_path)])
+
+
+# ── 10. On a real archive: the whole path, twice, same bytes ──────────────────────────────────────
+_ARCHIVE = ROOT / "Other Resources" / "archive-cache" / "PRISM 2026-10-09.xlsx"
+
+
+@pytest.mark.skipif(not _ARCHIVE.exists(), reason="the archive copies are local only (gitignored)")
+def test_a_real_archive_publishes_within_bounds_and_deterministically(monkeypatch, tmp_path):
+    monkeypatch.setattr(F, "MIN_ROWS", F._MEASURED_BOUNDS[0])
+    wb = _ARCHIVE.read_bytes()
+    for feed in (tmp_path / "a", tmp_path / "b"):
+        assert F.publish(wb, "PRISM 2026-10-09", "2026-10-09", feed, origin="backfilled", trigger="backfill",
+                         now=NOW) is True
+    a = (tmp_path / "a" / "sessions" / "2026-10-09.csv").read_bytes()
+    assert a == (tmp_path / "b" / "sessions" / "2026-10-09.csv").read_bytes()
+    meta = json.loads((tmp_path / "a" / "sessions" / "2026-10-09.json").read_text(encoding="utf-8"))
+    assert 262 <= meta["rows"] <= 288 and meta["checks"]["warnings"] == []

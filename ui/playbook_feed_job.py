@@ -23,22 +23,26 @@ only pauses entries, so every rule here fails closed:
 """
 from __future__ import annotations
 
+import argparse
 import contextlib
 import hashlib
 import io
 import json
 import os
 import re
-from datetime import datetime
+import sys
+import time
+from datetime import date, datetime
 from pathlib import Path
 
 import pandas as pd
 
 from core import data_engine as de
 from core import run_scoring_pipeline
+from core.sheet_meta import IST, _parse_title, expected_session, fetch_sheet_title, parse_data_date
 from ui import data_check_job as D
 from ui import ui_scans as S
-from ui.scan_records_job import engine_version
+from ui.scan_records_job import engine_version, sheet_id_from_secret
 
 SCHEMA = 1
 SESSIONS = "sessions"
@@ -228,3 +232,127 @@ def publish(workbook: bytes, title: str, session: str, feed: Path, *, origin: st
     csv = to_csv_bytes(frame)
     return write_session(feed, session, csv, manifest(frame, csv, session, title, workbook, origin, trigger,
                                                       checks, now))
+
+
+# ── The live run ──────────────────────────────────────────────────────────────────────────────────
+# sync.py does not wait for proof of the ingest (its report printed empty on 9 Oct), so a dispatched run may
+# start before Prism.gs renames the sheet: it re-reads the name every minute for up to 15. A scheduled or
+# manual run never waits — it publishes what is there or exits.
+WAIT_SECONDS, WAIT_STEP = 900, 60
+TRIGGERS = ("dispatch", "schedule", "manual")
+
+
+def download(sheet_id: str):
+    """(sheet name, workbook bytes) from ONE response: the name in its header is the session of its body."""
+    import requests
+    r = requests.get(f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=xlsx", timeout=180)
+    r.raise_for_status()
+    return _parse_title(r.headers.get("Content-Disposition", "")), r.content
+
+
+def _session(title) -> str | None:
+    d = parse_data_date(title)
+    return d.isoformat() if d else None
+
+
+def _new_session(title, have: list, now: datetime) -> str | None:
+    """The session to publish, None when there is nothing new, or FeedError when it cannot be trusted."""
+    session = _session(title)
+    if session is None:
+        raise FeedError(f"the sheet's name {title!r} carries no session date — unverifiable is not published")
+    if session in have:
+        print(f"{session} is already published — nothing to do")
+        return None
+    if have and session < have[-1]:
+        print(f"the sheet holds {session}, older than the newest published {have[-1]} — nothing to do")
+        return None
+    if date.fromisoformat(session) > expected_session(now):
+        raise FeedError(f"the sheet claims {session}, ahead of the newest possible session "
+                        f"{expected_session(now)}")
+    return session
+
+
+def run_live(sheet_id: str, feed: Path, *, trigger: str, now: datetime | None = None,
+             sleep=time.sleep) -> str | None:
+    """Publish the sheet's session if it is new. Returns the session written, or None."""
+    now = now or datetime.now(IST)
+    have = sessions_on_branch(feed)
+    title = fetch_sheet_title(sheet_id)
+    waited = 0
+    while trigger == "dispatch" and _session(title) in have and waited < WAIT_SECONDS:
+        sleep(WAIT_STEP)
+        waited += WAIT_STEP
+        title = fetch_sheet_title(sheet_id)
+    if _new_session(title, have, now) is None:
+        return None
+    for _ in range(2):                                   # a rename between the two requests: read again
+        got, workbook = download(sheet_id)
+        if got == title:
+            break
+        title = fetch_sheet_title(sheet_id)
+    else:
+        raise FeedError("the sheet was renamed during the download twice — the next run retries")
+    session = _new_session(title, have, now)
+    if session is None:
+        return None
+    return session if publish(workbook, title, session, feed, origin="recorded", trigger=trigger,
+                              now=now) else None
+
+
+# ── Back-fill (local, once) ───────────────────────────────────────────────────────────────────────
+def backfill(folder: Path, feed: Path, *, now: datetime | None = None) -> list:
+    """Every `PRISM YYYY-MM-DD*.xlsx` in `folder` not yet on the branch, oldest first, as `backfilled`.
+    A copy that fails a check is reported and skipped — the others still go in."""
+    now = now or datetime.now(IST)
+    have = set(sessions_on_branch(feed))
+    done, refused = [], []
+    for path in sorted(Path(folder).glob("PRISM *.xlsx")):
+        session = _session(path.stem)
+        if session is None or session in have:
+            continue
+        try:
+            if publish(path.read_bytes(), path.stem, session, feed, origin="backfilled", trigger="backfill",
+                       now=now):
+                done.append(session)
+        except FeedError as exc:
+            refused.append(f"{session}: {exc}")
+    for line in refused:
+        print(f"  ✗ not back-filled {line}")
+    return done
+
+
+# ── The run ───────────────────────────────────────────────────────────────────────────────────────
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description="Publish PRISM's Playbook list to the playbook-feed branch.")
+    ap.add_argument("--feed", required=True, type=Path, help="a checkout of the playbook-feed branch")
+    ap.add_argument("--backfill", type=Path, help="a folder of archived 'PRISM YYYY-MM-DD.xlsx' copies")
+    args = ap.parse_args(argv)
+    if args.backfill:
+        done = backfill(args.backfill, args.feed)
+        print(f"back-filled {len(done)} session(s): {done}")
+        return 0
+    raw = os.environ.get("SHEET_ID", "")
+    sheet_id = sheet_id_from_secret(raw)
+    print(D._secret_shape(raw, sheet_id))
+    if not sheet_id:
+        raise SystemExit("SHEET_ID holds no spreadsheet id — paste the live data sheet's id (the part of its "
+                         "address between /d/ and /edit).")
+    trigger = os.environ.get("FEED_TRIGGER") or "manual"
+    if trigger not in TRIGGERS:
+        raise SystemExit(f"FEED_TRIGGER {trigger!r} is not one of {TRIGGERS}")
+    try:
+        session = run_live(sheet_id, args.feed, trigger=trigger)
+    except FeedError as exc:
+        print(f"❌ nothing published: {exc}")
+        return 1
+    out = os.environ.get("GITHUB_OUTPUT")
+    if session and out:
+        rows = json.loads((args.feed / SESSIONS / f"{session}.json").read_text(encoding="utf-8"))["rows"]
+        with open(out, "a", encoding="utf-8", newline="\n") as f:
+            f.write(f"session={session}\nmessage=feed: {session} · {rows} stocks · recorded ({trigger})\n")
+    print(f"✅ published {session}" if session else "nothing new to publish")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
