@@ -23,7 +23,9 @@ only pauses entries, so every rule here fails closed:
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
+import io
 import json
 import os
 import re
@@ -32,6 +34,9 @@ from pathlib import Path
 
 import pandas as pd
 
+from core import data_engine as de
+from core import run_scoring_pipeline
+from ui import data_check_job as D
 from ui import ui_scans as S
 from ui.scan_records_job import engine_version
 
@@ -182,3 +187,44 @@ def write_session(feed: Path, session: str, csv: bytes, meta: dict) -> bool:
     if not attrs.exists() or attrs.read_bytes() != GITATTRIBUTES:
         attrs.write_bytes(GITATTRIBUTES)
     return True
+
+
+# ── Scoring and the gate ──────────────────────────────────────────────────────────────────────────
+# A back-filled archive predates two things the vendor added later, which are "not there yet", not broken:
+# the index rows (2026-10-08; check_benchmarks is skipped) and the listed_days column (~2026-09-21). Exactly
+# that detail is tolerated — anything else on the same check still blocks, and nothing is tolerated live.
+BACKFILL_TOLERATED = {("Key columns", "listed_days absent")}
+
+
+def score(workbook: bytes):
+    """The app's own path on the downloaded bytes (data_engine's upload branch IS the sheet's parse)."""
+    with contextlib.redirect_stdout(io.StringIO()):
+        datasets = de.load_all_csvs("upload", {"workbook": io.BytesIO(workbook)})
+        stocks, bench = de._clean_from(datasets), de.benchmark_table(datasets)
+        scored = run_scoring_pipeline(stocks.copy())
+    return datasets, stocks, bench, scored
+
+
+def gate(datasets, stocks, bench, scored, backfill: bool) -> dict:
+    results = (D.check_tabs(datasets) + D.check_universe(stocks)
+               + ([] if backfill else D.check_benchmarks(bench))
+               + D.check_coverage(stocks) + D.check_types(datasets) + D.check_taxonomy(stocks)
+               + D.check_identities(stocks) + D.check_engine(scored))
+    tolerated = [r for r in results if backfill and r.status == "fail" and (r.name, r.detail) in BACKFILL_TOLERATED]
+    failed = [r for r in results if r.status == "fail" and r not in tolerated]
+    if failed:
+        raise FeedError("data check failed — " + "; ".join(f"{r.name}: {r.detail}" for r in failed))
+    return {"passed": sum(r.status == "ok" for r in results),
+            "warnings": [f"{r.name}: {r.detail}" for r in results if r.status == "warn" or r in tolerated]}
+
+
+def publish(workbook: bytes, title: str, session: str, feed: Path, *, origin: str, trigger: str,
+            now: datetime) -> bool:
+    """Score, gate, select, validate, write once. True when a new session was written."""
+    datasets, stocks, bench, scored = score(workbook)
+    checks = gate(datasets, stocks, bench, scored, backfill=origin == "backfilled")
+    frame = build_frame(scored)
+    validate(frame)
+    csv = to_csv_bytes(frame)
+    return write_session(feed, session, csv, manifest(frame, csv, session, title, workbook, origin, trigger,
+                                                      checks, now))

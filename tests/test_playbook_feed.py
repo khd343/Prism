@@ -207,3 +207,51 @@ def test_the_branch_tells_git_never_to_touch_the_bytes(tmp_path):
 def test_the_readme_lists_the_contract():
     text = F.readme_text()
     assert all(f"`{c}`" in text for c in F.COLUMNS) and "never modified" in text
+
+
+# ── 7. The gate fails closed; the back-fill tolerance is exact and never live ─────────────────────
+def _all_pass(monkeypatch, **override):
+    """Every 🩺 check passes unless overridden with a list of Results."""
+    names = ["check_tabs", "check_universe", "check_benchmarks", "check_coverage", "check_types",
+             "check_taxonomy", "check_identities", "check_engine"]
+    for n in names:
+        res = override.get(n, [D.Result(n, "ok", "fine")])
+        monkeypatch.setattr(D, n, lambda *a, _r=res: list(_r))
+
+
+def test_a_failing_check_publishes_nothing(monkeypatch, tmp_path):
+    _all_pass(monkeypatch, check_engine=[D.Result("Scores not flat", "fail", "flat: ['momentum_score']")])
+    monkeypatch.setattr(F, "score", lambda wb: ({}, None, None, _scored()))
+    with pytest.raises(F.FeedError, match="Scores not flat"):
+        F.publish(b"wb", "PRISM 2026-10-12 Mon", "2026-10-12", tmp_path, origin="recorded",
+                  trigger="dispatch", now=NOW)
+    assert F.sessions_on_branch(tmp_path) == [] and not (tmp_path / "sessions").exists()
+
+
+def test_backfill_tolerates_exactly_the_two_later_additions(monkeypatch):
+    _all_pass(monkeypatch, check_benchmarks=[D.Result("Index rows", "fail", "missing or no price: [...]")],
+              check_coverage=[D.Result("Key columns", "fail", "listed_days absent")])
+    checks = F.gate({}, None, None, None, backfill=True)
+    assert "Key columns: listed_days absent" in checks["warnings"]
+    _all_pass(monkeypatch, check_coverage=[D.Result("Key columns", "fail", "listed_days absent; pe 50% < 80%")])
+    with pytest.raises(F.FeedError, match="pe 50%"):
+        F.gate({}, None, None, None, backfill=True)
+
+
+def test_backfill_tolerance_never_applies_live(monkeypatch):
+    _all_pass(monkeypatch, check_benchmarks=[D.Result("Index rows", "fail", "missing or no price: [...]")])
+    with pytest.raises(F.FeedError, match="Index rows"):
+        F.gate({}, None, None, None, backfill=False)
+    _all_pass(monkeypatch, check_coverage=[D.Result("Key columns", "fail", "listed_days absent")])
+    with pytest.raises(F.FeedError, match="listed_days"):
+        F.gate({}, None, None, None, backfill=False)
+
+
+def test_warnings_are_recorded_not_blocking(monkeypatch, tmp_path):
+    _all_pass(monkeypatch, check_taxonomy=[D.Result("Industry names", "warn", "3 unmapped (0.4%)")])
+    monkeypatch.setattr(F, "score", lambda wb: ({}, None, None, _scored()))
+    assert F.publish(b"wb", "PRISM 2026-10-12 Mon", "2026-10-12", tmp_path, origin="recorded",
+                     trigger="dispatch", now=NOW) is True
+    meta = json.loads((tmp_path / "sessions" / "2026-10-12.json").read_text(encoding="utf-8"))
+    assert meta["checks"]["warnings"] == ["Industry names: 3 unmapped (0.4%)"]
+    assert meta["origin"] == "recorded" and meta["trigger"] == "dispatch"
