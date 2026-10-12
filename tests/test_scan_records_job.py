@@ -572,6 +572,77 @@ def test_the_index_comparison_agrees_with_an_independent_recalculation(seed):
     assert got["indices"] == {c: pytest.approx(v, abs=0.0051) for c, v in want.items()}
 
 
+# ── A finished window is written once (2026-10-12) ────────────────────────────────────────────────
+# The job re-scores every copy with TODAY's engine. The recipe fingerprint guards the recipe, not the engine
+# under it (the Playbook reads momentum/breakout scores the engine computes), so without this a later scoring
+# change would silently rewrite October's unseen record. A window whose END copy is a finished month is FINAL:
+# recorded once with the engine that measured it, never re-measured, never dropped.
+DATES = ["2026-09-30", "2026-10-31", "2026-11-28", "2026-12-04"]
+
+
+def test_a_final_window_is_kept_exactly_as_first_recorded():
+    old = [{"start": "2026-10-31", "end": "2026-11-28", "median_excess_pp": 5.0, "final": True, "engine": "aaa"}]
+    fresh = [{"start": "2026-10-31", "end": "2026-11-28", "median_excess_pp": 9.9},
+             {"start": "2026-10-31", "end": "2026-12-04", "median_excess_pp": 1.0}]
+    out = J.keep_final(old, fresh, DATES, "bbb")
+    assert out == [old[0], {"start": "2026-10-31", "end": "2026-12-04", "median_excess_pp": 1.0, "final": False}]
+
+
+def test_a_window_becomes_final_when_its_end_month_is_over_and_is_stamped_then():
+    fresh = [{"start": "2026-10-31", "end": "2026-11-28", "median_excess_pp": 2.0}]
+    assert J.keep_final([], fresh, DATES, "e1") == [{**fresh[0], "final": True, "engine": "e1"}]   # Nov is over
+    assert J.keep_final([], fresh, DATES[:3], "e1") == [{**fresh[0], "final": False}]   # 28 Nov is the latest
+
+
+def test_a_running_window_is_measured_again_every_week_and_never_stamped():
+    """A stamp alone must not count as a change: an unstamped running window keeps quiet weeks commit-free."""
+    old = [{"start": "2026-10-31", "end": "2026-12-04", "median_excess_pp": 1.0, "final": False}]
+    fresh = [{"start": "2026-10-31", "end": "2026-12-04", "median_excess_pp": 3.0}]
+    assert J.keep_final(old, fresh, DATES, "bbb") == [{**fresh[0], "final": False}]
+
+
+def test_a_final_window_is_never_dropped():
+    """A copy later missing from the archive must not erase evidence already recorded on it."""
+    old = [{"start": "2026-10-31", "end": "2026-11-28", "median_excess_pp": 5.0, "final": True, "engine": "aaa"}]
+    assert J.keep_final(old, [], DATES) == old
+
+
+@pytest.mark.parametrize("on_file", [True, False], ids=["final-on-file", "first-run"])
+def test_the_job_never_remeasures_a_final_window(monkeypatch, on_file):
+    """main() end to end: a final window already on file survives a new engine untouched and is not measured
+    again; on a first run it is measured once and stamped; the running window is measured, never stamped."""
+    import ui.ui_movers as M
+    early, late = _liquid_frames()
+    stocks = {"2026-09-30": early, "2026-10-31": early, "2026-11-28": late, "2026-12-04": late}
+    monkeypatch.setattr(J, "load_market", lambda source, files, sid: (stocks[sid.removeprefix("id-")].copy(),
+                                                                       _bench({"NSE:NIF500MO50": 100.0})))
+    monkeypatch.setattr(J, "run_scoring_pipeline", lambda df: df)
+    monkeypatch.setattr(J, "engine_version", lambda: "new-engine")
+    monkeypatch.setattr(M, "load_index", lambda _id: pd.DataFrame(
+        {"vintage_date": DATES, "spreadsheet_id": [f"id-{d}" for d in DATES]}))
+    toy = {"key": "toy", "emoji": "T", "name": "Toy", "mask": lambda d: d["flag"] == 1, "benchmark": "NSE:NIF500MO50"}
+    monkeypatch.setattr(S, "SCANS", (toy,))
+    monkeypatch.setattr(S, "recipe_fingerprint", lambda scan: "fp")
+    first = {"start": "2026-10-31", "end": "2026-11-28", "days": 28, "median_excess_pp": 42.0, "beat_pct": 61,
+             "n": 40, "final": True, "engine": "old"}                     # as measure_window writes, plus the stamp
+    monkeypatch.setattr(S, "load_records", lambda: {"version": S.RECORD_VERSION, "scans": {
+        "toy": {"fingerprint": "fp", "windows": [], "out_of_sample": [first] if on_file else []}}})
+    measured = []
+    real = J.measure_window
+    monkeypatch.setattr(J, "measure_window", lambda *a, **k: measured.append((a[3], a[4])) or real(*a, **k))
+    written = {}
+    monkeypatch.setattr(J, "write", lambda rec: written.update(rec))
+    monkeypatch.setenv("ARCHIVE_INDEX_SHEET_ID", "x" * 44)
+    assert J.main() == 0
+    oos = written["scans"]["toy"]["out_of_sample"]
+    if on_file:
+        assert oos[0] == first and measured == [("2026-10-31", "2026-12-04")]
+    else:
+        assert measured == [("2026-10-31", "2026-11-28"), ("2026-10-31", "2026-12-04")]
+        assert (oos[0]["end"], oos[0]["final"], oos[0]["engine"]) == ("2026-11-28", True, "new-engine")
+    assert (oos[1]["end"], oos[1]["final"], "engine" in oos[1]) == ("2026-12-04", False, False)
+
+
 def test_the_job_reads_the_indices_beside_each_copy_and_records_the_comparison(monkeypatch):
     """main() end to end on fake archive copies: each copy is ONE load (stocks and index rows), only the
     stocks are scored, and every unseen window carries the comparison read from ITS OWN two copies."""

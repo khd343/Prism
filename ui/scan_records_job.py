@@ -154,6 +154,22 @@ def measure_window(early: pd.DataFrame, late: pd.DataFrame, scan: dict, start: s
     return out
 
 
+def keep_final(old: list, fresh: list, dates, engine: str = "") -> list:
+    """The unseen record, final windows first-written (2026-10-12). A window whose END copy is a finished month is
+    FINAL: recorded once, stamped with the engine that measured it, never re-measured and never dropped. Every
+    copy is re-scored with TODAY's engine, and the recipe fingerprint guards the recipe, not the engine under it —
+    so without this a later scoring change would silently rewrite evidence already recorded. A window still ending
+    on the latest, unfinished copy is RUNNING: measured again each week, unstamped (like the top-level
+    engine_version, a stamp alone must not count as a change)."""
+    done = set(frozen(dates))
+    out = {(w["start"], w["end"]): w for w in old if w.get("final")}
+    for w in fresh:
+        key = (w["start"], w["end"])
+        if key not in out:
+            out[key] = {**w, "final": True, "engine": engine} if w["end"] in done else {**w, "final": False}
+    return [out[k] for k in sorted(out)]
+
+
 def members(frame: pd.DataFrame, scan: dict) -> list:
     return sorted(frame.loc[scan["mask"](frame), "company_id"].astype(str).unique())
 
@@ -235,8 +251,12 @@ def main() -> int:
     dates = sorted(ids)
     # Each scan on its own clock (2026-10-07): its own design date and shortest window, so a 🌱 list
     # judged over 12 months is never recorded on a 1-month window.
-    windows = {s["key"]: scan_windows(dates, s) for s in S.SCANS}
+    old = {s["key"]: ((existing.get("scans") or {}).get(s["key"]) or {}).get("out_of_sample") or [] for s in S.SCANS}
+    final = {k: {(w["start"], w["end"]) for w in rows if w.get("final")} for k, rows in old.items()}
+    # A FINAL window on file is never measured again (keep_final) — so its copies are not even downloaded for it.
+    windows = {s["key"]: [w for w in scan_windows(dates, s) if w not in final[s["key"]]] for s in S.SCANS}
     base = baseline_date(dates)
+    ev = engine_version()
     need = sorted({d for ws in windows.values() for w in ws for d in w} | ({base} if base else set()))
     print(f"archive copies {dates}\nunseen windows {windows}\n🆕 baseline {base}")
     frames, benches = {}, {}
@@ -249,6 +269,7 @@ def main() -> int:
     for scan in S.SCANS:
         rows = [r for a, b in windows[scan["key"]]
                 if (r := measure_window(frames[a], frames[b], scan, a, b, benches[a], benches[b]))]
+        rows = keep_final(old[scan["key"]], rows, dates, ev)
         updates[scan["key"]] = {"out_of_sample": rows}
         if base:
             updates[scan["key"]]["members_at_latest"] = members(frames[base], scan)
@@ -259,7 +280,7 @@ def main() -> int:
             tail = (f" · vs {BENCHMARK_INDICES[code]} {vs['portfolio_pp'] - idx:+.1f}pp after costs"
                     if idx is not None and "portfolio_pp" in vs else "")
             print(f"   {r['start']} -> {r['end']} {r['median_excess_pp']:+.1f}pp beat {r['beat_pct']}% n {r['n']}{tail}")
-    top = {"generated": date.today().isoformat(), "engine_version": engine_version()}
+    top = {"generated": date.today().isoformat(), "engine_version": ev}
     if base:
         top["members_date"] = base
     new, changed = merge(existing, updates, top)
