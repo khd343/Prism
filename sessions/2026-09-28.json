@@ -1,0 +1,53 @@
+{
+  "schema": 1,
+  "session": "2026-09-28",
+  "rows": 270,
+  "columns": [
+    "symbol",
+    "name",
+    "sector",
+    "industry",
+    "cap",
+    "composite_score",
+    "crs_52w",
+    "dist_to_vstop",
+    "momentum_score",
+    "breakout_score",
+    "traded_value_cr",
+    "rsi_14d",
+    "stage",
+    "close_price",
+    "equity_shares"
+  ],
+  "csv_sha256": "871c36e84ca6db4e99694d02cf9769eacaaac10849bacda162560d3b0ac3135f",
+  "recipe": "playbook",
+  "recipe_fingerprint": "da869c1c0a1c43d7",
+  "engine_commit": "bb1b2f6",
+  "source_title": "PRISM 2026-09-28",
+  "source_sha256": "97c8d45028c9e41de17357c877de83cedda122051521f8a8806cc1fb3aadc260",
+  "origin": "backfilled",
+  "trigger": "backfill",
+  "published_at": "2026-10-12T15:57:45+05:30",
+  "counts": {
+    "cap": {
+      "": 0,
+      "LARGE": 43,
+      "MEGA": 4,
+      "MICRO": 47,
+      "MID": 61,
+      "NANO": 0,
+      "SMALL": 115
+    },
+    "stage": {
+      "": 6,
+      "1": 18,
+      "2": 246,
+      "3": 0,
+      "4": 0
+    }
+  },
+  "checks": {
+    "passed": 14,
+    "warnings": []
+  }
+}
