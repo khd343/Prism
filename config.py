@@ -471,20 +471,25 @@ PRELISTING_BASELINE_DAYS = 730
 STALE_RESULT_DAYS = 240
 
 # ── Benchmark indices (2026-10-08) ──
-# The seven NSE indices the scans are judged against ("could I buy the index fund instead?"). They
+# The NSE indices the scans are judged against ("could I buy the index fund instead?"). They
 # arrive in the PRISM watchlists, so the sheet carries them as rows like a stock: price and
 # technicals filled, every fundamental, the sector, the industry and the market cap 'null'. They are
 # set aside at the merge (core/data_engine._set_aside_benchmarks) and never enter the stock universe.
 # Keyed by the vendor's id, which is steadier than a name (the vendor re-spelled every sector name in
-# early October 2026). Read from the sync's own fetch of 2026-10-08.
+# early October 2026). Read from the sync's own fetch of 2026-10-08 (seven), and of 2026-10-13 for the
+# two MidSmallcap 400 indices: the Kite Playbook trades mid and small caps only, and its frozen test is
+# judged against Nifty MidSmallcap 400 with its Momentum Quality 100 as the reference — so PRISM shows the
+# same yardstick. No scan card's declared benchmark changed (ui_scans.SCANS, fixed 2026-10-08).
 BENCHMARK_INDICES = {
     "NSE:CNX500": "Nifty 500",
     "NSE:SMALLCA250": "Nifty Smallcap 250",
     "NSE:NFMICRO250": "Nifty Microcap 250",
+    "NSE:MIDSMAL400": "Nifty MidSmallcap 400",
     "NSE:NIF500MO50": "Nifty500 Momentum 50",
     "NSE:NI200MOM30": "Nifty200 Momentum 30",
     "NSE:NQUALITY30": "Nifty200 Quality 30",
     "NSE:NS250MQ100": "Nifty Smallcap250 Momentum Quality 100",
+    "NSE:NMS400MQ10": "Nifty MidSmallcap400 Momentum Quality 100",
 }
 
 # ── Asymmetric Governance Risk Shield ──

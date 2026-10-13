@@ -67,11 +67,13 @@ def test_can_slim_m_reads_the_scoring_regime_before_the_detected_one():
 
 # ── The index table ──────────────────────────────────────────────────────────────────────────────────
 def _tech_rows():
-    """The Technicals tab as the loader hands it over: a stock, the seven indices in a scrambled
-    order, and an undeclared index-like row (no market cap / sector / industry)."""
+    """The Technicals tab as the loader hands it over: a stock, every declared index in a scrambled
+    order, and an undeclared index-like row (no market cap / sector / industry). One price per declared
+    index, alternating above and below its averages, so the fixture follows config (nine since
+    2026-10-13) instead of a hardcoded count."""
     ids = ["NSE:TCS", *reversed(list(BENCHMARK_INDICES)), "NSE:NEWINDEX"]
     n = len(ids)
-    close = [4000.0] + [110.0, 90.0, 110.0, 90.0, 110.0, 90.0, 110.0] + [50.0]
+    close = [4000.0] + [110.0 if i % 2 == 0 else 90.0 for i in range(len(BENCHMARK_INDICES))] + [50.0]
     return pd.DataFrame({"company_id": ids, "close_price": close, "sma_30w": [100.0] * n,
                          "sma_200d": [95.0] * n, "sma_50d": [101.0] * n, "rsi_14d": [40.0] * n,
                          "dist_52wh": [8.0] * n})

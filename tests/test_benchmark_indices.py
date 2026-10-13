@@ -1,7 +1,7 @@
 """
 test_benchmark_indices.py
 =========================
-The seven benchmark indices are not stocks (2026-10-08).
+The benchmark indices are not stocks (2026-10-08; nine since 2026-10-13).
 
 The user added seven NSE indices (Nifty 500, Smallcap 250, Microcap 250, Nifty500 Momentum 50,
 Nifty200 Momentum 30, Nifty200 Quality 30, Smallcap250 Momentum Quality 100) to the PRISM watchlists,
@@ -31,15 +31,22 @@ import core.data_engine as de  # noqa: E402
 from config import BENCHMARK_INDICES  # noqa: E402
 
 
-def test_the_seven_benchmarks_are_declared_by_the_vendors_ids():
+def test_the_benchmarks_are_declared_by_the_vendors_ids():
+    """Nine since 2026-10-13: Nifty MidSmallcap 400 and its Momentum Quality 100, added because the Kite
+    Playbook trades mid and small caps only and its frozen test is judged against exactly these two.
+    Ids and names read from the sync's own fetch that day (a local-mode run, nothing uploaded); before
+    they were declared, the safety net already set both aside and the 2,710 stocks scored identically
+    on all 759 columns to the same fetch with the two rows deleted."""
     assert BENCHMARK_INDICES == {
         "NSE:CNX500": "Nifty 500",
         "NSE:SMALLCA250": "Nifty Smallcap 250",
         "NSE:NFMICRO250": "Nifty Microcap 250",
+        "NSE:MIDSMAL400": "Nifty MidSmallcap 400",
         "NSE:NIF500MO50": "Nifty500 Momentum 50",
         "NSE:NI200MOM30": "Nifty200 Momentum 30",
         "NSE:NQUALITY30": "Nifty200 Quality 30",
         "NSE:NS250MQ100": "Nifty Smallcap250 Momentum Quality 100",
+        "NSE:NMS400MQ10": "Nifty MidSmallcap400 Momentum Quality 100",
     }
 
 

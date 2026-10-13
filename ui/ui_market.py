@@ -22,10 +22,12 @@ SHORT_NAMES = {
     "NSE:CNX500": "Nifty 500",
     "NSE:SMALLCA250": "Smallcap 250",
     "NSE:NFMICRO250": "Microcap 250",
+    "NSE:MIDSMAL400": "MidSmall 400",
     "NSE:NIF500MO50": "Momentum 50",
     "NSE:NI200MOM30": "Momentum 30",
     "NSE:NQUALITY30": "Quality 30",
     "NSE:NS250MQ100": "Smallcap Mom-Quality",
+    "NSE:NMS400MQ10": "MidSmall Mom-Quality",
 }
 MARKET_ID = "NSE:CNX500"
 
