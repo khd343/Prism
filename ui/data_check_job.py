@@ -81,11 +81,12 @@ def check_universe(stocks: pd.DataFrame) -> list:
     return [_ok(UNIVERSE[0] <= n <= UNIVERSE[1], "Universe", f"{n:,} stocks (expected {UNIVERSE[0]:,}-{UNIVERSE[1]:,})")]
 
 
-def check_benchmarks(bench: pd.DataFrame) -> list:
+def check_benchmarks(bench: pd.DataFrame, indices=None) -> list:
+    want = list(BENCHMARK_INDICES) if indices is None else list(indices)   # the feed passes its frozen seven
     have = {} if bench is None or bench.empty else dict(zip(bench["company_id"].astype(str),
                                                             pd.to_numeric(bench["close_price"], errors="coerce")))
-    bad = [BENCHMARK_INDICES[i] for i in BENCHMARK_INDICES if not (have.get(i, 0) > 0)]
-    return [_ok(not bad, "Index rows", f"missing or no price: {bad}" if bad else f"all {len(BENCHMARK_INDICES)} with a price")]
+    bad = [BENCHMARK_INDICES[i] for i in want if not (have.get(i, 0) > 0)]
+    return [_ok(not bad, "Index rows", f"missing or no price: {bad}" if bad else f"all {len(want)} with a price")]
 
 
 def check_coverage(stocks: pd.DataFrame) -> list:

@@ -25,6 +25,7 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from config import BENCHMARK_INDICES  # noqa: E402
 from core.data_engine import weinstein_stage  # noqa: E402
 from core.sheet_meta import IST  # noqa: E402
 from ui import data_check_job as D  # noqa: E402
@@ -543,3 +544,48 @@ def test_the_real_holiday_is_refused_and_the_next_real_day_is_not(monkeypatch, t
     with pytest.raises(F.FeedError, match="stale"):
         pub("2026-09-14")                                             # Ganesh Chaturthi: NSE closed
     assert pub("2026-09-15") is True                                  # a real session after the holiday
+
+
+# ── 13. The live gate's index rows are the seven Kite's test opened with (2026-10-13) ──────────────
+# The window opened on 12 Oct with the live feed refusing a session unless these SEVEN index rows were priced.
+# PRISM 2a87ac4 (13 Oct) added two display indices to config.BENCHMARK_INDICES and the gate silently grew to nine:
+# a missing row of either would have cost Kite a whole session, for rows the Playbook never reads.
+_WINDOW_SEVEN = ("NSE:CNX500", "NSE:SMALLCA250", "NSE:NFMICRO250", "NSE:NIF500MO50", "NSE:NI200MOM30",
+                 "NSE:NQUALITY30", "NSE:NS250MQ100")
+
+
+def _index_rows(ids, price=100.0):
+    return pd.DataFrame({"company_id": list(ids), "close_price": [price] * len(ids)})
+
+
+def _live_gate(monkeypatch, bench):
+    """The live gate with every other check passing and the REAL index-row check."""
+    real = D.check_benchmarks
+    _all_pass(monkeypatch)
+    monkeypatch.setattr(D, "check_benchmarks", real)
+    return F.gate({}, None, bench, None, backfill=False)
+
+
+def test_the_live_gate_requires_exactly_the_seven_the_window_opened_with():
+    assert F.FEED_GATE_INDICES == _WINDOW_SEVEN
+    assert set(F.FEED_GATE_INDICES) <= set(BENCHMARK_INDICES), "a misspelt symbol would never be checked"
+
+
+def test_a_display_index_without_a_price_cannot_cost_kite_a_session(monkeypatch):
+    later = sorted(set(BENCHMARK_INDICES) - set(_WINDOW_SEVEN))
+    assert later, "without a display-only index this test proves nothing"
+    checks = _live_gate(monkeypatch, _index_rows(_WINDOW_SEVEN))                        # the later rows absent
+    assert checks == {"passed": 8, "warnings": []}, "all eight checks ran, the index rows among them"
+    unpriced = pd.concat([_index_rows(_WINDOW_SEVEN), _index_rows(later, price=float("nan"))])
+    assert _live_gate(monkeypatch, unpriced) == {"passed": 8, "warnings": []}           # present, no price
+
+
+def test_any_of_the_seven_without_a_price_still_publishes_nothing(monkeypatch):
+    for gone in _WINDOW_SEVEN:
+        with pytest.raises(F.FeedError, match="Index rows"):
+            _live_gate(monkeypatch, _index_rows([i for i in BENCHMARK_INDICES if i != gone]))
+
+
+def test_the_daily_check_still_requires_every_index():
+    assert D.check_benchmarks(_index_rows(_WINDOW_SEVEN))[0].status == "fail"    # a display row missing is mailed
+    assert D.check_benchmarks(_index_rows(BENCHMARK_INDICES))[0].status == "ok"

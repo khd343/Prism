@@ -198,6 +198,12 @@ def write_session(feed: Path, session: str, csv: bytes, meta: dict) -> bool:
 # the index rows (2026-10-08; check_benchmarks is skipped) and the listed_days column (~2026-09-21). Exactly
 # that detail is tolerated — anything else on the same check still blocks, and nothing is tolerated live.
 BACKFILL_TOLERATED = {("Key columns", "listed_days absent")}
+# THE LIVE GATE'S INDEX ROWS ARE THE SEVEN KITE'S TEST OPENED WITH (2026-10-13). The Playbook never reads an index
+# row; this check is part of the ingest gate the window opened with on 12 Oct, so it stays exactly that. Indices added
+# later for display (2a87ac4: the MidSmallcap 400 pair) must not cost Kite a session: the daily data check still
+# requires every one, so a missing row is still mailed.
+FEED_GATE_INDICES = ("NSE:CNX500", "NSE:SMALLCA250", "NSE:NFMICRO250", "NSE:NIF500MO50", "NSE:NI200MOM30",
+                     "NSE:NQUALITY30", "NSE:NS250MQ100")
 
 
 def score(workbook: bytes):
@@ -211,7 +217,7 @@ def score(workbook: bytes):
 
 def gate(datasets, stocks, bench, scored, backfill: bool) -> dict:
     results = (D.check_tabs(datasets) + D.check_universe(stocks)
-               + ([] if backfill else D.check_benchmarks(bench))
+               + ([] if backfill else D.check_benchmarks(bench, FEED_GATE_INDICES))
                + D.check_coverage(stocks) + D.check_types(datasets) + D.check_taxonomy(stocks)
                + D.check_identities(stocks) + D.check_engine(scored))
     tolerated = [r for r in results if backfill and r.status == "fail" and (r.name, r.detail) in BACKFILL_TOLERATED]
