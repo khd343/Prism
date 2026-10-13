@@ -104,7 +104,13 @@ def test_the_tab_lets_the_reader_switch_views_and_shows_the_chosen_one():
 
 
 def test_the_view_is_a_display_choice_the_clear_never_resets():
-    """The Market Pulse rule (2026-10-05): the view is never a filter — no 🧹 Clear resets it."""
-    for call in (n for n in ast.walk(_scans_block()) if isinstance(n, ast.Call)
-                 and ast.unparse(n.func) == "_mp_lens_row"):
-        assert "scan_view" not in ast.unparse(call), "the lens row's 🧹 Clear must not reset the view"
+    """The Market Pulse rule (2026-10-05): the view is never a filter — no 🧹 Clear resets it. REPOINTED
+    2026-10-13 from the lens row (gone from this tab) to the tab's own 🧹, whose reset map is
+    _SCAN_FILTER_DEFAULTS; and nothing in app.py writes the view's key."""
+    tree = ast.parse(_APP)
+    node = next(n for n in tree.body if isinstance(n, ast.Assign)
+                and ast.unparse(n.targets[0]) == "_SCAN_FILTER_DEFAULTS")
+    assert "scan_view" not in ast.literal_eval(node.value), "the tab's 🧹 Clear must not reset the view"
+    writes = [ast.unparse(n) for n in ast.walk(tree) if isinstance(n, ast.Assign)
+              and any("scan_view" in ast.unparse(t) for t in n.targets)]
+    assert not writes, writes

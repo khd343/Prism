@@ -132,7 +132,8 @@ from ui import (render_moat_growth_matrix, render_fisher_module,
                 render_radar_chart, render_sidebar_brand,
                 render_reference, render_concepts, render_flags, render_frameworks,
                 render_wcs_studies, build_reference_markdown)
-from ui.ui_discovery import render_discovery_sidebar, clear_all_filters, keep_selected
+from ui.ui_discovery import (render_discovery_sidebar, clear_all_filters, keep_selected,
+                             _BUY_ZONE_ORDER, _WEIN_ORDER)
 from ui.ui_scanner import _SCANNER_HEADER_TIPS, ds_view_columns
 from ui.ui_components import _RAW_GLOSSARY
 from ui.ui_group_views import (MEASURES, OWNERSHIP, OWNERSHIP_GROUP_NOTE, OWNERSHIP_NOTE, SOURCE_COLUMNS,
@@ -149,7 +150,7 @@ from ui.ui_scans import (SCANS, CANDIDATES as SCAN_CANDIDATES, LIQUIDITY_STEPS a
                          latest_label as scan_latest_label, load_records as load_scan_records,
                          members_label as scan_members_label,
                          record_state as scan_record_state, scan_table, table_config as scan_table_config,
-                         SCAN_VIEWS)
+                         SCAN_VIEWS, TREND_SHORT as SCAN_TREND_SHORT)
 from config import (COLORS, TIER_COLORS, CONVICTION_TIERS, UI, HARD_GATES,
                     QUALITY_WEIGHTS, MOMENTUM_WEIGHTS, COMPOSITE_WEIGHTS,
                     VALUATION_SIGNALS,
@@ -708,7 +709,7 @@ def _mp_clear_lens(defaults):
     for k, v in defaults.items():
         st.session_state[k] = v
 
-def _mp_ms(slot, label, options, key, help_text, counts):
+def _mp_ms(slot, label, options, key, help_text, counts, show=None):
     """THE ONE cascade-safe multiselect used by every Market Pulse filter row (lens rows,
     Sectors, Industry) — one dialect, not three. Mirrors ui_discovery._ms_cascade: state is
     managed here (no `default=` arg, which would trigger Streamlit's default-plus-state
@@ -724,14 +725,17 @@ def _mp_ms(slot, label, options, key, help_text, counts):
     of that count differs by filter kind and the caller decides it — a re-aggregating filter
     counts STOCKS (they are what gets re-averaged), a row filter counts the ROWS it hides
     (sectors / industries). Mixing the two silently would be the units trap this row layout
-    was deliberately held back for."""
+    was deliberately held back for.
+
+    `show` (2026-10-13, the Scans row) maps an option to a SHORTER display text — the value stays the
+    engine's own label, so filtering and stored picks are unchanged; only the pill is shorter."""
     stored = list(st.session_state.get(key, []))
     st.session_state[key] = stored
     options = keep_selected(options, stored)
     with slot:
         return st.multiselect(
             label, options, key=key, help=help_text,
-            format_func=lambda v, _c=counts: f"{v}  ·  {_c.get(v, 0)}",
+            format_func=lambda v, _c=counts, _s=show or {}: f"{_s.get(v, v)}  ·  {_c.get(v, 0)}",
         )
 
 def _mp_lens_row(frame, prefix, extra_keys=(), with_tier=True):
@@ -824,6 +828,55 @@ def _mp_lens_row(frame, prefix, extra_keys=(), with_tier=True):
     return _cf, _n_active
 
 
+# ── 🎯 Scans: the tab's own filters (2026-10-13, the user's choice) ──────────────────────────────────
+# Liquidity · Market cap · Weinstein Stage · Buy Zone: can it be bought, and is this a moment to. Sector,
+# Wealth tier and Catalyst left the tab: they live in the sidebar, which reaches this list through the 🎯
+# opt-in. The user's defaults: ₹1 Cr a day and Stage 1 + 2, so the list opens on liquid stocks in a basing
+# or advancing trend; the caption names what narrows it, and 🧹 Clear returns each control to ITS default.
+_SCAN_FILTER_DEFAULTS = {"scan_liq": 1.0, "scan_cap": [],
+                         "scan_stage": ["📈 Stage 2 Advancing", "🔄 Stage 1 Basing"], "scan_zone": []}
+
+
+def _scan_filter_row(frame, slots):
+    """Market cap · Weinstein Stage · Buy Zone · 🧹 in slots[1:] (Liquidity, slots[0], is drawn by the tab
+    first and applied by scan_table, the floor's one rule). Cascading left to right through the shared
+    _mp_ms: each control's options and live counts come from the stocks the controls to its left kept, and
+    a stored pick the cascade has narrowed out stays, at a count of 0. Narrows the FINISHED list only — the
+    recipe already ran on the whole market. Returns (kept frame, words for the caption)."""
+    _cf, why = frame, []
+    spec = (("Market cap", "scan_cap", "market_category", _MP_CAP_ORDER,
+             "Market-cap tiers (the sheet's Market Category). Pick several; counts reflect the "
+             "controls to the left."),
+            ("Weinstein Stage", "scan_stage", "weinstein_stage", _WEIN_ORDER,
+             "The 30-week trend stage. Opens on Stage 1 + 2 (basing or advancing); pick several, or "
+             "clear it to see every stage."),
+            ("Buy Zone", "scan_zone", "buy_zone_label", _BUY_ZONE_ORDER,
+             "Entry timing against the Volatility Stop. Pick several; counts reflect the controls to "
+             "the left."))
+    # Pills show the table's short words ("📈 Stage 2", "🟢 Perfect Entry"): two full Stage labels wrapped
+    # the row onto a second line at 1536px (seen 2026-10-13). The VALUES stay the engine's labels.
+    short = lambda v: SCAN_TREND_SHORT.get(v, v).split(" (")[0]
+    for i, (label, key, col, order, help_text) in enumerate(spec, start=1):
+        have = _cf[col] if col in _cf.columns else pd.Series(np.nan, index=_cf.index)
+        counts = have.astype(str).value_counts().to_dict()
+        opts = [o for o in order if o in counts]
+        sel = _mp_ms(slots[i], label, opts, key, help_text, counts,
+                     show={v: short(v) for v in sorted({*opts, *(st.session_state.get(key) or [])})})
+        if sel:
+            _cf = _cf[have.isin(sel)]
+            why.append(" + ".join(short(v) for v in sel))
+    changed = any((sorted(st.session_state.get(k) or []) != sorted(v)) if isinstance(v, list)
+                  else st.session_state.get(k) != v for k, v in _SCAN_FILTER_DEFAULTS.items())
+    with slots[-1]:
+        st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
+        if changed:
+            st.button("🧹 Clear", key="scan_clear", width="stretch", on_click=_mp_clear_lens,
+                      args=({k: (list(v) if isinstance(v, list) else v)
+                             for k, v in _SCAN_FILTER_DEFAULTS.items()},),
+                      help="Back to the defaults: ₹1 Cr a day, Stage 1 + 2, every market cap and buy zone.")
+    return _cf, why
+
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # TAB 2: SCANS
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -870,12 +923,12 @@ with tabs[1]:
                                    _sc_latest, with_head=False), unsafe_allow_html=True)
     # ONE FUNNEL, TOP DOWN (2026-10-06). The card's recipe ranks the WHOLE market, so every listed stock
     # is exactly the match its record measured. Then the traded-value floor and — only while the
-    # sidebar actually narrows the market — the same 🎯 opt-in Market Pulse uses; then the shared lens
-    # row (Sector · Wealth tier · Market cap · Catalyst, live counts, 🧹 Clear). Every control narrows
+    # sidebar actually narrows the market — the same 🎯 opt-in Market Pulse uses; then the tab's own row
+    # (2026-10-13: Market cap · Weinstein Stage · Buy Zone, live counts, 🧹 Clear). Every control narrows
     # the FINISHED list, never the recipe: ranking inside a filtered slice would be a different scan
-    # with no record (tests/test_scans.py).
-    # ONE ROW of filters (2026-10-07): Liquidity, then the lens row — its 🧹 slot sits empty when idle —
-    # and the 🎯 line only while the sidebar narrows, so the default view spends no row on it.
+    # with no record (tests/test_scans.py, tests/test_scan_filters.py).
+    # ONE ROW of filters (2026-10-07): Liquidity, then the tab's row — its 🧹 slot sits empty at the
+    # defaults — and the 🎯 line only while the sidebar narrows, so the default view spends no row on it.
     _sc_narrowed = 0 < len(filt) < len(df)
     if _sc_narrowed:
         st.checkbox(
@@ -884,8 +937,12 @@ with tabs[1]:
                  "whole market, so every stock shown is the same match it would be unfiltered, and the "
                  "record still describes the whole scan.")
     _sc_scoped = _sc_narrowed and bool(st.session_state.get("scan_use_sidebar", False))
-    _sc_lc, _sc_rc = st.columns([1.5, 8.5])
-    with _sc_lc:
+    for _k, _v in _SCAN_FILTER_DEFAULTS.items():          # the user's defaults, seeded before the widgets
+        st.session_state.setdefault(_k, list(_v) if isinstance(_v, list) else _v)
+    # Widths measured 2026-10-13 at 1536px: the two default Stage pills need ~340px on ONE line (142 + 126
+    # plus the box's icons); Market cap and Buy Zone hold one pill each; Liquidity fits "₹1 Cr/day".
+    _sc_slots = st.columns([1.4, 1.8, 3.5, 2.3, 1.0])
+    with _sc_slots[0]:
         _sc_min = st.selectbox(
             "Liquidity", SCAN_LIQUIDITY_STEPS, key="scan_liq",
             format_func=liquidity_step_label,
@@ -898,11 +955,10 @@ with tabs[1]:
     _sc_window = (_sc_data_day - _date.fromisoformat(_sc_base_day)).days if _sc_base_day else None
     _sc_base = scan_table(df, _sc_sel, min_cr=_sc_min,
                           keep_ids=set(filt['company_id'].astype(str)) if _sc_scoped else None)
-    with _sc_rc:
-        _sc_lens, _sc_lens_n = _mp_lens_row(
-            df[df["company_id"].astype(str).isin(set(_sc_base["company_id"]))], "scan")
+    _sc_kept, _sc_narrow = _scan_filter_row(
+        df[df["company_id"].astype(str).isin(set(_sc_base["company_id"]))], _sc_slots)
     _sc_tbl = scan_table(df, _sc_sel, members_at_latest=_sc_members, min_cr=_sc_min,
-                         keep_ids=set(_sc_lens["company_id"].astype(str)), result_window_days=_sc_window)
+                         keep_ids=set(_sc_kept["company_id"].astype(str)), result_window_days=_sc_window)
     _sc_total = _sc_counts[_sc_sel["key"]]
     if _sc_tbl.empty:
         if _sc_total == 0:
@@ -913,13 +969,11 @@ with tabs[1]:
         elif _sc_base.empty:
             st.info(f"None of the {_sc_total:,} matches clears the traded-value floor — choose a lower one.")
         else:
-            st.info(f"None of these {len(_sc_base):,} stocks passes the filters in the row above — "
-                    f"🧹 Clear resets them.")
+            st.info(f"None of these {len(_sc_base):,} stocks passes the Market cap, Weinstein Stage and "
+                    f"Buy Zone picks — widen one of them.")
     else:
         _sc_why = " · ".join(w for w in ("your filters" if _sc_scoped else "",
-                                         f"₹{_sc_min:g} Cr+ a day" if _sc_min else "",
-                                         f"{_sc_lens_n} filter{'s' if _sc_lens_n > 1 else ''} above"
-                                         if _sc_lens_n else "") if w)
+                                         f"₹{_sc_min:g} Cr+ a day" if _sc_min else "", *_sc_narrow) if w)
         _sc_of = (f" of {_sc_total:,} stocks" + (f" ({_sc_why})" if _sc_why else "")
                   if len(_sc_tbl) < _sc_total else " stocks")
         _sc_new = (f" · 🆕 new since {_sc_new_label} · 📄 result declared since then"

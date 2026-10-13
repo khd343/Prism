@@ -450,17 +450,23 @@ def test_the_scope_checkbox_mirrors_market_pulse_and_never_feeds_the_recipe():
     assert "_sc_ids = universe_signature(_sc_tbl['company_id'])" in src
 
 
-def test_the_tab_reuses_the_market_pulse_filter_row():
-    """One dialect: the Scans filters ARE the QGLP / MOSL / Wealth lens row (Sector · Wealth tier ·
-    Market cap · Catalyst · 🧹), hoisted to module level on 2026-10-06 rather than copied."""
+def test_the_tab_reuses_the_market_pulse_filter_parts():
+    """One dialect: the Scans filters are built from the SAME parts as the QGLP / MOSL / Wealth lens row —
+    the cascade-safe multiselect (_mp_ms) and the default-aware 🧹 (_mp_clear_lens), module level since
+    2026-10-06, never copied. REPOINTED 2026-10-13, not loosened: the tab no longer draws the whole lens
+    row — the user kept Liquidity · Market cap · Weinstein Stage · Buy Zone (tests/test_scan_filters.py);
+    Sector, Wealth tier and Catalyst live in the sidebar, reached through 🎯."""
     tree = ast.parse(_APP)
     defs = [n.name for n in tree.body if isinstance(n, ast.FunctionDef)]
-    assert {"_mp_lens_row", "_mp_ms", "_mp_clear_lens"} <= set(defs), "the lens row must be module level"
+    assert {"_mp_lens_row", "_mp_ms", "_mp_clear_lens", "_scan_filter_row"} <= set(defs), "module level"
     block = next(n for n in tree.body if isinstance(n, ast.With)
                  and ast.unparse(n.items[0].context_expr) == "tabs[1]")
-    calls = [n for n in ast.walk(block) if isinstance(n, ast.Call) and ast.unparse(n.func) == "_mp_lens_row"]
-    assert len(calls) == 1 and ast.unparse(calls[0].args[1]) == "'scan'"
-    assert "_mp_lens_row(_mp_qglp, \"qglp\")" in _APP, "Market Pulse still calls the same row"
+    called = {ast.unparse(n.func) for n in ast.walk(block) if isinstance(n, ast.Call)}
+    assert "_scan_filter_row" in called and "_mp_lens_row" not in called
+    row = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "_scan_filter_row")
+    row_src = ast.unparse(row)
+    assert "_mp_ms(" in row_src and "on_click=_mp_clear_lens" in row_src, "the shared parts, not copies"
+    assert "_mp_lens_row(_mp_qglp, \"qglp\")" in _APP, "Market Pulse still calls the whole row"
 
 
 # ── 📄 the fundamental clock ─────────────────────────────────────────────────────────────────────────

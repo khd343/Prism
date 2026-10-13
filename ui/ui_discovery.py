@@ -85,6 +85,16 @@ def _family_count(frame: pd.DataFrame, fw_names) -> pd.Series:
 # ── ❔ Unknown option + zero-results culprit: pure substrate (unit-tested) ────
 _UNKNOWN = "❔ Unknown"
 
+# The engine's Buy Zone and Weinstein Stage labels in reading order. Module level since 2026-10-13: the
+# 🎯 Scans tab offers the same two filters and imports these, so the two surfaces cannot drift.
+_BUY_ZONE_ORDER = [
+    "🟢 Perfect Entry (Low Risk)", "🟡 Standard Zone",
+    "🟠 Loose Entry Zone", "🔴 Extended (Wait for Pullback)",
+    "🔻 Below Stop (Trend Broken)", "⚪ Uncharted",
+]
+_WEIN_ORDER = ["📈 Stage 2 Advancing", "🔄 Stage 1 Basing", "⚠️ Stage 3 Top",
+               "📉 Stage 4 Declining", _UNKNOWN]
+
 
 def _blank_mask(series: pd.Series) -> pd.Series:
     """Rows where the engine deliberately declined to judge — NaN or blank/whitespace label.
@@ -825,11 +835,6 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                 _cf = _narrow(_cf, _label_mask(_cf["peg_zone"], sel_peg_zone), "PEG Zone")
 
             # 8. Buy Zone — entry timing vs Volatility Stop (options present in remaining stocks)
-            _BUY_ZONE_ORDER = [
-                "🟢 Perfect Entry (Low Risk)", "🟡 Standard Zone",
-                "🟠 Loose Entry Zone", "🔴 Extended (Wait for Pullback)",
-                "🔻 Below Stop (Trend Broken)", "⚪ Uncharted",
-            ]
             _buy_opts = _ordered_present(_cf, "buy_zone_label", _BUY_ZONE_ORDER)
             sel_buy_zone = _ms_cascade("Buy Zone", _buy_opts, "sb_buy_zone", default=[],
                                        help="Entry timing vs the Volatility Stop. Empty = all stocks.",
@@ -859,8 +864,6 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
         with _grp("📈 Trend · Style · Flow", "sb_weinstein", "sb_lynchcat", "sb_mef",
                   "sb_cftri", "sb_smartflow", expanded=False):
             # 8b. Weinstein Stage — the 30-week-trend stage (Stage 2 = uptrend buy, Stage 4 = avoid)
-            _WEIN_ORDER = ["📈 Stage 2 Advancing", "🔄 Stage 1 Basing", "⚠️ Stage 3 Top",
-                           "📉 Stage 4 Declining", "❔ Unknown"]
             _wein_opts = _ordered_present(_cf, "weinstein_stage", _WEIN_ORDER)
             sel_wein = _ms_cascade("Weinstein Stage", _wein_opts, "sb_weinstein", default=[],
                                    help="Long-term price trend stage. Empty = all stocks.",

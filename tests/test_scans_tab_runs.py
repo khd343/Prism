@@ -7,7 +7,9 @@ Every other Scans test reads app.py's tab block as source (AST). This one execut
 `with tabs[1]:` block and `_pick_scan` are lifted out of app.py and run under Streamlit's AppTest on a
 synthetic market, so a wrong name, a widget that raises, or a switch that does not reach the table
 fails here instead of on the live app. Only the parts that need the full app are stubbed: the data
-load (`df` / `filt`), the shared lens row (returns its input unfiltered) and the freshness probe.
+load (`df` / `filt`) and the freshness probe. The tab's own filter row (2026-10-13: Liquidity · Market cap ·
+Weinstein Stage · Buy Zone) runs for real — its helper, the shared multiselect and the 🧹 Clear are lifted
+from app.py with the rest.
 
 What it pins: all three cards render, there is no toggle (2026-10-07: 🌱's revenue-led leg is part of
 its recipe, not a switch), and picking 🌱 shows exactly the recipe's matches; the Liquidity guide; and
@@ -41,9 +43,6 @@ _HARNESS = textwrap.dedent('''
     def universe_signature(ids):
         return str(abs(hash(tuple(ids))))
 
-    def _mp_lens_row(frame, prefix, extra_keys=(), with_tier=True):
-        return frame, 0
-
     _fresh = SimpleNamespace(is_known=False, data_date=None)
 
     rng = np.random.default_rng(7)
@@ -54,7 +53,12 @@ _HARNESS = textwrap.dedent('''
         "rank": rng.permutation(n) + 1, "composite_score": rng.uniform(20, 90, n),
         "momentum_score": rng.uniform(0, 100, n), "breakout_score": rng.uniform(0, 100, n),
         "improvement_score": rng.uniform(0, 100, n), "dist_to_vstop": rng.normal(3, 6, n),
-        "dist_52wh": rng.uniform(0, 40, n), "weinstein_stage": "📈 Stage 2 Advancing",
+        "dist_52wh": rng.uniform(0, 40, n),
+        "weinstein_stage": np.array(["📈 Stage 2 Advancing", "🔄 Stage 1 Basing", "⚠️ Stage 3 Top",
+                                     "📉 Stage 4 Declining", "❔ Unknown"])[np.arange(n) % 5],
+        "market_category": np.array(["Large Cap", "Mid Cap", "Small Cap", "Micro Cap"])[(np.arange(n) // 3) % 4],
+        "buy_zone_label": np.array(["🟢 Perfect Entry (Low Risk)", "🟡 Standard Zone", "🟠 Loose Entry Zone",
+                                    "🔴 Extended (Wait for Pullback)"])[(np.arange(n) // 2) % 4],
         "rev_pyq": 100.0, "rev_lq": rng.uniform(90, 140, n), "pat_pyq": 10.0, "pat_lq": rng.uniform(8, 16, n),
         "ebitda_pyq": 15.0, "ebitda_lq": rng.uniform(13, 24, n),
         "pat_1yb": rng.uniform(-5, 50, n), "pat": rng.uniform(-5, 80, n),
@@ -74,13 +78,16 @@ def _app_source(records: dict = None) -> str:
     `records` replaces the committed records (a baseline the committed file does not have yet)."""
     src = open(os.path.join(ROOT, "app.py"), encoding="utf-8").read()
     tree = ast.parse(src)
-    parts = [n for n in tree.body if isinstance(n, ast.ImportFrom) and n.module == "ui.ui_scans"]
-    parts += [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "_pick_scan"]
+    parts = [n for n in tree.body if isinstance(n, ast.ImportFrom) and n.module in ("ui.ui_scans", "ui.ui_discovery")]
+    parts += [n for n in tree.body if isinstance(n, ast.Assign)
+              and ast.unparse(n.targets[0]) in ("_MP_CAP_ORDER", "_SCAN_FILTER_DEFAULTS")]
+    parts += [n for n in tree.body if isinstance(n, ast.FunctionDef)
+              and n.name in ("_pick_scan", "_mp_clear_lens", "_mp_ms", "_scan_filter_row")]
     parts += [n for n in tree.body if isinstance(n, ast.With)
               and ast.unparse(n.items[0].context_expr) == "tabs[1]"]
-    assert len(parts) == 3, "app.py's Scans tab is no longer one import, one callback and one block"
-    if records is not None:
-        parts.insert(1, ast.parse(f"load_scan_records = lambda: __import__('json').loads({json.dumps(records)!r})"))
+    assert len(parts) == 9, "app.py's Scans tab: two imports, two constants, four functions and one block"
+    if records is not None:     # after BOTH imports, or the ui_scans import re-binds load_scan_records
+        parts.insert(2, ast.parse(f"load_scan_records = lambda: __import__('json').loads({json.dumps(records)!r})"))
     return _HARNESS.format(root=ROOT) + "\n".join(ast.unparse(p) for p in parts)
 
 
@@ -153,6 +160,21 @@ def _frame():
     return ns["df"]
 
 
+DEFAULT_STAGES = ("📈 Stage 2 Advancing", "🔄 Stage 1 Basing")
+
+
+def _expected(scan, min_cr=1.0, stages=DEFAULT_STAGES, caps=(), zones=()):
+    """The names the tab should list: the recipe on the whole market, the liquidity floor, then the
+    tab's filters — at their defaults (2026-10-13: ₹1 Cr a day, Stage 1 + 2) unless told otherwise."""
+    from ui import ui_scans as S
+    df = _frame()
+    kept = df[df["company_id"].isin(set(S.scan_table(df, scan, min_cr=min_cr)["company_id"]))]
+    for col, picks in (("weinstein_stage", stages), ("market_category", caps), ("buy_zone_label", zones)):
+        if picks:
+            kept = kept[kept[col].isin(picks)]
+    return sorted(kept["name"])
+
+
 def test_every_card_renders_and_the_compounder_list_opens(tab):
     from ui import ui_scans as S
     html = "".join(m.value for m in tab.markdown)
@@ -161,9 +183,9 @@ def test_every_card_renders_and_the_compounder_list_opens(tab):
     assert not tab.toggle, "no scan narrows its list with a switch its record does not describe"
     tab.button(key="scan_open_compounder").click().run()
     assert not tab.exception, [e.value for e in tab.exception]
-    expected = S.scan_table(_frame(), next(s for s in S.SCANS if s["key"] == "compounder"))
+    expected = _expected(next(s for s in S.SCANS if s["key"] == "compounder"))
     assert len(tab.dataframe) == 1 and len(expected) > 0
-    assert sorted(tab.dataframe[0].value["name"]) == sorted(expected["name"])
+    assert sorted(tab.dataframe[0].value["name"]) == expected
 
 
 def test_the_view_switch_reaches_the_table(tab):
@@ -207,19 +229,79 @@ def test_the_cycle_column_shows_on_the_compounder_table_only(tab):
     assert order[order.index("_strong_q") + 1] == "_cycle"
 
 
-def test_the_liquidity_selector_shows_the_order_size_guide_and_still_starts_at_any(tab):
-    """The guide reaches the screen through app.py (read from the rendered selector), and it changes
-    nothing else: same steps, default Any, and a floor still narrows only the finished list."""
+def test_the_liquidity_selector_shows_the_order_size_guide_and_starts_at_one_crore(tab):
+    """The guide reaches the screen through app.py (read from the rendered selector): same steps, and —
+    the user's default since 2026-10-13 — ₹1 Cr a day (it started at Any before); a floor still narrows
+    only the finished list."""
     from ui import ui_scans as S
+    comp = next(s for s in S.SCANS if s["key"] == "compounder")
+    tab.button(key="scan_open_compounder").click().run()        # the synthetic market's larger list
     sel = tab.selectbox(key="scan_liq")
     assert sel.help == S.liquidity_help()
     assert list(sel.options) == ["Any"] + [f"₹{s:g} Cr/day" for s in S.LIQUIDITY_STEPS if s is not None]
-    assert sel.value is None
+    assert sel.value == 1.0
     sel.set_value(5.0).run()
     assert not tab.exception, [e.value for e in tab.exception]
-    expected = S.scan_table(_frame(), S.SCANS[0], min_cr=5.0)
-    assert 0 < len(expected) < len(S.scan_table(_frame(), S.SCANS[0])), "the floor must really narrow"
-    assert sorted(tab.dataframe[0].value["name"]) == sorted(expected["name"])
+    expected = _expected(comp, min_cr=5.0)
+    assert 0 < len(expected) < len(_expected(comp, min_cr=None)), "the floor must really narrow"
+    assert sorted(tab.dataframe[0].value["name"]) == expected
+
+
+def test_the_list_opens_on_one_crore_and_stage_1_and_2_and_says_so(tab):
+    """RUN (2026-10-13): the user's defaults reach the table — liquid stocks in Stage 1 or 2 — and the
+    caption names both, so a narrowed list never reads as the whole scan."""
+    from ui import ui_scans as S
+    assert tab.multiselect(key="scan_stage").value == list(DEFAULT_STAGES)
+    assert tab.multiselect(key="scan_cap").value == [] and tab.multiselect(key="scan_zone").value == []
+    shown = sorted(tab.dataframe[0].value["name"])
+    assert shown == _expected(S.SCANS[0]) and 0 < len(shown) < len(_expected(S.SCANS[0], min_cr=None, stages=()))
+    cap = next(c.value for c in tab.caption if "sorted by Rank" in c.value)
+    assert "₹1 Cr+ a day" in cap and "Stage 2" in cap and "Stage 1" in cap, cap
+    assert not [b for b in tab.button if b.key == "scan_clear"], "no 🧹 while every control is at its default"
+
+
+def test_the_pills_show_the_tables_short_words_and_filter_by_the_engines_labels(tab):
+    """Two full Stage labels wrapped the row onto a second line at 1536px (seen 2026-10-13), so the
+    pills show the table's short words — while the VALUES stay the engine's labels, so filtering,
+    stored picks and the 🧹 defaults are unchanged."""
+    stage = tab.multiselect(key="scan_stage")
+    assert stage.value == list(DEFAULT_STAGES), "the values are the engine's own labels"
+    shown = " | ".join(stage.options)
+    assert "📈 Stage 2  ·  " in shown and "Advancing" not in shown, shown
+    tab.button(key="scan_open_compounder").click().run()
+    zone = tab.multiselect(key="scan_zone")
+    assert any(o.startswith("🟢 Perfect Entry  ·  ") for o in zone.options), zone.options
+    assert not any("(Low Risk)" in o for o in zone.options)
+
+
+def test_each_filter_narrows_the_finished_list(tab):
+    """On 🌱, the synthetic market's larger list (12 at the defaults, 25 across every stage)."""
+    from ui import ui_scans as S
+    play = next(s for s in S.SCANS if s["key"] == "compounder")
+    tab.button(key="scan_open_compounder").click().run()
+    tab.multiselect(key="scan_stage").set_value(["⚠️ Stage 3 Top"]).run()
+    assert sorted(tab.dataframe[0].value["name"]) == _expected(play, stages=("⚠️ Stage 3 Top",))
+    tab.multiselect(key="scan_cap").set_value(["Small Cap"]).run()
+    assert sorted(tab.dataframe[0].value["name"]) == _expected(play, stages=("⚠️ Stage 3 Top",), caps=("Small Cap",))
+    tab.multiselect(key="scan_stage").set_value([]).run()
+    tab.multiselect(key="scan_zone").set_value(["🟢 Perfect Entry (Low Risk)"]).run()
+    assert not tab.exception, [e.value for e in tab.exception]
+    want = _expected(play, stages=(), caps=("Small Cap",), zones=("🟢 Perfect Entry (Low Risk)",))
+    assert sorted(tab.dataframe[0].value["name"]) == want and len(want) > 0
+
+
+def test_clear_returns_every_control_to_its_default(tab):
+    tab.selectbox(key="scan_liq").set_value(None).run()
+    tab.multiselect(key="scan_stage").set_value(["📉 Stage 4 Declining"]).run()
+    tab.multiselect(key="scan_cap").set_value(["Mid Cap"]).run()
+    clear = [b for b in tab.button if b.key == "scan_clear"]
+    assert clear, "🧹 shows once a control leaves its default"
+    clear[0].click().run()
+    assert not tab.exception, [e.value for e in tab.exception]
+    assert tab.selectbox(key="scan_liq").value == 1.0, "back to ₹1 Cr a day, not to Any"
+    assert tab.multiselect(key="scan_stage").value == list(DEFAULT_STAGES)
+    assert tab.multiselect(key="scan_cap").value == [] and tab.multiselect(key="scan_zone").value == []
+    assert tab.get("button_group")[0].value == "🏆 Core", "the view is not a filter"
 
 
 def _run(tmp_path, records):
