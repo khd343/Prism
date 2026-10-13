@@ -693,3 +693,15 @@ def test_what_matters_is_click_to_tearsheet_and_the_module_stays_stateless():
     # first caller that reads the value.
     nosel = src[src.index("    if not select:"):src.index("    sel = st.dataframe(")]
     assert "return None" in nosel, "the non-selectable branch must return None, never a phantom pick"
+
+
+def test_an_error_never_shows_a_sheet_id():
+    """The app goes public (2026-10-13): an error the Movers tab prints must not carry the archive's id, as a
+    known id or inside a Sheets URL. A secret is logged by shape, never by value."""
+    from ui.ui_movers import redact_ids
+    secret = "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-xyz"
+    url = f"HTTP Error 404 for https://docs.google.com/spreadsheets/d/{secret}/export?format=xlsx"
+    assert secret not in redact_ids(url, secret) and "/spreadsheets/d/[sheet id]/export" in redact_ids(url)
+    assert redact_ids(f"bad sheet {secret} here", secret, "") == "bad sheet [sheet id] here"
+    assert redact_ids(f"{secret}{secret[:9]}", secret[:9], secret) == "[sheet id][sheet id]"   # longest first
+    assert redact_ids("No id at all: 42 rows", secret, None) == "No id at all: 42 rows"

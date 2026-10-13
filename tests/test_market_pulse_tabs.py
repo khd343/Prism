@@ -252,7 +252,7 @@ def test_movers_setup_is_one_compact_row_and_the_payoff_is_above_the_fold():
     _, blk = _movers_block()
     cap = blk[blk.index("sec-cap'>") + len("sec-cap'>"):blk.index("</div>", blk.index("sec-cap'>"))]
     assert len(cap.split()) <= 40, f"the caption is a paragraph again ({len(cap.split())} words)"
-    read = '_mv_id = str(st.session_state["mp_mv_index"]).strip()'
+    read = '_mv_typed = str(st.session_state.get("mp_mv_index", "")).strip()'
     assert read in blk and blk.index(read) < blk.index("_load_archive_index("), (
         "the archive id must be read from session_state before resolving, so layout is free")
     assert blk.index(read) < blk.index('key="mp_mv_index"'), "the id is read after the widget instantiates — layout is coupled again"
@@ -513,3 +513,21 @@ def test_the_header_scan_has_teeth():
     h = _configured_headers()
     assert len(h) >= 20, f"header scan found only {len(h)} configured columns — the regex broke"
     assert h.get("name") == {"Stock"}, f"the stock column is not uniformly 'Stock': {h.get('name')}"
+
+
+def test_movers_never_sends_the_archive_secret_to_the_browser():
+    """PRISM's app goes public (2026-10-13). The archive index id stays on the SERVER: a widget's value
+    travels to the browser, so the secret never seeds the id box (the box holds only an override the reader
+    types), and every error the tab prints passes through redact_ids. Before: the secret pre-filled the box
+    behind ⚙️, readable by any visitor."""
+    _, blk = _movers_block()
+    assert 'st.secrets.get("ARCHIVE_INDEX_SHEET_ID"' in blk, "the guard lost its target"
+    assert 'st.session_state["mp_mv_index"] =' not in blk, "the id box is seeded again: its value reaches the browser"
+    uses = [ln.strip() for ln in blk.splitlines() if "_mv_secret_id" in ln]
+    allowed = ('_mv_secret_id = str(st.secrets.get("ARCHIVE_INDEX_SHEET_ID", "") or "").strip()',
+               '_mv_secret_id = ""', "_mv_id = _mv_typed or _mv_secret_id", "_mv_configured = bool(_mv_secret_id)")
+    assert sorted(set(uses)) == sorted(allowed), f"the secret is used beyond resolving the id: {uses}"
+    assert "{_mv_id}" not in blk and "_title or _mv_id" not in blk, "an error message prints the id"
+    assert blk.count("redact_ids(") >= 2, "an exception's text reaches the page unredacted"
+    for raw in ("{_e}", "{_e}."):
+        assert raw not in blk, "an exception is printed raw: its text can carry a Sheets URL"

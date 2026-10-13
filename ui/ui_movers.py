@@ -18,6 +18,8 @@ THREE RULES THIS MODULE IS BUILT ON
 STATELESS, like ui_tearsheet: no st.button/slider/number_input, no st.columns/st.metric — the
 header strip is inline flex. Widgets (the vintage picker, the compare button) live in app.py.
 """
+import re
+
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -122,6 +124,19 @@ def quarter_label(iso: str) -> str:
     fy, q = code[:4], code[4:]
     day = pd.Timestamp(iso)
     return f"{RESULTS_OF[q]} results ({fy} {q}) · {day.day} {day:%b %Y}"
+
+
+_SHEETS_URL_ID = re.compile(r"(/spreadsheets/d/)[A-Za-z0-9_-]+")
+
+
+def redact_ids(text, *ids) -> str:
+    """An error the Movers tab prints, with every sheet id taken out: each known id, and any id inside a
+    Google Sheets URL, reads '[sheet id]'. The app is public (2026-10-13), and the archive's id is a secret,
+    logged by shape, never by value. The longest id goes first, so no shorter one leaves a fragment."""
+    out = _SHEETS_URL_ID.sub(r"\1[sheet id]", str(text))
+    for known in sorted({str(i).strip() for i in ids if i and str(i).strip()}, key=lambda s: (-len(s), s)):
+        out = out.replace(known, "[sheet id]")
+    return out
 
 
 def load_index(sheet_id: str) -> pd.DataFrame:

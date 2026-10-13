@@ -3008,8 +3008,8 @@ def _render_market_pulse():
         from core.sheet_meta import fetch_sheet_title, parse_data_date
         from ui.ui_export import engine_version as _mv_engine
         from ui.ui_movers import (JOIN_KEY as _MV_KEY, compute_movers, default_vintage, fy_quarter,
-                                  quarter_end_vintages, quarter_label, reason_counts, render_movers,
-                                  restrict)
+                                  quarter_end_vintages, quarter_label, reason_counts, redact_ids,
+                                  render_movers, restrict)
 
         # ONE LINE. Measured before this pass: seven controls and ~280 words sat above the first
         # data row and ⭐ What matters began ~900px down a 732px viewport. The how-and-why now
@@ -3024,22 +3024,27 @@ def _render_market_pulse():
         # session_state before the rerun starts (the fact cfg_mode relies on), so the box can sit
         # wherever the layout wants — the compact row when unconfigured, a ⚙️ popover once secrets
         # supply it — without the data flow depending on widget order.
+        # THE SECRET STAYS ON THE SERVER (2026-10-13, before the app goes public): it never seeds the
+        # box — a widget's value is sent to the browser, where any visitor could read it — and no
+        # message prints it (redact_ids). The box holds only an override the reader types.
         try:
-            _mv_default_id = str(st.secrets.get("ARCHIVE_INDEX_SHEET_ID", "") or "")
+            _mv_secret_id = str(st.secrets.get("ARCHIVE_INDEX_SHEET_ID", "") or "").strip()
         except Exception:                    # no secrets file at all (local dev without one)
-            _mv_default_id = ""
-        if "mp_mv_index" not in st.session_state:
-            st.session_state["mp_mv_index"] = _mv_default_id
-        _mv_id = str(st.session_state["mp_mv_index"]).strip()
-        _mv_configured = bool(_mv_default_id)
+            _mv_secret_id = ""
+        _mv_typed = str(st.session_state.get("mp_mv_index", "")).strip()
+        _mv_id = _mv_typed or _mv_secret_id
+        _mv_configured = bool(_mv_secret_id)
 
         def _mv_id_box():
             st.text_input(
                 "Archive index sheet ID — or one archived copy's ID", key="mp_mv_index",
-                placeholder="ID of 'PRISM Archive Index' (or set ARCHIVE_INDEX_SHEET_ID in secrets)",
+                placeholder=("Set in secrets (never shown) — paste an ID only to use another"
+                             if _mv_configured else
+                             "ID of 'PRISM Archive Index' (or set ARCHIVE_INDEX_SHEET_ID in secrets)"),
                 help="The Apps Script archiver keeps an index sheet of every archived vintage. Paste its "
-                     "ID once here (or set ARCHIVE_INDEX_SHEET_ID in Streamlit secrets). A single archived "
-                     "copy's ID also works — its vintage is read from the sheet's own name.")
+                     "ID here, or set ARCHIVE_INDEX_SHEET_ID in Streamlit secrets: the app then uses it on "
+                     "the server and never shows it. A single archived copy's ID also works — its vintage "
+                     "is read from the sheet's own name.")
 
         # ── 2. ONE compact setup row: [id box · picker · button] unconfigured, [picker · button · ⚙️]
         # once secrets carry the id. Slots are filled as the data becomes known — a columns row does
@@ -3048,7 +3053,7 @@ def _render_market_pulse():
         if _mv_configured:
             with _mv_row[2]:
                 st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
-                with st.popover("⚙️", help="Archive index id — prefilled from secrets"):
+                with st.popover("⚙️", help="Archive index — set in secrets; paste an ID here to use another"):
                     _mv_id_box()
         else:
             with _mv_row[0]:
@@ -3072,15 +3077,15 @@ def _render_market_pulse():
                 _title = fetch_sheet_title(extract_spreadsheet_id(_mv_id))
                 _d = parse_data_date(_title)
                 if _d is None:
-                    _mv_err = (f"'{_title or _mv_id}' is neither a PRISM Archive Index nor a "
-                               f"'PRISM YYYY-MM-DD' copy — nothing to compare against.")
+                    _mv_err = ((f"'{_title}'" if _title else "That sheet") + " is neither a PRISM Archive "
+                               "Index nor a 'PRISM YYYY-MM-DD' copy — nothing to compare against.")
                 else:
                     _mv_ok = pd.DataFrame({"vintage_date": [_d.isoformat()],
                                            "fy_quarter": [fy_quarter(_d.isoformat())],
                                            "spreadsheet_id": [extract_spreadsheet_id(_mv_id)]})
             except Exception as _e:
-                _mv_err = (f"Could not read the archive: {_e}. Check the ID and that the sheet is "
-                           f"shared (Anyone with the link → Viewer).")
+                _mv_err = (f"Could not read the archive: {redact_ids(_e, _mv_id, extract_spreadsheet_id(_mv_id))}. "
+                           f"Check the ID and that the sheet is shared (Anyone with the link → Viewer).")
 
             if _mv_err:
                 st.error(_mv_err)
@@ -3165,7 +3170,8 @@ def _render_market_pulse():
                                           state="complete")
                         except Exception as _e:
                             _mv_st.update(label=f"Could not compare with the {_mv_prev_q} copy", state="error")
-                            st.error(f"Could not load or diff the {_mv_prev_q} copy: {_e}")
+                            st.error(f"Could not load or diff the {_mv_prev_q} copy: "
+                                     f"{redact_ids(_e, _mv_pick, _mv_id, extract_spreadsheet_id(_mv_id))}")
                             _mv_res = None
                     if _mv_res is not None:
                         _mv_ph.empty()       # the timing folds into the result header
