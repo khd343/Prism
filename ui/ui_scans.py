@@ -690,6 +690,23 @@ def _range(vals, fmt) -> str:
     return fmt.format(lo) if lo == hi else f"{fmt.format(lo)}–{fmt.format(hi)}"
 
 
+def non_overlapping(ws) -> int:
+    """The most windows that share no days (2026-10-13). A window ending on the day the next starts is
+    separate — the first's end price is the second's start. Greedy by earliest end, which is optimal. The
+    design record's 4 windows from 3 snapshot dates are 2 independent stretches, not 4 results."""
+    n, last = 0, ""
+    for w in sorted(ws, key=lambda w: (w["end"], w["start"])):
+        if w["start"] >= last:
+            n, last = n + 1, w["end"]
+    return n
+
+
+def _overlap_note(ws, sep: str, end: str = "") -> str:
+    """'<sep>K non-overlapping<end>' when the windows overlap; nothing when every one is independent."""
+    k = non_overlapping(ws)
+    return f"{sep}{k} non-overlapping{end}" if k < len(ws) else ""
+
+
 def _bars(ws, c, esc) -> str:
     """One bar per window: height by size (12 points fills it), green above the median, red below."""
     out = ""
@@ -906,7 +923,7 @@ def _study_body(scan: dict, rec: dict, c: dict, esc) -> str:
                  f'<div style="font-size:0.66rem;font-weight:700;color:{c["text_muted"]};letter-spacing:.3px;">'
                  f'OUT-OF-SAMPLE · SINCE IT WAS BUILT ({esc(built.upper())}) — WINDOWS IT NEVER SAW</div>'
                  f'<div style="font-size:0.74rem;color:{c["text_secondary"]};margin-top:3px;">'
-                 f'{u_beat} of matches beat the market · before costs · the most trustworthy record</div></div>'
+                 f'{u_beat} of matches beat the market · before costs · the most trustworthy record{_overlap_note(unseen, " · ")}</div></div>'
                  f'<div style="display:flex;gap:4px;align-items:flex-end;">{_bars(unseen, c, esc)}</div></div>'
                  f'{_extras(unseen, c, esc)}{_vs_index(scan, unseen, c, esc)}')
     else:
@@ -966,7 +983,7 @@ def card_html(scan: dict, n_now: int, state: str, rec, selected: bool, latest: s
                 f'<div style="font-size:0.66rem;color:{c["text_muted"]};margin-top:2px;">{n} stocks per '
                 f'window · provisional</div>'
                 f'<div style="font-size:0.66rem;color:{c["text_muted"]};margin-top:2px;">{len(ws)} short '
-                f'windows from {starts} start date{"s" if starts != 1 else ""}'
+                f'windows from {starts} start date{"s" if starts != 1 else ""}{_overlap_note(ws, ", ")}'
                 f'{f", measured to {esc(latest)}" if latest else ""}</div>'
                 + ("" if unseen else
                    f'<div style="font-size:0.66rem;color:{c["text_muted"]};margin-top:2px;" title="Windows '
@@ -983,7 +1000,7 @@ def card_html(scan: dict, n_now: int, state: str, rec, selected: bool, latest: s
                      f'<div style="font-size:0.66rem;font-weight:700;color:{c["text_muted"]};letter-spacing:.3px;">'
                      f'OUT-OF-SAMPLE · SINCE IT WAS BUILT ({esc(built.upper())}) — WINDOWS IT NEVER SAW</div>'
                      f'<div style="font-size:0.74rem;color:{c["text_secondary"]};margin-top:3px;">'
-                     f'{u_beat} of matches beat the market · before costs · the most trustworthy record</div></div>'
+                     f'{u_beat} of matches beat the market · before costs · the most trustworthy record{_overlap_note(unseen, " · ")}</div></div>'
                      f'<div style="display:flex;gap:4px;align-items:flex-end;">{_bars(unseen, c, esc)}</div></div>'
                      f'{_extras(unseen, c, esc)}{_vs_index(scan, unseen, c, esc)}')
     elif state == "unverified":
@@ -1027,17 +1044,19 @@ def card_summary_html(scan: dict, n_now: int, state: str, rec, selected: bool) -
     if unseen:
         u_ahead = sum(float(w["median_excess_pp"]) > 0 for w in unseen)
         oos = (f'Out-of-sample: ahead in {u_ahead} of {len(unseen)} unseen window'
-               f'{"s" if len(unseen) != 1 else ""} ({_pts([float(w["median_excess_pp"]) for w in unseen])} pts)')
+               f'{"s" if len(unseen) != 1 else ""} ({_pts([float(w["median_excess_pp"]) for w in unseen])} pts)'
+               f'{_overlap_note(unseen, " · ")}')
     else:
         oos = f"Out-of-sample: pending · first test due about {_first_unseen_due(scan)}"
     # Once the unseen windows carry the index comparison (December plan rule 23), it IS the out-of-sample
     # line: after costs, against the fund the user could hold instead — the strictest reading, in the
     # same space, so the three cards stay one height (the full record below keeps both readings).
-    edges = [e for _, e in _index_readings(scan, unseen) if e is not None]
+    read = [(w, e) for w, e in _index_readings(scan, unseen) if e is not None]
+    edges = [e for _, e in read]
     if edges:
         oos = (f"Out-of-sample, after costs: ahead of the {BENCHMARK_INDICES.get(scan['benchmark'], scan['benchmark'])}"
                f" index fund in {sum(e > 0 for e in edges)} of {len(edges)} window{'s' if len(edges) != 1 else ''}"
-               f" ({_pts(edges)} pts)")
+               f" ({_pts(edges)} pts){_overlap_note([w for w, _ in read], ' · ')}")
     if state == "measured" and rec and rec.get("study"):
         st_ = rec["study"]
         years = st_.get("years") or []
@@ -1059,7 +1078,7 @@ def card_summary_html(scan: dict, n_now: int, state: str, rec, selected: bool) -
                                                     f" ({len(nets)} of {len(ws)} windows)")
         body = (f'<div style="{label}">IN-SAMPLE · DESIGN-PERIOD RECORD</div>'
                 f'<div style="{main}">Ahead of the market in <b>{sum(v > 0 for v in gross)} of {len(ws)}</b> '
-                f'windows: {_pts(gross)} pts before costs{after}</div>'
+                f'windows{_overlap_note(ws, " (", ")")}: {_pts(gross)} pts before costs{after}</div>'
                 f'<div style="{muted}">{esc(oos)}</div>')
     elif state == "unverified":
         body = (f'<div style="font-size:0.74rem;color:{c["text_muted"]};">The record could not be checked against '

@@ -1245,3 +1245,56 @@ def test_the_compounder_is_set_against_its_own_index_on_both_cards():
     summ = _html.unescape(S.card_summary_html(comp, 320, "measured", rec, False))
     for h in (full, summ):
         assert "Nifty Smallcap250 Momentum Quality 100 index fund" in h and "+2.5" in h
+
+
+# ── How many windows are independent (2026-10-13) ─────────────────────────────────────────────────
+# The design-period record has 4 windows from 3 snapshot dates; two contain the other two, so "4 of 4"
+# reads as four results when the evidence is two stretches. The cards say how many do not overlap, and
+# say nothing when every window is independent.
+@pytest.mark.parametrize("spans,k", [
+    ([], 0),
+    ([("2026-06-17", "2026-08-22"), ("2026-06-17", "2026-10-03"), ("2026-08-22", "2026-09-19"),
+      ("2026-08-22", "2026-10-03")], 2),                                          # today's design record
+    ([("2026-01-31", "2026-02-28"), ("2026-02-28", "2026-03-31")], 2),          # touching: share no days
+    ([("2026-01-31", "2026-03-31"), ("2026-02-28", "2026-04-30")], 1),          # overlapping
+    ([("2026-02-28", "2026-03-31"), ("2026-01-31", "2026-02-28")], 2),          # any input order
+], ids=["none", "design-record", "touching", "overlapping", "unordered"])
+def test_non_overlapping_is_the_most_windows_that_share_no_days(spans, k):
+    assert S.non_overlapping([dict(start=a, end=b) for a, b in spans]) == k
+
+
+def test_the_cards_say_how_many_windows_do_not_overlap():
+    import html as _html
+    rec = _record()
+    summ = _html.unescape(S.card_summary_html(S.SCANS[0], 235, "measured", rec, False))
+    full = _html.unescape(S.card_html(S.SCANS[0], 235, "measured", rec, selected=False, latest="03 Oct"))
+    assert "4 of 4</b> windows (2 non-overlapping)" in summ
+    assert "4 short windows from 2 start dates, 2 non-overlapping" in full
+
+
+def test_the_unseen_lines_say_it_too():
+    import html as _html
+    rec = _record()
+    rec["out_of_sample"] = _unseen(None, None)                                 # both start 31 Oct: nested
+    summ = _html.unescape(S.card_summary_html(S.SCANS[0], 235, "measured", rec, False))
+    assert "ahead in 2 of 2 unseen windows (+1.0 pts) · 1 non-overlapping" in summ
+    rec["out_of_sample"] = _unseen(_vs(5.0, 2.0), _vs(1.0, 3.5))
+    summ = _html.unescape(S.card_summary_html(S.SCANS[0], 235, "measured", rec, False))
+    assert "index fund in 1 of 2 windows (-2.5 to +3.0 pts) · 1 non-overlapping" in summ
+
+
+def test_independent_windows_get_no_note():
+    import html as _html
+    rec = _record()
+    rec["windows"] = [rec["windows"][0], rec["windows"][2]]                    # 17 Jun-22 Aug, 22 Aug-19 Sep
+    summ = _html.unescape(S.card_summary_html(S.SCANS[0], 235, "measured", rec, False))
+    full = _html.unescape(S.card_html(S.SCANS[0], 235, "measured", rec, selected=False, latest="03 Oct"))
+    assert "2 of 2</b> windows:" in summ and "non-overlapping" not in summ + full
+
+
+def test_the_full_unseen_record_says_it_too():
+    import html as _html
+    rec = _record()
+    rec["out_of_sample"] = _unseen(None, None)
+    full = _html.unescape(S.card_html(S.SCANS[0], 235, "measured", rec, selected=False, latest="03 Oct"))
+    assert "the most trustworthy record · 1 non-overlapping" in full
