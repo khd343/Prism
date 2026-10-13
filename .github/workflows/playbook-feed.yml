@@ -30,8 +30,16 @@ jobs:
     # Pinned, not ubuntu-latest (moves to Ubuntu 26 from 2026-10-19); actions on the Node-24 releases.
     runs-on: ubuntu-24.04
     timeout-minutes: 25
+    env:
+      # THE FEED'S CODE IS PINNED (2026-10-13) for Kite's frozen Playbook test, 12 Oct - 20 Nov 2026 (Kite Algo
+      # docs/playbook-test-2026-11.md): a commit to main no longer reaches the list, as 2a87ac4 did. The manifest
+      # records this commit. A feed fix moves it in a commit of its own, recorded on that page; unpin after the
+      # read-out.
+      FEED_CODE_SHA: 8f86933c19c0a6a1b4309d46bac904c7a609530a
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.FEED_CODE_SHA }}
 
       - uses: actions/checkout@v7
         with:

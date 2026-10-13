@@ -14,6 +14,7 @@ import hashlib
 import io
 import json
 import re
+import subprocess
 import sys
 from datetime import date, datetime
 from pathlib import Path
@@ -477,6 +478,23 @@ def test_the_commit_message_reaches_git_through_the_environment():
     """Never `${{ }}`-interpolated into the shell: an output is data, not script."""
     y = _wf()
     assert 'git commit -m "$MSG"' in y and "MSG: ${{ steps.publish.outputs.message }}" in y
+
+
+def test_the_feeds_code_is_pinned_for_the_frozen_window():
+    """Kite's frozen Playbook test (12 Oct - 20 Nov 2026): a commit to main must not reach the list, as 2a87ac4 did.
+    The code checkout is ONE named commit (FEED_CODE_SHA, which the manifest records), in this history, carrying
+    both feed fixes of 13 Oct. Moving it is a deliberate edit of the workflow and of this test's history."""
+    y = _wf()
+    pins = re.findall(r"^\s+FEED_CODE_SHA:\s*(\S+)\s*$", y, re.M)
+    assert len(pins) == 1 and re.fullmatch(r"[0-9a-f]{40}", pins[0]), pins
+    assert re.search(r"- uses: actions/checkout@v7\n\s+with:\n\s+ref: \$\{\{ env\.FEED_CODE_SHA \}\}\n", y)
+    git = lambda *a: subprocess.run(["git", "-C", str(ROOT), *a], capture_output=True, text=True,  # noqa: E731
+                                    encoding="utf-8")
+    if git("rev-parse", "--is-shallow-repository").stdout.strip() != "false":
+        pytest.skip("a shallow clone cannot check the pin against history")
+    assert git("merge-base", "--is-ancestor", pins[0], "HEAD").returncode == 0, "the pin is not in this history"
+    code = git("show", f"{pins[0]}:ui/playbook_feed_job.py").stdout
+    assert "FEED_GATE_INDICES" in code and "_in_market_hours" in code, "the pin predates the 13 Oct feed fixes"
 
 
 # ── 12. A stale copy is not a session (2026-10-12) ────────────────────────────────────────────────
