@@ -1,13 +1,14 @@
 """
 test_scan_filters.py — the 🎯 Scans tab's own filters: Liquidity · Market cap · Weinstein Stage · Buy Zone
-(2026-10-13, the user's choice), opening on ₹1 Cr a day and Stage 1 + 2.
+(2026-10-13, the user's choice), every one opening empty.
 
 Until today the tab carried the Market Pulse lens row (Sector · Wealth tier · Market cap · Catalyst) beside
 Liquidity. All of those also live in the sidebar, which reaches this list through the 🎯 opt-in, so the
 user kept only the four that answer "can I buy it, and is this a moment to": Liquidity, Market cap,
-Weinstein Stage and Buy Zone — and set two defaults: Liquidity ₹1 Cr a day, Stage 1 + Stage 2. Every
+Weinstein Stage and Buy Zone. It first shipped opening on ₹1 Cr a day and Stage 1 + 2; the user removed
+both defaults the same day, so every control opens EMPTY and the list opens on the whole scan. Every
 control narrows the FINISHED list (the recipe already ran on the whole market); the caption names what
-narrows it; 🧹 Clear returns every control to ITS default, never to "everything".
+narrows it; 🧹 Clear empties the row.
 
 Pinned here from the source (AST); tests/test_scans_tab_runs.py runs the real tab and checks behaviour.
 
@@ -22,7 +23,7 @@ sys.path.insert(0, str(ROOT))
 
 _APP = (ROOT / "app.py").read_text(encoding="utf-8")
 _TREE = ast.parse(_APP)
-DEFAULT_STAGES = ["📈 Stage 2 Advancing", "🔄 Stage 1 Basing"]
+FIRST_STAGES = ["📈 Stage 2 Advancing", "🔄 Stage 1 Basing"]     # the order the sidebar lists them in
 
 
 def _scans_block():
@@ -66,16 +67,16 @@ def test_the_filters_read_left_to_right_liquidity_first():
     assert src.index("'Liquidity'") < src.index("_scan_filter_row("), "Liquidity is the first control"
 
 
-def test_the_list_opens_on_one_crore_a_day_and_stage_1_and_2():
+def test_every_control_opens_empty():
+    """REPOINTED 2026-10-13, the user's call: the ₹1 Cr a day / Stage 1 + 2 defaults were removed."""
     node = next(n for n in _TREE.body if isinstance(n, ast.Assign)
                 and ast.unparse(n.targets[0]) == "_SCAN_FILTER_DEFAULTS")
-    assert ast.literal_eval(node.value) == {"scan_liq": 1.0, "scan_cap": [], "scan_stage": DEFAULT_STAGES,
-                                            "scan_zone": []}
+    assert ast.literal_eval(node.value) == {"scan_liq": None, "scan_cap": [], "scan_stage": [], "scan_zone": []}
 
 
 def test_the_options_are_the_sidebars_one_definition():
     from ui import ui_discovery as D
-    assert D._WEIN_ORDER[:2] == DEFAULT_STAGES and D._WEIN_ORDER[-1] == D._UNKNOWN
+    assert D._WEIN_ORDER[:2] == FIRST_STAGES and D._WEIN_ORDER[-1] == D._UNKNOWN
     assert D._BUY_ZONE_ORDER[0] == "🟢 Perfect Entry (Low Risk)" and len(D._BUY_ZONE_ORDER) == 6
     imp = next(n for n in _TREE.body if isinstance(n, ast.ImportFrom) and n.module == "ui.ui_discovery")
     assert {"_BUY_ZONE_ORDER", "_WEIN_ORDER"} <= {a.name for a in imp.names}, "imported, never retyped"

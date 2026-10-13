@@ -160,12 +160,10 @@ def _frame():
     return ns["df"]
 
 
-DEFAULT_STAGES = ("📈 Stage 2 Advancing", "🔄 Stage 1 Basing")
-
-
-def _expected(scan, min_cr=1.0, stages=DEFAULT_STAGES, caps=(), zones=()):
+def _expected(scan, min_cr=None, stages=(), caps=(), zones=()):
     """The names the tab should list: the recipe on the whole market, the liquidity floor, then the
-    tab's filters — at their defaults (2026-10-13: ₹1 Cr a day, Stage 1 + 2) unless told otherwise."""
+    tab's filters — all empty unless told otherwise (2026-10-13: the user removed the ₹1 Cr a day and
+    Stage 1 + 2 defaults the day they shipped)."""
     from ui import ui_scans as S
     df = _frame()
     kept = df[df["company_id"].isin(set(S.scan_table(df, scan, min_cr=min_cr)["company_id"]))]
@@ -229,17 +227,18 @@ def test_the_cycle_column_shows_on_the_compounder_table_only(tab):
     assert order[order.index("_strong_q") + 1] == "_cycle"
 
 
-def test_the_liquidity_selector_shows_the_order_size_guide_and_starts_at_one_crore(tab):
-    """The guide reaches the screen through app.py (read from the rendered selector): same steps, and —
-    the user's default since 2026-10-13 — ₹1 Cr a day (it started at Any before); a floor still narrows
-    only the finished list."""
+def test_the_liquidity_selector_shows_the_order_size_guide_and_starts_at_any(tab):
+    """The guide reaches the screen through app.py (read from the rendered selector): same steps, default
+    Any (a ₹1 Cr default shipped and was removed on 2026-10-13, the user's call), and a floor still
+    narrows only the finished list."""
     from ui import ui_scans as S
     comp = next(s for s in S.SCANS if s["key"] == "compounder")
     tab.button(key="scan_open_compounder").click().run()        # the synthetic market's larger list
     sel = tab.selectbox(key="scan_liq")
     assert sel.help == S.liquidity_help()
     assert list(sel.options) == ["Any"] + [f"₹{s:g} Cr/day" for s in S.LIQUIDITY_STEPS if s is not None]
-    assert sel.value == 1.0
+    assert sel.value is None
+    assert sel.proto.placeholder == "Any", "None also means 'nothing chosen' to Streamlit: it must read Any"
     sel.set_value(5.0).run()
     assert not tab.exception, [e.value for e in tab.exception]
     expected = _expected(comp, min_cr=5.0)
@@ -247,35 +246,42 @@ def test_the_liquidity_selector_shows_the_order_size_guide_and_starts_at_one_cro
     assert sorted(tab.dataframe[0].value["name"]) == expected
 
 
-def test_the_list_opens_on_one_crore_and_stage_1_and_2_and_says_so(tab):
-    """RUN (2026-10-13): the user's defaults reach the table — liquid stocks in Stage 1 or 2 — and the
-    caption names both, so a narrowed list never reads as the whole scan."""
+def test_the_list_opens_on_the_whole_scan_and_a_filter_is_named_in_the_caption(tab):
+    """RUN (2026-10-13, repointed the same day): every control opens empty, so the table is the whole scan
+    and the caption claims no narrowing; once a filter narrows it, the caption names it."""
     from ui import ui_scans as S
-    assert tab.multiselect(key="scan_stage").value == list(DEFAULT_STAGES)
-    assert tab.multiselect(key="scan_cap").value == [] and tab.multiselect(key="scan_zone").value == []
-    shown = sorted(tab.dataframe[0].value["name"])
-    assert shown == _expected(S.SCANS[0]) and 0 < len(shown) < len(_expected(S.SCANS[0], min_cr=None, stages=()))
+    assert tab.selectbox(key="scan_liq").value is None
+    for key in ("scan_cap", "scan_stage", "scan_zone"):
+        assert tab.multiselect(key=key).value == [], key
+    assert sorted(tab.dataframe[0].value["name"]) == _expected(S.SCANS[0])
     cap = next(c.value for c in tab.caption if "sorted by Rank" in c.value)
-    assert "₹1 Cr+ a day" in cap and "Stage 2" in cap and "Stage 1" in cap, cap
-    assert not [b for b in tab.button if b.key == "scan_clear"], "no 🧹 while every control is at its default"
+    head = cap.split("·")[0]
+    assert " of " not in head and "(" not in head, cap
+    assert not [b for b in tab.button if b.key == "scan_clear"], "no 🧹 while every control is empty"
+    tab.button(key="scan_open_compounder").click().run()      # 🌱 holds Stage 2 stocks (the 🚀 four do not)
+    tab.multiselect(key="scan_stage").set_value(["📈 Stage 2 Advancing"]).run()
+    cap = next(c.value for c in tab.caption if "sorted by Rank" in c.value)
+    assert "(📈 Stage 2)" in cap, cap
 
 
 def test_the_pills_show_the_tables_short_words_and_filter_by_the_engines_labels(tab):
     """Two full Stage labels wrapped the row onto a second line at 1536px (seen 2026-10-13), so the
-    pills show the table's short words — while the VALUES stay the engine's labels, so filtering,
-    stored picks and the 🧹 defaults are unchanged."""
+    pills show the table's short words — while the VALUES stay the engine's labels, so filtering and
+    stored picks are unchanged. On 🌱, which holds both stages (an option a list does not offer cannot be
+    picked in the browser either)."""
+    tab.button(key="scan_open_compounder").click().run()
+    tab.multiselect(key="scan_stage").set_value(["📈 Stage 2 Advancing", "🔄 Stage 1 Basing"]).run()
     stage = tab.multiselect(key="scan_stage")
-    assert stage.value == list(DEFAULT_STAGES), "the values are the engine's own labels"
+    assert stage.value == ["📈 Stage 2 Advancing", "🔄 Stage 1 Basing"], "the values are the engine's labels"
     shown = " | ".join(stage.options)
     assert "📈 Stage 2  ·  " in shown and "Advancing" not in shown, shown
-    tab.button(key="scan_open_compounder").click().run()
     zone = tab.multiselect(key="scan_zone")
     assert any(o.startswith("🟢 Perfect Entry  ·  ") for o in zone.options), zone.options
     assert not any("(Low Risk)" in o for o in zone.options)
 
 
 def test_each_filter_narrows_the_finished_list(tab):
-    """On 🌱, the synthetic market's larger list (12 at the defaults, 25 across every stage)."""
+    """On 🌱, the synthetic market's larger list (25 matches)."""
     from ui import ui_scans as S
     play = next(s for s in S.SCANS if s["key"] == "compounder")
     tab.button(key="scan_open_compounder").click().run()
@@ -291,15 +297,16 @@ def test_each_filter_narrows_the_finished_list(tab):
 
 
 def test_clear_returns_every_control_to_its_default(tab):
-    tab.selectbox(key="scan_liq").set_value(None).run()
+    """Every control's default is empty (2026-10-13), so 🧹 empties the row — and leaves the view alone."""
+    tab.selectbox(key="scan_liq").set_value(5.0).run()
     tab.multiselect(key="scan_stage").set_value(["📉 Stage 4 Declining"]).run()
     tab.multiselect(key="scan_cap").set_value(["Mid Cap"]).run()
     clear = [b for b in tab.button if b.key == "scan_clear"]
     assert clear, "🧹 shows once a control leaves its default"
     clear[0].click().run()
     assert not tab.exception, [e.value for e in tab.exception]
-    assert tab.selectbox(key="scan_liq").value == 1.0, "back to ₹1 Cr a day, not to Any"
-    assert tab.multiselect(key="scan_stage").value == list(DEFAULT_STAGES)
+    assert tab.selectbox(key="scan_liq").value is None, "back to Any"
+    assert tab.multiselect(key="scan_stage").value == []
     assert tab.multiselect(key="scan_cap").value == [] and tab.multiselect(key="scan_zone").value == []
     assert tab.get("button_group")[0].value == "🏆 Core", "the view is not a filter"
 

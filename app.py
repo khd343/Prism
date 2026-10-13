@@ -831,10 +831,10 @@ def _mp_lens_row(frame, prefix, extra_keys=(), with_tier=True):
 # ── 🎯 Scans: the tab's own filters (2026-10-13, the user's choice) ──────────────────────────────────
 # Liquidity · Market cap · Weinstein Stage · Buy Zone: can it be bought, and is this a moment to. Sector,
 # Wealth tier and Catalyst left the tab: they live in the sidebar, which reaches this list through the 🎯
-# opt-in. The user's defaults: ₹1 Cr a day and Stage 1 + 2, so the list opens on liquid stocks in a basing
-# or advancing trend; the caption names what narrows it, and 🧹 Clear returns each control to ITS default.
-_SCAN_FILTER_DEFAULTS = {"scan_liq": 1.0, "scan_cap": [],
-                         "scan_stage": ["📈 Stage 2 Advancing", "🔄 Stage 1 Basing"], "scan_zone": []}
+# opt-in. Every control opens EMPTY (the user's call, 2026-10-13 — it first shipped opening on ₹1 Cr a day
+# and Stage 1 + 2, and the user removed both defaults the same day), so the list opens on the whole scan;
+# the caption names whatever narrows it, and 🧹 Clear empties the row.
+_SCAN_FILTER_DEFAULTS = {"scan_liq": None, "scan_cap": [], "scan_stage": [], "scan_zone": []}
 
 
 def _scan_filter_row(frame, slots):
@@ -848,8 +848,7 @@ def _scan_filter_row(frame, slots):
              "Market-cap tiers (the sheet's Market Category). Pick several; counts reflect the "
              "controls to the left."),
             ("Weinstein Stage", "scan_stage", "weinstein_stage", _WEIN_ORDER,
-             "The 30-week trend stage. Opens on Stage 1 + 2 (basing or advancing); pick several, or "
-             "clear it to see every stage."),
+             "The 30-week trend stage. Pick several; counts reflect the controls to the left."),
             ("Buy Zone", "scan_zone", "buy_zone_label", _BUY_ZONE_ORDER,
              "Entry timing against the Volatility Stop. Pick several; counts reflect the controls to "
              "the left."))
@@ -873,7 +872,7 @@ def _scan_filter_row(frame, slots):
             st.button("🧹 Clear", key="scan_clear", width="stretch", on_click=_mp_clear_lens,
                       args=({k: (list(v) if isinstance(v, list) else v)
                              for k, v in _SCAN_FILTER_DEFAULTS.items()},),
-                      help="Back to the defaults: ₹1 Cr a day, Stage 1 + 2, every market cap and buy zone.")
+                      help="Clears every filter in this row.")
     return _cf, why
 
 
@@ -937,15 +936,19 @@ with tabs[1]:
                  "whole market, so every stock shown is the same match it would be unfiltered, and the "
                  "record still describes the whole scan.")
     _sc_scoped = _sc_narrowed and bool(st.session_state.get("scan_use_sidebar", False))
-    for _k, _v in _SCAN_FILTER_DEFAULTS.items():          # the user's defaults, seeded before the widgets
+    for _k, _v in _SCAN_FILTER_DEFAULTS.items():          # every control starts empty, seeded before the widgets
         st.session_state.setdefault(_k, list(_v) if isinstance(_v, list) else _v)
-    # Widths measured 2026-10-13 at 1536px: the two default Stage pills need ~340px on ONE line (142 + 126
-    # plus the box's icons); Market cap and Buy Zone hold one pill each; Liquidity fits "₹1 Cr/day".
+    # Widths measured 2026-10-13 at 1536px: two Stage pills (Stage 1 + 2, the common pick) need ~340px on
+    # ONE line (142 + 126 plus the box's icons); Market cap and Buy Zone hold one pill each; Liquidity fits
+    # "₹1 Cr/day".
     _sc_slots = st.columns([1.4, 1.8, 3.5, 2.3, 1.0])
     with _sc_slots[0]:
+        # "Any" is the value None, which Streamlit (>= 1.27) also reads as "nothing chosen" and shows its
+        # placeholder for — "Choose an option" on an empty start or after 🧹 (seen 2026-10-13). The
+        # placeholder says the same thing as the option, so both states read "Any".
         _sc_min = st.selectbox(
             "Liquidity", SCAN_LIQUIDITY_STEPS, key="scan_liq",
-            format_func=liquidity_step_label,
+            format_func=liquidity_step_label, placeholder="Any",
             help=scan_liquidity_help())
     _sc_members = _sc_rec_sel.get("members_at_latest") if _sc_state_sel == "measured" else None
     # 📄 window = the days from the 🆕 baseline to the data's own date (the Movers rule): a result
