@@ -31,6 +31,7 @@ import subprocess
 import sys
 from datetime import date
 
+import numpy as np
 import pandas as pd
 
 from config import BENCHMARK_INDICES
@@ -105,6 +106,41 @@ def index_returns(bench_early, bench_late, days: int) -> dict:
     return {k: round(float(r[k]), 2) for k in BENCHMARK_INDICES if k in r.index}
 
 
+def hold_reading(early: pd.DataFrame, ret: pd.Series, liquid: pd.Series) -> dict:
+    """"What if you held S.HOLD_K of them?" (2026-10-13, ui_scans.HOLD_* and ORDER_RULE). From the liquid
+    matches whose one share costs at most S.HOLD_MAX_PRICE at the window's start — what a Rs 1 lakh
+    account can hold — S.HOLD_DRAWS random picks of S.HOLD_K, equal-weighted, less S.NET_COST_PP: their
+    median, 10th and 90th percentile and the share that lost money; and the share of those picks that
+    momentum's top S.HOLD_K and Rank's top S.HOLD_K each beat. A FIXED seed over the matches in
+    company_id order, so a window always reads the same. Only n when fewer than MIN_N can be held."""
+    price = pd.to_numeric(early["close_price"], errors="coerce")
+    ok = liquid & (price <= S.HOLD_MAX_PRICE)
+    out = dict(k=S.HOLD_K, max_price=S.HOLD_MAX_PRICE, min_cr=S.NET_MIN_CR, cost_pp=S.NET_COST_PP,
+               draws=S.HOLD_DRAWS, n=int(ok.sum()))
+    if out["n"] < MIN_N:
+        return out
+    col = lambda c: (pd.to_numeric(early[c], errors="coerce") if c in early.columns
+                     else pd.Series(np.nan, index=early.index))
+    held = pd.DataFrame({"company_id": early["company_id"].astype(str), "ret": ret,
+                         "mom": col("momentum_score"), "rank": col("rank")})[ok]
+    held = held.sort_values("company_id").reset_index(drop=True)
+    r = held["ret"].to_numpy()
+    rng = np.random.default_rng(S.HOLD_SEED)
+    picks = rng.random((S.HOLD_DRAWS, len(r))).argsort(axis=1)[:, :S.HOLD_K]
+    sims = r[picks].mean(axis=1) - S.NET_COST_PP
+
+    def placed(col: str, ascending: bool):
+        top = held.dropna(subset=[col]).sort_values([col, "company_id"], ascending=[ascending, True])
+        if len(top) < S.HOLD_K:
+            return None
+        return int(round(float((sims < top["ret"].head(S.HOLD_K).mean() - S.NET_COST_PP).mean() * 100)))
+
+    out.update(median_pp=round(float(np.median(sims)), 1), p10_pp=round(float(np.percentile(sims, 10)), 1),
+               p90_pp=round(float(np.percentile(sims, 90)), 1), loss_pct=int(round(float((sims < 0).mean() * 100))),
+               momentum_pct=placed("mom", False), rank_pct=placed("rank", True))
+    return out
+
+
 def measure_window(early: pd.DataFrame, late: pd.DataFrame, scan: dict, start: str, end: str,
                    bench_early=None, bench_late=None):
     """The scan's record over one window. The recipe runs on the WHOLE early frame (as the tab runs it
@@ -144,6 +180,7 @@ def measure_window(early: pd.DataFrame, late: pd.DataFrame, scan: dict, start: s
                dropped_no_return=int((in_scan & ret.isna() & ~corp).sum()),
                dropped_corp_action=int((in_scan & corp).sum()),
                net=net)
+    out["hold"] = hold_reading(early, ret, liquid)
     indices = index_returns(bench_early, bench_late, _days(start, end))
     if indices:
         vs = dict(fee_pct_yr=S.FUND_FEE_PCT_YR, cost_pp=S.NET_COST_PP, min_cr=S.NET_MIN_CR, n=net["n"],

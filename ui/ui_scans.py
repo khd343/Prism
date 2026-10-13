@@ -61,6 +61,26 @@ NET_COST_PP = 1.0
 # charge more (Smallcap250 Momentum Quality 100: 0.47-0.64%), so for those the test errs strict — it
 # never flatters a scan. Each scan's main index is its `benchmark`; every declared index is recorded.
 FUND_FEE_PCT_YR = 0.2
+# "What if you held 20 of them?" (2026-10-13, fixed before the first unseen window; December plan rule
+# 26 E-F, rule 27). Measured first: on windows that do not overlap, the ORDER inside a scan barely
+# mattered (Rank's top 25 at the 38/33/73th percentile of random picks, momentum's at 93/63/83), while
+# HOW MANY you hold mattered a lot (random picks from the buyable Playbook list: 10 names 0 to +29%, 20
+# names +4.7 to +24%). So each unseen window also records HOLD_K stocks picked at random HOLD_DRAWS
+# times with a FIXED seed, from the matches a Rs 1 lakh account can hold — NET_MIN_CR+ a day AND one
+# share at most HOLD_MAX_PRICE (13 of 185 buyable stocks cost more on 2026-10-12) — after NET_COST_PP:
+# the typical result, its 10th-90th range, how often it lost money, and where the top HOLD_K by
+# momentum and by Rank land among those picks.
+HOLD_K = 20
+HOLD_MAX_PRICE = 5000.0
+HOLD_DRAWS = 2000
+HOLD_SEED = 20261013
+# The rule that decides a scan's table order, written before any unseen window: it switches to momentum
+# order only if, over the scan's FIRST `windows` separate (non-overlapping), finished unseen windows with
+# at least `min_n` holdable matches, momentum's top HOLD_K beats on average at least `min_avg_pct`% of
+# the random picks AND averages above Rank's top HOLD_K. Luck alone passes a 70% average over four
+# windows about 1 time in 12 (8.6%); "3 of 4 above half" would pass 31% of the time. Each scan decides
+# on its own windows; 🌱 keeps its order (its 3-year study found momentum inside it flips year to year).
+ORDER_RULE = dict(scans=("playbook", "leaders"), windows=4, min_avg_pct=70.0, min_n=30)
 RECORD_VERSION = 2
 # The day the recipes were chosen. Every window that STARTS on or after it is out of sample: data
 # nobody looked at while choosing. Windows before it are the design-period record (in sample).
@@ -701,6 +721,62 @@ def non_overlapping(ws) -> int:
     return n
 
 
+def order_rule(ws) -> dict:
+    """ORDER_RULE applied to a scan's unseen windows: state 'pending' until it has ORDER_RULE['windows']
+    separate (non-overlapping, earliest end first — the same greedy choice as non_overlapping), finished
+    windows carrying a hold reading of at least min_n matches; then 'earned' or 'not earned' on those
+    first windows only, so a later window can never reopen it. counted = windows that count so far."""
+    usable = [w for w in ws if w.get("final") and int((w.get("hold") or {}).get("n", 0)) >= ORDER_RULE["min_n"]
+              and w["hold"].get("momentum_pct") is not None and w["hold"].get("rank_pct") is not None]
+    picked, last = [], ""
+    for w in sorted(usable, key=lambda w: (w["end"], w["start"])):
+        if w["start"] >= last and len(picked) < ORDER_RULE["windows"]:
+            picked.append(w)
+            last = w["end"]
+    out = dict(counted=len(picked), state="pending")
+    if len(picked) == ORDER_RULE["windows"]:
+        mom = float(np.mean([float(w["hold"]["momentum_pct"]) for w in picked]))
+        rank = float(np.mean([float(w["hold"]["rank_pct"]) for w in picked]))
+        earned = mom >= ORDER_RULE["min_avg_pct"] and mom > rank
+        out.update(state="earned" if earned else "not earned", mom_avg=mom, rank_avg=rank)
+    return out
+
+
+def _hold_line(scan: dict, ws, c: dict, esc) -> str:
+    """Under the unseen record: per window, HOLD_K matches a Rs 1 lakh account can hold, picked at random
+    — the typical result after costs and its 10th-90th range — and where momentum's and Rank's top HOLD_K
+    land among those picks; then, for the scans ORDER_RULE judges, where the rule stands. Empty until a
+    window carries the reading."""
+    rows = [w for w in ws if "median_pp" in (w.get("hold") or {})]
+    if not rows:
+        return ""
+    k = int(rows[0]["hold"]["k"])
+    res = " / ".join(f'{float(w["hold"]["median_pp"]):+.1f}% ({float(w["hold"]["p10_pp"]):+.1f} to '
+                     f'{float(w["hold"]["p90_pp"]):+.1f})' for w in rows)
+    loss = " / ".join(f'{int(w["hold"]["loss_pct"])}%' for w in rows)
+    pct = lambda v: "–" if v is None else f"{int(v)}%"
+    mom = " / ".join(pct(w["hold"].get("momentum_pct")) for w in rows)
+    rnk = " / ".join(pct(w["hold"].get("rank_pct")) for w in rows)
+    h0 = rows[0]["hold"]
+    rule = note = ""
+    if scan.get("key") in ORDER_RULE["scans"]:
+        note = (f' The order rule was written before any result: momentum order only if its top {k} beats '
+                f'{ORDER_RULE["min_avg_pct"]:.0f}%+ of random picks on average over {ORDER_RULE["windows"]} '
+                f'separate windows, and beats Rank\'s.')
+        v = order_rule(ws)
+        rule = (f' · Order rule: {v["counted"]} of {ORDER_RULE["windows"]} separate windows in'
+                if v["state"] == "pending" else
+                f' · Order rule decided: momentum order {v["state"]} (its top {k} beat {v["mom_avg"]:.0f}% of '
+                f'random picks on average, Rank\'s {v["rank_avg"]:.0f}%)')
+    return (f'<div style="font-size:0.7rem;color:{c["text_secondary"]};margin-top:5px;">Holding {k} of them, '
+            f'picked at random: {esc(res)} after costs · lost money in {esc(loss)} of picks · '
+            f'momentum\'s top {k} beat {esc(mom)} of them, Rank\'s top {k} {esc(rnk)}{esc(rule)}</div>'
+            f'<div style="font-size:0.66rem;color:{c["text_muted"]};margin-top:2px;">From the matches trading '
+            f'₹{float(h0["min_cr"]):g} Cr+ a day with one share at most ₹{float(h0["max_price"]):,.0f} (what ₹1 '
+            f'lakh across {k} can hold), {int(h0["draws"]):,} random picks each window with a fixed seed, a '
+            f'{float(h0["cost_pp"]):.1f}pp round trip.{esc(note)}</div>')
+
+
 def _overlap_note(ws, sep: str, end: str = "") -> str:
     """'<sep>K non-overlapping<end>' when the windows overlap; nothing when every one is independent."""
     k = non_overlapping(ws)
@@ -925,7 +1001,7 @@ def _study_body(scan: dict, rec: dict, c: dict, esc) -> str:
                  f'<div style="font-size:0.74rem;color:{c["text_secondary"]};margin-top:3px;">'
                  f'{u_beat} of matches beat the market · before costs · the most trustworthy record{_overlap_note(unseen, " · ")}</div></div>'
                  f'<div style="display:flex;gap:4px;align-items:flex-end;">{_bars(unseen, c, esc)}</div></div>'
-                 f'{_extras(unseen, c, esc)}{_vs_index(scan, unseen, c, esc)}')
+                 f'{_extras(unseen, c, esc)}{_vs_index(scan, unseen, c, esc)}{_hold_line(scan, unseen, c, esc)}')
     else:
         body += (f'<div style="border-top:1px solid {c["border"]};margin-top:8px;padding-top:7px;{muted}">'
                  f'<b style="color:{c["text_secondary"]};">Out-of-sample: pending</b> — this list is judged '
@@ -1002,7 +1078,7 @@ def card_html(scan: dict, n_now: int, state: str, rec, selected: bool, latest: s
                      f'<div style="font-size:0.74rem;color:{c["text_secondary"]};margin-top:3px;">'
                      f'{u_beat} of matches beat the market · before costs · the most trustworthy record{_overlap_note(unseen, " · ")}</div></div>'
                      f'<div style="display:flex;gap:4px;align-items:flex-end;">{_bars(unseen, c, esc)}</div></div>'
-                     f'{_extras(unseen, c, esc)}{_vs_index(scan, unseen, c, esc)}')
+                     f'{_extras(unseen, c, esc)}{_vs_index(scan, unseen, c, esc)}{_hold_line(scan, unseen, c, esc)}')
     elif state == "unverified":
         body = (f'<div style="font-size:0.74rem;color:{c["text_muted"]};">The record could not be checked against '
                 f'the recipe just now — the app may be updating. Reload the page in a minute.</div>')
