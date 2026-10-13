@@ -589,3 +589,46 @@ def test_any_of_the_seven_without_a_price_still_publishes_nothing(monkeypatch):
 def test_the_daily_check_still_requires_every_index():
     assert D.check_benchmarks(_index_rows(_WINDOW_SEVEN))[0].status == "fail"    # a display row missing is mailed
     assert D.check_benchmarks(_index_rows(BENCHMARK_INDICES))[0].status == "ok"
+
+
+# ── 14. A new session is never published in market hours (2026-10-13, independent review C1) ──────────────
+# Prism.gs names a sheet after the session its fetch clock implies: before 19:00 IST, the previous weekday. True before
+# the market opens, false from 09:15: a manual sync then (`--force` skips the settle gates) holds the day's moving
+# prices under yesterday's name, and a published session is permanent.
+def _ist(day, hh, mm):
+    return datetime(2026, 10, day, hh, mm, tzinfo=IST)
+
+
+@pytest.mark.parametrize("when", [_ist(14, 9, 15), _ist(14, 11, 0), _ist(14, 18, 59)], ids=["09:15", "11:00", "18:59"])
+def test_a_new_session_is_never_published_in_market_hours(monkeypatch, tmp_path, when):
+    _published(tmp_path, "2026-10-12")
+    sheet = _Sheet(monkeypatch, ["PRISM 2026-10-13 Tue"])                    # yesterday's name, maybe today's prices
+    with pytest.raises(F.FeedError, match="between 09:15 and 19:00 IST"):
+        F.run_live("id", tmp_path, trigger="dispatch", now=when)
+    assert sheet.published == [] and sheet.downloads == 0
+
+
+@pytest.mark.parametrize("when", [_ist(14, 9, 14), _ist(13, 19, 0), _ist(14, 3, 0), _ist(17, 11, 0)],
+                         ids=["09:14", "19:00", "03:00", "Saturday-11:00"])
+def test_outside_market_hours_the_same_session_publishes(monkeypatch, tmp_path, when):
+    _published(tmp_path, "2026-10-12")
+    sheet = _Sheet(monkeypatch, ["PRISM 2026-10-13 Tue"])
+    assert F.run_live("id", tmp_path, trigger="dispatch", now=when) == "2026-10-13"
+    assert sheet.published == [("PRISM 2026-10-13 Tue", "2026-10-13", "recorded", "dispatch")]
+
+
+def test_nothing_new_in_market_hours_is_quiet_not_a_failure(monkeypatch, tmp_path):
+    """A backstop landing late with the session already published must not fail the run (and mail the owner)."""
+    _published(tmp_path, "2026-10-13")
+    sheet = _Sheet(monkeypatch, ["PRISM 2026-10-13 Tue"])
+    assert F.run_live("id", tmp_path, trigger="schedule", now=_ist(14, 11, 0)) is None and sheet.downloads == 0
+
+
+def test_the_manifest_names_the_code_that_ran(monkeypatch):
+    """Under a pinned checkout GITHUB_SHA is main's head, not the code that ran: the workflow names the pin."""
+    frame = F.build_frame(_scored())
+    monkeypatch.setenv("GITHUB_SHA", "b" * 40)
+    monkeypatch.setenv("FEED_CODE_SHA", "a" * 40)
+    assert _meta(frame)["engine_commit"] == "a" * 40
+    monkeypatch.delenv("FEED_CODE_SHA")
+    assert _meta(frame)["engine_commit"] == "b" * 40                               # unpinned: unchanged

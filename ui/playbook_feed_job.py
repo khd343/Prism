@@ -39,7 +39,7 @@ import pandas as pd
 
 from core import data_engine as de
 from core import run_scoring_pipeline
-from core.sheet_meta import IST, _parse_title, expected_session, fetch_sheet_title, parse_data_date
+from core.sheet_meta import IST, _DATA_READY, _parse_title, expected_session, fetch_sheet_title, parse_data_date
 from ui import data_check_job as D
 from ui import ui_scans as S
 from ui.scan_records_job import engine_version, sheet_id_from_secret
@@ -138,7 +138,7 @@ def manifest(frame: pd.DataFrame, csv: bytes, session: str, source_title: str, s
         "schema": SCHEMA, "session": session, "rows": int(len(frame)), "columns": list(COLUMNS),
         "csv_sha256": sha256(csv), "recipe": "playbook",
         "recipe_fingerprint": S.recipe_fingerprint(playbook_scan()),
-        "engine_commit": os.environ.get("GITHUB_SHA") or engine_version(),
+        "engine_commit": os.environ.get("FEED_CODE_SHA") or os.environ.get("GITHUB_SHA") or engine_version(),
         "source_title": source_title, "source_sha256": sha256(source),
         "origin": origin, "trigger": trigger, "published_at": now.isoformat(timespec="seconds"),
         "counts": {"cap": _counts(frame["cap"], CAP_CODES), "stage": _counts(frame["stage"], STAGE_CODES)},
@@ -312,6 +312,19 @@ def _new_session(title, have: list, now: datetime) -> str | None:
     return session
 
 
+# A NEW SESSION IS NEVER PUBLISHED IN MARKET HOURS (2026-10-13, independent review C1). Prism.gs names a sheet after
+# the session its fetch clock implies -- before 19:00 IST (core.sheet_meta._DATA_READY) the previous weekday. That is
+# true before the market opens and false from 09:15: a manual sync then (`--force` skips the settle gates) holds the
+# day's moving prices under yesterday's name, and a published session is permanent. A list that late was past Kite's
+# 08:45 decision anyway.
+_MARKET_OPEN = (9, 15)
+
+
+def _in_market_hours(now: datetime) -> bool:
+    t = now.astimezone(IST)
+    return t.weekday() < 5 and _MARKET_OPEN <= (t.hour, t.minute) < _DATA_READY
+
+
 def run_live(sheet_id: str, feed: Path, *, trigger: str, now: datetime | None = None,
              sleep=time.sleep) -> str | None:
     """Publish the sheet's session if it is new. Returns the session written, or None."""
@@ -325,6 +338,9 @@ def run_live(sheet_id: str, feed: Path, *, trigger: str, now: datetime | None = 
         title = fetch_sheet_title(sheet_id)
     if _new_session(title, have, now) is None:
         return None
+    if _in_market_hours(now):
+        raise FeedError(f"{_session(title)} is not published between 09:15 and 19:00 IST on a weekday: a sheet "
+                        f"refreshed then holds the day's moving prices under a settled session's name")
     for _ in range(2):                                   # a rename between the two requests: read again
         got, workbook = download(sheet_id)
         if got == title:
