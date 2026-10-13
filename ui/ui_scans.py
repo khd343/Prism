@@ -67,12 +67,18 @@ FUND_FEE_PCT_YR = 0.2
 # mattered (Rank's top 25 at the 38/33/73th percentile of random picks, momentum's at 93/63/83), while
 # HOW MANY you hold mattered a lot (random picks from the buyable Playbook list: 10 names 0 to +29%, 20
 # names +4.7 to +24%). So each unseen window also records HOLD_K stocks picked at random HOLD_DRAWS
-# times with a FIXED seed, from the matches a Rs 1 lakh account can hold — NET_MIN_CR+ a day AND one
-# share at most HOLD_MAX_PRICE (13 of 185 buyable stocks cost more on 2026-10-12) — after NET_COST_PP:
-# the typical result, its 10th-90th range, how often it lost money, and where the top HOLD_K by
-# momentum and by Rank land among those picks.
+# times with a FIXED seed, from the matches a Rs 1 lakh account can hold — a Mega, Large, Mid or Small
+# cap (HOLD_CAPS) AND one share at most HOLD_MAX_PRICE (13 of 185 buyable stocks cost more on 2026-10-12)
+# — after NET_COST_PP: the typical result, its 10th-90th range, how often it lost money, and where the
+# top HOLD_K by momentum and by Rank land among those picks.
+# HOLD_CAPS replaced a NET_MIN_CR (Rs 2 Cr a day) floor on this reading the same day, before any unseen
+# window (the user's call): at ~Rs 5,000 a stock, turnover is not what limits a Rs 1 lakh account. The
+# after-costs and index-fund readings keep NET_MIN_CR. Measured 2026-10-13: NEITHER rule keeps out SME
+# stocks, which trade only in lots (Playbook holdable: 30 of 216 SME under HOLD_CAPS, 17 of 173 under the
+# floor; a Rs 1 Cr floor still leaves 20) — a real fix needs a lot-size column, which the data lacks.
 HOLD_K = 20
 HOLD_MAX_PRICE = 5000.0
+HOLD_CAPS = ("Mega Cap", "Large Cap", "Mid Cap", "Small Cap")
 HOLD_DRAWS = 2000
 HOLD_SEED = 20261013
 # The rule that decides a scan's table order, written before any unseen window: it switches to momentum
@@ -790,6 +796,8 @@ def _hold_line(scan: dict, ws, c: dict, esc) -> str:
     mom = " / ".join(pct(w["hold"].get("momentum_pct")) for w in rows)
     rnk = " / ".join(pct(w["hold"].get("rank_pct")) for w in rows)
     h0 = rows[0]["hold"]
+    names = [str(v).replace(" Cap", "") for v in h0.get("caps", HOLD_CAPS)]
+    caps = ", ".join(names[:-1]) + " and " + names[-1] if len(names) > 1 else "".join(names)
     rule = note = ""
     if scan.get("key") in ORDER_RULE["scans"]:
         note = (f' The order rule was written before any result: momentum order only if its top {k} beats '
@@ -803,9 +811,9 @@ def _hold_line(scan: dict, ws, c: dict, esc) -> str:
     return (f'<div style="font-size:0.7rem;color:{c["text_secondary"]};margin-top:5px;">Holding {k} of them, '
             f'picked at random: {esc(res)} after costs · lost money in {esc(loss)} of picks · '
             f'momentum\'s top {k} beat {esc(mom)} of them, Rank\'s top {k} {esc(rnk)}{esc(rule)}</div>'
-            f'<div style="font-size:0.66rem;color:{c["text_muted"]};margin-top:2px;">From the matches trading '
-            f'₹{float(h0["min_cr"]):g} Cr+ a day with one share at most ₹{float(h0["max_price"]):,.0f} (what ₹1 '
-            f'lakh across {k} can hold), {int(h0["draws"]):,} random picks each window with a fixed seed, a '
+            f'<div style="font-size:0.66rem;color:{c["text_muted"]};margin-top:2px;">From the {esc(caps)} cap '
+            f'matches with one share at most ₹{float(h0["max_price"]):,.0f} (what ₹1 lakh across {k} can hold, '
+            f'whatever they trade a day), {int(h0["draws"]):,} random picks each window with a fixed seed, a '
             f'{float(h0["cost_pp"]):.1f}pp round trip.{esc(note)}</div>')
 
 

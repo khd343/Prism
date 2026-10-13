@@ -10,8 +10,9 @@ names and +4.7 to +24% with 20. A long OVERLAPPING window had faked a big order 
 
 So every unseen window now records one more reading (scan_records_job.measure_window, `hold`): 20 stocks
 picked at random, many times with a FIXED seed, from the matches a Rs 1 lakh account can actually hold —
-trading at least S.NET_MIN_CR a day AND one share at most S.HOLD_MAX_PRICE (13 of 185 buyable stocks
-cost more on 2026-10-12) — after the record's round-trip cost: the typical result, its 10th-90th range,
+Mega, Large, Mid or Small cap (S.HOLD_CAPS: the user's call 2026-10-13, replacing the Rs 2 Cr a day floor
+for this reading only) AND one share at most S.HOLD_MAX_PRICE (13 of 185 buyable stocks cost more on
+2026-10-12) — after the record's round-trip cost: the typical result, its 10th-90th range,
 how often it lost money, and where the top 20 by momentum and by Rank land among those random picks.
 
 And the rule, fixed now (S.ORDER_RULE): a scan's table switches to momentum order only if, over its first
@@ -40,6 +41,7 @@ from ui import ui_scans as S  # noqa: E402
 # ── 1. The reading is fixed before any result ───────────────────────────────────────────────────────
 def test_the_hold_reading_and_the_order_rule_are_declared_before_any_result():
     assert (S.HOLD_K, S.HOLD_MAX_PRICE, S.HOLD_DRAWS) == (20, 5000.0, 2000)
+    assert S.HOLD_CAPS == ("Mega Cap", "Large Cap", "Mid Cap", "Small Cap"), "no Micro or Nano caps"
     assert isinstance(S.HOLD_SEED, int), "a FIXED seed: a window's numbers can be re-checked and never move"
     assert S.ORDER_RULE == dict(scans=("playbook", "leaders"), windows=4, min_avg_pct=70.0, min_n=30)
     assert S.ORDER_RULE["min_n"] == J.MIN_N
@@ -47,24 +49,25 @@ def test_the_hold_reading_and_the_order_rule_are_declared_before_any_result():
 
 # ── 2. One window's reading ─────────────────────────────────────────────────────────────────────────
 def _market(n_hold=60):
-    """n_hold cheap, liquid matches whose return rises with momentum (and falls with Rank's order); 10
-    illiquid and 10 expensive matches that soar (+500%) and must be left out; 100 flat non-matches."""
+    """n_hold cheap Small-cap matches whose return rises with momentum (and falls with Rank's order) — HALF
+    of them trading only Rs 0.01 Cr a day, because liquidity no longer decides (2026-10-13); 10 Micro-cap
+    and 10 Rs 6,000-a-share matches that soar (+500%) and must be left out; 100 flat non-matches."""
     rows = []
     for i in range(n_hold):
-        rows.append(dict(company_id=f"H{i:03d}", flag=1, close=100.0, vol=1e6, ret=i / 100.0,
-                         momentum_score=float(i), rank=i + 1))               # Rank's top = the worst returns
+        rows.append(dict(company_id=f"H{i:03d}", flag=1, close=100.0, vol=1e6 if i % 2 else 1e3, ret=i / 100.0,
+                         cap="Small Cap", momentum_score=float(i), rank=i + 1))   # Rank's top = the worst returns
     for i in range(10):
-        rows.append(dict(company_id=f"I{i:03d}", flag=1, close=100.0, vol=1e3, ret=5.0,    # Rs 0.01 Cr a day
-                         momentum_score=999.0, rank=1000 + i))
-        rows.append(dict(company_id=f"X{i:03d}", flag=1, close=6000.0, vol=1e6, ret=5.0,   # one share Rs 6,000
-                         momentum_score=999.0, rank=2000 + i))
+        rows.append(dict(company_id=f"I{i:03d}", flag=1, close=100.0, vol=1e6, ret=5.0,       # liquid, but Micro
+                         cap="Micro Cap", momentum_score=999.0, rank=1000 + i))
+        rows.append(dict(company_id=f"X{i:03d}", flag=1, close=6000.0, vol=1e6, ret=5.0,      # one share Rs 6,000
+                         cap="Large Cap", momentum_score=999.0, rank=2000 + i))
     for i in range(100):
         rows.append(dict(company_id=f"N{i:03d}", flag=0, close=100.0, vol=1e6, ret=0.0,
-                         momentum_score=0.0, rank=3000 + i))
+                         cap="Small Cap", momentum_score=0.0, rank=3000 + i))
     d = pd.DataFrame(rows)
     early = pd.DataFrame({"company_id": d["company_id"], "close_price": d["close"], "vol_sma_20d": d["vol"],
-                          "equity_shares": 10.0, "flag": d["flag"], "momentum_score": d["momentum_score"],
-                          "rank": d["rank"]})
+                          "market_category": d["cap"], "equity_shares": 10.0, "flag": d["flag"],
+                          "momentum_score": d["momentum_score"], "rank": d["rank"]})
     late = early[["company_id", "equity_shares"]].assign(close_price=d["close"] * (1 + d["ret"]))
     return early, late
 
@@ -78,9 +81,12 @@ def _hold(early, late):
 
 
 def test_only_stocks_a_small_account_can_hold_are_picked():
+    """Mega to Small caps with one share at most Rs 5,000 — whatever they trade a day (the user's call,
+    2026-10-13): the 30 illiquid Small caps count, the Micro caps and the Rs 6,000 shares do not."""
     h = _hold(*_market())
-    assert h["n"] == 60, "the illiquid and the Rs 6,000-a-share matches are not holdable"
-    assert (h["k"], h["max_price"], h["min_cr"], h["cost_pp"]) == (20, 5000.0, S.NET_MIN_CR, S.NET_COST_PP)
+    assert h["n"] == 60, "the Micro-cap and the Rs 6,000-a-share matches are not holdable; illiquid Small caps are"
+    assert (h["k"], h["max_price"], h["caps"], h["cost_pp"]) == (20, 5000.0, list(S.HOLD_CAPS), S.NET_COST_PP)
+    assert "min_cr" not in h, "no traded-value floor on this reading"
     # The holdable matches return 0..59% (mean 29.5); a +500% stock slipping in would lift these far above.
     assert 20 < h["median_pp"] + S.NET_COST_PP < 40 and h["p90_pp"] < 45 and h["p10_pp"] > 15
 
@@ -152,7 +158,7 @@ def test_only_the_first_four_separate_windows_decide():
 
 # ── 4. On the card ──────────────────────────────────────────────────────────────────────────────────
 def _unseen_with_hold():
-    hold = dict(k=20, max_price=5000.0, min_cr=S.NET_MIN_CR, cost_pp=S.NET_COST_PP, draws=2000, n=97,
+    hold = dict(k=20, max_price=5000.0, caps=list(S.HOLD_CAPS), cost_pp=S.NET_COST_PP, draws=2000, n=97,
                 median_pp=12.6, p10_pp=3.7, p90_pp=23.1, loss_pct=2, momentum_pct=56, rank_pct=41)
     return [dict(start="2026-10-31", end="2026-11-30", days=30, n=120, median_excess_pp=1.0, beat_pct=55,
                  final=True, hold=hold)]
@@ -170,6 +176,9 @@ def test_the_full_record_shows_what_holding_20_gave_and_where_the_rule_stands():
               "momentum's top 20 beat 56%", "Rank's top 20 41%", "Order rule: 1 of 4"):
         assert s in h, s
     assert h.index("NEVER SAW") < h.index("Holding 20 of them"), "it reads under the unseen record"
+    line = h[h.index("Holding 20 of them"):]
+    assert "Mega, Large, Mid and Small cap matches" in line and "one share at most ₹5,000" in line
+    assert "Cr+ a day" not in line[:line.index("Order rule")], "this reading has no traded-value floor"
 
 
 def test_the_compounder_shows_the_reading_but_no_order_rule():

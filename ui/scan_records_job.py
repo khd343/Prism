@@ -106,16 +106,18 @@ def index_returns(bench_early, bench_late, days: int) -> dict:
     return {k: round(float(r[k]), 2) for k in BENCHMARK_INDICES if k in r.index}
 
 
-def hold_reading(early: pd.DataFrame, ret: pd.Series, liquid: pd.Series) -> dict:
-    """"What if you held S.HOLD_K of them?" (2026-10-13, ui_scans.HOLD_* and ORDER_RULE). From the liquid
-    matches whose one share costs at most S.HOLD_MAX_PRICE at the window's start — what a Rs 1 lakh
-    account can hold — S.HOLD_DRAWS random picks of S.HOLD_K, equal-weighted, less S.NET_COST_PP: their
+def hold_reading(early: pd.DataFrame, ret: pd.Series, match: pd.Series) -> dict:
+    """"What if you held S.HOLD_K of them?" (2026-10-13, ui_scans.HOLD_* and ORDER_RULE). From the matches
+    that are a Mega, Large, Mid or Small cap (S.HOLD_CAPS, whatever they trade a day) and whose one share
+    costs at most S.HOLD_MAX_PRICE at the window's start — what a Rs 1 lakh account can hold — S.HOLD_DRAWS
+    random picks of S.HOLD_K, equal-weighted, less S.NET_COST_PP: their
     median, 10th and 90th percentile and the share that lost money; and the share of those picks that
     momentum's top S.HOLD_K and Rank's top S.HOLD_K each beat. A FIXED seed over the matches in
     company_id order, so a window always reads the same. Only n when fewer than MIN_N can be held."""
     price = pd.to_numeric(early["close_price"], errors="coerce")
-    ok = liquid & (price <= S.HOLD_MAX_PRICE)
-    out = dict(k=S.HOLD_K, max_price=S.HOLD_MAX_PRICE, min_cr=S.NET_MIN_CR, cost_pp=S.NET_COST_PP,
+    cap = early["market_category"] if "market_category" in early.columns else pd.Series(np.nan, index=early.index)
+    ok = match & cap.isin(S.HOLD_CAPS) & (price <= S.HOLD_MAX_PRICE)
+    out = dict(k=S.HOLD_K, max_price=S.HOLD_MAX_PRICE, caps=list(S.HOLD_CAPS), cost_pp=S.NET_COST_PP,
                draws=S.HOLD_DRAWS, n=int(ok.sum()))
     if out["n"] < MIN_N:
         return out
@@ -180,7 +182,7 @@ def measure_window(early: pd.DataFrame, late: pd.DataFrame, scan: dict, start: s
                dropped_no_return=int((in_scan & ret.isna() & ~corp).sum()),
                dropped_corp_action=int((in_scan & corp).sum()),
                net=net)
-    out["hold"] = hold_reading(early, ret, liquid)
+    out["hold"] = hold_reading(early, ret, match)
     indices = index_returns(bench_early, bench_late, _days(start, end))
     if indices:
         vs = dict(fee_pct_yr=S.FUND_FEE_PCT_YR, cost_pp=S.NET_COST_PP, min_cr=S.NET_MIN_CR, n=net["n"],
