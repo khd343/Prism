@@ -20,7 +20,8 @@ tab shows each list beside ITS OWN record. Three rules carry that promise, and e
 MEASURED CHOICES: the combined 'shortlist + leading sectors' scan was tested and failed (14–29
 stocks, weaker than the shortlist alone), so it has no card; inside the shortlist the top 25 by Rank
 did not beat the rest (+0.6 / +2.3 / −1.1 / −1.7), so the list shows every match, sorted by Rank for
-reading only.
+reading only — until 2026-10-13, when the operator put 🚀 and 🌬️ in momentum order, high to low
+(tests/test_scan_order.py); 🌱 keeps Rank.
 """
 import ast
 import inspect

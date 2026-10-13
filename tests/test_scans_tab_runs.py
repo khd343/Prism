@@ -254,7 +254,7 @@ def test_the_list_opens_on_the_whole_scan_and_a_filter_is_named_in_the_caption(t
     for key in ("scan_cap", "scan_stage", "scan_zone"):
         assert tab.multiselect(key=key).value == [], key
     assert sorted(tab.dataframe[0].value["name"]) == _expected(S.SCANS[0])
-    cap = next(c.value for c in tab.caption if "sorted by Rank" in c.value)
+    cap = next(c.value for c in tab.caption if "sorted by Momentum" in c.value)
     head = cap.split("·")[0]
     assert " of " not in head and "(" not in head, cap
     assert not [b for b in tab.button if b.key == "scan_clear"], "no 🧹 while every control is empty"
@@ -262,6 +262,21 @@ def test_the_list_opens_on_the_whole_scan_and_a_filter_is_named_in_the_caption(t
     tab.multiselect(key="scan_stage").set_value(["📈 Stage 2 Advancing"]).run()
     cap = next(c.value for c in tab.caption if "sorted by Rank" in c.value)
     assert "(📈 Stage 2)" in cap, cap
+
+
+def test_the_table_order_follows_the_scan(tab):
+    """RUN (2026-10-13, the operator's call): 🚀 opens by momentum, high to low, and its caption says so;
+    🌱 lists by Rank and says that (tests/test_scan_order.py)."""
+    play = tab.dataframe[0].value
+    assert len(play) > 2
+    assert list(play["momentum_score"]) == sorted(play["momentum_score"], reverse=True)
+    assert any("sorted by Momentum, high to low" in c.value for c in tab.caption)
+    tab.button(key="scan_open_compounder").click().run()
+    assert not tab.exception, [e.value for e in tab.exception]
+    comp = tab.dataframe[0].value
+    assert len(comp) > 2 and list(comp["rank"]) == sorted(comp["rank"])
+    assert any("sorted by Rank" in c.value for c in tab.caption)
+    assert not any("sorted by Momentum" in c.value for c in tab.caption)
 
 
 def test_the_pills_show_the_tables_short_words_and_filter_by_the_engines_labels(tab):

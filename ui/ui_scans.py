@@ -81,12 +81,15 @@ HOLD_MAX_PRICE = 5000.0
 HOLD_CAPS = ("Mega Cap", "Large Cap", "Mid Cap", "Small Cap")
 HOLD_DRAWS = 2000
 HOLD_SEED = 20261013
-# The rule that decides a scan's table order, written before any unseen window: it switches to momentum
-# order only if, over the scan's FIRST `windows` separate (non-overlapping), finished unseen windows with
-# at least `min_n` holdable matches, momentum's top HOLD_K beats on average at least `min_avg_pct`% of
-# the random picks AND averages above Rank's top HOLD_K. Luck alone passes a 70% average over four
-# windows about 1 time in 12 (8.6%); "3 of 4 above half" would pass 31% of the time. Each scan decides
-# on its own windows; 🌱 keeps its order (its 3-year study found momentum inside it flips year to year).
+# The order check (2026-10-13). Written before any unseen window as the rule that would SWITCH a scan's
+# table to momentum order; the same day, still before any result, the operator switched 🚀 and 🌬️ to
+# momentum order (SCANS `order`), so it now CHECKS the order in use, its bar unchanged: over the scan's
+# FIRST `windows` separate (non-overlapping), finished unseen windows with at least `min_n` holdable
+# matches, momentum's top HOLD_K must beat on average at least `min_avg_pct`% of the random picks AND
+# average above Rank's top HOLD_K — "held"; otherwise "did not hold", which goes to the operator as
+# evidence (nothing switches back by itself; December plan rule 27). Luck alone passes a 70% average over
+# four windows about 1 time in 12 (8.6%); "3 of 4 above half" would pass 31% of the time. 🌱 lists by
+# Rank and is not checked (its 3-year study found momentum inside it flips year to year).
 ORDER_RULE = dict(scans=("playbook", "leaders"), windows=4, min_avg_pct=70.0, min_n=30)
 RECORD_VERSION = 2
 # The day the recipes were chosen. Every window that STARTS on or after it is out of sample: data
@@ -242,14 +245,19 @@ SCANS = (
     # moves no percentile below the 100 clip).
     # `benchmark`: the index fund each scan is judged against on its card — fixed 2026-10-08, before any
     # result (December plan rule 23). Not part of the recipe, so not in the fingerprint.
+    # `order`: "momentum" lists the table by momentum, high to low (2026-10-13, the operator's call); a
+    # scan without it lists by PRISM Rank. A display order — no list, record or fingerprint moves — and
+    # ORDER_RULE checks exactly these scans (tests/test_scan_order.py).
     dict(key="playbook", emoji="🚀", name="Playbook Shortlist", mask=playbook_shortlist,
          benchmark="NSE:NIF500MO50",                  # a momentum list across the whole market
+         order="momentum",
          uses=(strong_quarter, _pct, _num), inputs=(compute_momentum_score, _compute_improvement_score),
          fixed=("_strong_q",), widths={"name": 190, "sector": 130},
          recipe="Momentum and Breakout in the top third of the market, a 🔥 Strong Quarter, Improvement "
                 "in the top half, and the price above its stop."),
     dict(key="leaders", emoji="🌬️", name="Leading-Sector Stocks", mask=leading_sector_stocks,
          benchmark="NSE:CNX500",                      # whole sectors, every size
+         order="momentum",
          uses=(leading_sectors, group_measures, strong_quarter),
          # It reads two of the Sectors measures, so it follows those two, not the whole table: a new
          # Sectors column must not stale this record (2026-10-07).
@@ -581,18 +589,24 @@ def table_widths(scan: dict) -> dict:
     return {**TABLE_WIDTHS, **scan.get("widths", {})}
 
 
+def momentum_ordered(scan: dict) -> bool:
+    """True for a scan whose table lists by momentum, high to low (its `order`), not by PRISM Rank."""
+    return scan.get("order") == "momentum"
+
+
 def scan_table(df: pd.DataFrame, scan: dict, members_at_latest=None, min_cr=None,
                keep_ids=None, result_window_days=None) -> pd.DataFrame:
-    """The scan's stocks, sorted by PRISM Rank. The recipe runs on the frame given (the whole market);
-    the liquidity floor and the sidebar's kept stocks (keep_ids) only narrow the FINISHED list, so a
-    listed stock is exactly the match its record measured. A stock with no traded value cannot clear
-    a floor. Flagged stocks stay, with their measured flags named. 🆕 marks a stock that was not in the
-    scan on the 🆕 baseline (the last archived month-end copy; no baseline = nothing marked). 📄 marks
-    a stock whose quarterly result was DECLARED inside the last `result_window_days` (the days since that
-    baseline): result_age_days counts days since the last declared result and is negative for one only
-    scheduled, so 0 <= age < window is "declared since the baseline" — the rule Movers uses. The two
-    clocks differ on purpose: technical legs move daily, fundamentals only when a result lands, so 🆕 + 📄
-    together means the stock entered on a fresh result."""
+    """The scan's stocks — by momentum, high to low, for a momentum-ordered scan (a tie goes to the better
+    Rank, a stock with no momentum reading last), by PRISM Rank for the rest. The recipe runs on the
+    frame given (the whole market); the liquidity floor and the sidebar's kept stocks (keep_ids) only
+    narrow the FINISHED list, so a listed stock is exactly the match its record measured. A stock with
+    no traded value cannot clear a floor. Flagged stocks stay, with their measured flags named. 🆕 marks
+    a stock that was not in the scan on the 🆕 baseline (the last archived month-end copy; no baseline =
+    nothing marked). 📄 marks a stock whose quarterly result was DECLARED inside the last
+    `result_window_days` (the days since that baseline): result_age_days counts days since the last
+    declared result and is negative for one only scheduled, so 0 <= age < window is "declared since the
+    baseline" — the rule Movers uses. The two clocks differ on purpose: technical legs move daily,
+    fundamentals only when a result lands, so 🆕 + 📄 together means the stock entered on a fresh result."""
     out = df.loc[scan["mask"](df)].copy()
     out["_liq_cr"] = traded_value_cr(out)
     if min_cr is not None:
@@ -613,11 +627,12 @@ def scan_table(df: pd.DataFrame, scan: dict, members_at_latest=None, min_cr=None
     out["_cycle"] = np.where(cycle_shortened(out), "✓", "")
     if "weinstein_stage" in out.columns:
         out["weinstein_stage"] = out["weinstein_stage"].replace(TREND_SHORT)
-    out = out.sort_values("rank", kind="mergesort")
     shown = [*TABLE_COLUMNS, *(c for c in TECHNICAL_COLUMNS if c not in TABLE_COLUMNS), *EXTRA_COLUMNS]
     for c in shown:
         if c not in out.columns:
             out[c] = np.nan
+    out = (out.sort_values(["momentum_score", "rank"], ascending=[False, True], kind="mergesort")
+           if momentum_ordered(scan) else out.sort_values("rank", kind="mergesort"))
     return out[[*shown, "company_id"]].reset_index(drop=True)
 
 
@@ -676,10 +691,13 @@ def table_config(members_date_label: str, scan: dict = None) -> dict:
     since = (f"on {members_date_label}, the last archived month-end copy" if members_date_label
              else "on the last archived month-end copy")
     return {
-        "rank": cc.NumberColumn("Rank", format="%.0f", width=w["rank"],
-                                help="PRISM's overall rank. The list is sorted by it for reading only: inside "
-                                     "this scan the top of the Rank did not beat the rest in the 2026-10-06 "
-                                     "test, so every match is the scan."),
+        "rank": cc.NumberColumn("Rank", format="%.0f", width=w["rank"], help=(
+            "PRISM's overall rank — click this header, then Sort ascending, to list by it. The list is "
+            "sorted by Momentum, high to low (since 2026-10-13); the card's order check records whether "
+            "that order keeps beating random picks. Inside this scan the top of the Rank did not beat the "
+            "rest in the 2026-10-06 test, so every match is the scan." if momentum_ordered(scan or {}) else
+            "PRISM's overall rank. The list is sorted by it for reading only: inside this scan the top of "
+            "the Rank did not beat the rest in the 2026-10-06 test, so every match is the scan.")),
         "_new": cc.TextColumn("New", width=w["_new"],
                               help=f"🆕 = not in this scan {since}. 📄 = its quarterly result was declared "
                                    f"since then, so its Strong Quarter and Improvement readings are fresh. "
@@ -762,7 +780,7 @@ def non_overlapping(ws) -> int:
 def order_rule(ws) -> dict:
     """ORDER_RULE applied to a scan's unseen windows: state 'pending' until it has ORDER_RULE['windows']
     separate (non-overlapping, earliest end first — the same greedy choice as non_overlapping), finished
-    windows carrying a hold reading of at least min_n matches; then 'earned' or 'not earned' on those
+    windows carrying a hold reading of at least min_n matches; then 'held' or 'did not hold' on those
     first windows only, so a later window can never reopen it. counted = windows that count so far."""
     usable = [w for w in ws if w.get("final") and int((w.get("hold") or {}).get("n", 0)) >= ORDER_RULE["min_n"]
               and w["hold"].get("momentum_pct") is not None and w["hold"].get("rank_pct") is not None]
@@ -775,15 +793,15 @@ def order_rule(ws) -> dict:
     if len(picked) == ORDER_RULE["windows"]:
         mom = float(np.mean([float(w["hold"]["momentum_pct"]) for w in picked]))
         rank = float(np.mean([float(w["hold"]["rank_pct"]) for w in picked]))
-        earned = mom >= ORDER_RULE["min_avg_pct"] and mom > rank
-        out.update(state="earned" if earned else "not earned", mom_avg=mom, rank_avg=rank)
+        held = mom >= ORDER_RULE["min_avg_pct"] and mom > rank
+        out.update(state="held" if held else "did not hold", mom_avg=mom, rank_avg=rank)
     return out
 
 
 def _hold_line(scan: dict, ws, c: dict, esc) -> str:
     """Under the unseen record: per window, HOLD_K matches a Rs 1 lakh account can hold, picked at random
     — the typical result after costs and its 10th-90th range — and where momentum's and Rank's top HOLD_K
-    land among those picks; then, for the scans ORDER_RULE judges, where the rule stands. Empty until a
+    land among those picks; then, for the scans ORDER_RULE checks, where the check stands. Empty until a
     window carries the reading."""
     rows = [w for w in ws if "median_pp" in (w.get("hold") or {})]
     if not rows:
@@ -800,14 +818,16 @@ def _hold_line(scan: dict, ws, c: dict, esc) -> str:
     caps = ", ".join(names[:-1]) + " and " + names[-1] if len(names) > 1 else "".join(names)
     rule = note = ""
     if scan.get("key") in ORDER_RULE["scans"]:
-        note = (f' The order rule was written before any result: momentum order only if its top {k} beats '
-                f'{ORDER_RULE["min_avg_pct"]:.0f}%+ of random picks on average over {ORDER_RULE["windows"]} '
+        note = (f' The table lists by momentum since 13 Oct, chosen before any of these windows; the order '
+                f'check records whether that order keeps beating random picks — it holds if its top {k} '
+                f'beats {ORDER_RULE["min_avg_pct"]:.0f}%+ of them on average over {ORDER_RULE["windows"]} '
                 f'separate windows, and beats Rank\'s.')
         v = order_rule(ws)
-        rule = (f' · Order rule: {v["counted"]} of {ORDER_RULE["windows"]} separate windows in'
+        rule = (f' · Order check: {v["counted"]} of {ORDER_RULE["windows"]} separate windows in'
                 if v["state"] == "pending" else
-                f' · Order rule decided: momentum order {v["state"]} (its top {k} beat {v["mom_avg"]:.0f}% of '
-                f'random picks on average, Rank\'s {v["rank_avg"]:.0f}%)')
+                f' · Order check after {ORDER_RULE["windows"]} separate windows: momentum order {v["state"]} '
+                f'(its top {k} beat {v["mom_avg"]:.0f}% of random picks on average, Rank\'s '
+                f'{v["rank_avg"]:.0f}%)')
     return (f'<div style="font-size:0.7rem;color:{c["text_secondary"]};margin-top:5px;">Holding {k} of them, '
             f'picked at random: {esc(res)} after costs · lost money in {esc(loss)} of picks · '
             f'momentum\'s top {k} beat {esc(mom)} of them, Rank\'s top {k} {esc(rnk)}{esc(rule)}</div>'

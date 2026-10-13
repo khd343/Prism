@@ -150,7 +150,7 @@ from ui.ui_scans import (SCANS, CANDIDATES as SCAN_CANDIDATES, LIQUIDITY_STEPS a
                          latest_label as scan_latest_label, load_records as load_scan_records,
                          members_label as scan_members_label,
                          record_state as scan_record_state, scan_table, table_config as scan_table_config,
-                         SCAN_VIEWS, TREND_SHORT as SCAN_TREND_SHORT)
+                         SCAN_VIEWS, TREND_SHORT as SCAN_TREND_SHORT, momentum_ordered as scan_momentum_ordered)
 from config import (COLORS, TIER_COLORS, CONVICTION_TIERS, UI, HARD_GATES,
                     QUALITY_WEIGHTS, MOMENTUM_WEIGHTS, COMPOSITE_WEIGHTS,
                     VALUATION_SIGNALS,
@@ -988,8 +988,10 @@ with tabs[1]:
         if not _sc_view:
             _sc_view = "🏆 Core"
         # "load it into", not "open": Streamlit cannot switch tabs from code, so the reader clicks the tab.
-        st.caption(f"{len(_sc_tbl):,}{_sc_of} · sorted by Rank{_sc_new} · click a row to load it into the "
-                   f"Tear-Sheet tab")
+        # The order is the scan's own (2026-10-13): 🚀 and 🌬️ by momentum, high to low; 🌱 by Rank.
+        _sc_sort = "Momentum, high to low" if scan_momentum_ordered(_sc_sel) else "Rank"
+        st.caption(f"{len(_sc_tbl):,}{_sc_of} · sorted by {_sc_sort}{_sc_new} · click a row to load it into "
+                   f"the Tear-Sheet tab")
         # The key follows the VISIBLE list: when any control changes it, the table is a new widget and
         # an old row pick cannot point at a different stock.
         _sc_ids = universe_signature(_sc_tbl["company_id"])

@@ -15,11 +15,14 @@ for this reading only) AND one share at most S.HOLD_MAX_PRICE (13 of 185 buyable
 2026-10-12) — after the record's round-trip cost: the typical result, its 10th-90th range,
 how often it lost money, and where the top 20 by momentum and by Rank land among those random picks.
 
-And the rule, fixed now (S.ORDER_RULE): a scan's table switches to momentum order only if, over its first
-four separate (non-overlapping), finished unseen windows with at least 30 holdable matches, the top 20 by
-momentum beats on average at least 70% of random picks AND averages higher than Rank's top 20. Luck alone
-passes the 70% average about 1 time in 12 (8.6%); a "3 of 4 above half" rule would pass 31% of the time.
-Each scan decides on its own windows; only the Playbook and Leading-Sector are judged.
+And the order check, fixed now (S.ORDER_RULE). Written as the rule that would switch a scan's table to
+momentum order; the same day, before any result, the operator switched 🚀 and 🌬️ to momentum order
+(tests/test_scan_order.py), so it now CHECKS that order with the bar unchanged: over its first four
+separate (non-overlapping), finished unseen windows with at least 30 holdable matches, the top 20 by
+momentum must beat on average at least 70% of random picks AND average higher than Rank's top 20 —
+"held", else "did not hold". Luck alone passes the 70% average about 1 time in 12 (8.6%); a "3 of 4 above
+half" rule would pass 31% of the time. Each scan is checked on its own windows; only the Playbook and
+Leading-Sector are checked.
 
 Run with: pytest tests/test_scan_hold_reading.py -v
 """
@@ -117,7 +120,7 @@ def test_a_window_with_too_few_holdable_matches_is_noted_and_not_read():
     assert h["n"] == 29 and "median_pp" not in h and "momentum_pct" not in h
 
 
-# ── 3. The rule that decides the order ──────────────────────────────────────────────────────────────
+# ── 3. The check on the order in use ────────────────────────────────────────────────────────────────
 _CHAIN = [("2026-10-31", "2026-11-30"), ("2026-11-30", "2026-12-31"), ("2026-12-31", "2027-01-29"),
           ("2027-01-29", "2027-02-26"), ("2027-02-26", "2027-03-31")]
 
@@ -141,19 +144,19 @@ def test_the_order_rule_waits_for_four_separate_finished_windows():
     assert v["state"] == "pending" and v["counted"] == 3, "fewer than 30 holdable matches: the next one counts"
 
 
-def test_momentum_order_is_earned_only_by_the_declared_bar():
-    earned = S.order_rule([_w(s, m, 50) for s, m in zip(_CHAIN, (80, 75, 66, 72))])
-    assert earned["state"] == "earned" and earned["mom_avg"] == pytest.approx(73.25)
+def test_the_momentum_order_holds_only_at_the_declared_bar():
+    held = S.order_rule([_w(s, m, 50) for s, m in zip(_CHAIN, (80, 75, 66, 72))])
+    assert held["state"] == "held" and held["mom_avg"] == pytest.approx(73.25)
     short = S.order_rule([_w(s, m, 50) for s, m in zip(_CHAIN, (80, 75, 60, 62))])
-    assert short["state"] == "not earned", "an average under 70 is not enough"
+    assert short["state"] == "did not hold", "an average under 70 is not enough"
     behind = S.order_rule([_w(s, 80, 85) for s in _CHAIN[:4]])
-    assert behind["state"] == "not earned", "momentum must also average above Rank's top 20"
+    assert behind["state"] == "did not hold", "momentum must also average above Rank's top 20"
 
 
 def test_only_the_first_four_separate_windows_decide():
     ws = [_w(s, 80, 50) for s in _CHAIN[:4]] + [_w(_CHAIN[4], 0, 100)]
     v = S.order_rule(ws)
-    assert v["state"] == "earned" and v["counted"] == 4, "a later window cannot reopen a decided rule"
+    assert v["state"] == "held" and v["counted"] == 4, "a later window cannot reopen a decided check"
 
 
 # ── 4. On the card ──────────────────────────────────────────────────────────────────────────────────
@@ -173,25 +176,39 @@ def test_the_full_record_shows_what_holding_20_gave_and_where_the_rule_stands():
     h = _html.unescape(S.card_html(S.SCANS[0], 235, "measured", _playbook_record(), selected=False,
                                    latest="03 Dec"))
     for s in ("Holding 20 of them", "+12.6%", "+3.7 to +23.1", "lost money in 2%",
-              "momentum's top 20 beat 56%", "Rank's top 20 41%", "Order rule: 1 of 4"):
+              "momentum's top 20 beat 56%", "Rank's top 20 41%", "Order check: 1 of 4"):
         assert s in h, s
     assert h.index("NEVER SAW") < h.index("Holding 20 of them"), "it reads under the unseen record"
     line = h[h.index("Holding 20 of them"):]
     assert "Mega, Large, Mid and Small cap matches" in line and "one share at most ₹5,000" in line
-    assert "Cr+ a day" not in line[:line.index("Order rule")], "this reading has no traded-value floor"
+    assert "Cr+ a day" not in line[:line.index("Order check")], "this reading has no traded-value floor"
+    assert "The table lists by momentum since 13 Oct" in line and "only if" not in line, (
+        "the order is in use; the check records whether it keeps beating random picks — it gates nothing")
 
 
-def test_the_compounder_shows_the_reading_but_no_order_rule():
+def test_the_card_states_a_decided_check_in_words():
+    base = _unseen_with_hold()[0]
+    for moms, word in (((80, 75, 66, 72), "held (its top 20 beat 73%"),
+                       ((80, 75, 60, 62), "did not hold (its top 20 beat 69%")):
+        ws = [dict(base, start=s, end=e, hold=dict(base["hold"], momentum_pct=m, rank_pct=50))
+              for (s, e), m in zip(_CHAIN, moms)]
+        rec = dict(_playbook_record(), out_of_sample=ws)
+        h = _html.unescape(S.card_html(S.SCANS[0], 235, "measured", rec, selected=False, latest="03 Dec"))
+        assert f"Order check after 4 separate windows: momentum order {word}" in h, word
+
+
+def test_the_compounder_shows_the_reading_but_no_order_check():
     comp = next(s for s in S.SCANS if s["key"] == "compounder")
     import json
     study = json.loads(S.RECORDS_PATH.read_text(encoding="utf-8"))["scans"]["compounder"]
     rec = dict(study, out_of_sample=_unseen_with_hold())
     h = _html.unescape(S.card_html(comp, 320, "measured", rec, selected=False, latest="03 Dec"))
-    assert "Holding 20 of them" in h and "Order rule" not in h, "🌱 keeps its order; only two scans are judged"
+    assert "Holding 20 of them" in h and "Order check" not in h, (
+        "🌱 lists by Rank; only the two momentum-ordered scans are checked")
 
 
 def test_no_hold_line_before_a_window_carries_it():
     rec = _playbook_record()
     rec["out_of_sample"][0].pop("hold")
     h = S.card_html(S.SCANS[0], 235, "measured", rec, selected=False, latest="03 Dec")
-    assert "Holding 20" not in h and "Order rule" not in h
+    assert "Holding 20" not in h and "Order check" not in h
