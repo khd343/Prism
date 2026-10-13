@@ -96,6 +96,45 @@ def _records_without_baselines() -> dict:
     return records
 
 
+# AppTest (Streamlit 1.54) cannot serialise a SINGLE-choice segmented control (2026-10-13, when the
+# Scans table gained its 🏆 Core / 📈 Technical switch): ButtonGroup.indices loops `for v in self.value`,
+# and for single selection the value is the option itself, a str — so it walks "🏆 Core" letter by
+# letter and fails on the first, "🏆". The browser is unaffected (checked 2026-10-13 at 1536px: both
+# views on all three scans, a row click loads the Tear-Sheet). The harness wraps a single value in a
+# list, so the real widget still runs; the tripwire below fails the day Streamlit fixes it, and then
+# this goes.
+from streamlit.testing.v1 import element_tree as _et  # noqa: E402
+
+_ORIG_INDICES = _et.ButtonGroup.indices
+
+
+def _indices(self):
+    v = self.value
+    vals = v if isinstance(v, (list, tuple)) else ([] if v is None else [v])
+    return [self.options.index(self.format_func(x)) for x in vals]
+
+
+@pytest.fixture(autouse=True)
+def _single_choice_button_groups(monkeypatch):
+    monkeypatch.setattr(_et.ButtonGroup, "indices", property(_indices))
+
+
+def test_apptest_still_needs_the_single_choice_workaround(tmp_path):
+    """TRIPWIRE: when this fails, Streamlit's own ButtonGroup.indices handles a single-choice value —
+    delete _indices and the autouse fixture above (and this test)."""
+    from streamlit.testing.v1 import AppTest
+    script = tmp_path / "seg.py"
+    script.write_text('import streamlit as st\n'
+                      'st.segmented_control("View", ["🏆 Core", "📈 Technical"], default="🏆 Core", key="v")\n',
+                      encoding="utf-8")
+    at = AppTest.from_file(str(script), default_timeout=30)
+    at.run()
+    el = at.get("button_group")[0]
+    with pytest.raises(ValueError):
+        _ORIG_INDICES.fget(el)
+    assert _indices(el) == [0], "the workaround reads the chosen option"
+
+
 @pytest.fixture
 def tab(tmp_path):
     from streamlit.testing.v1 import AppTest
@@ -125,6 +164,21 @@ def test_every_card_renders_and_the_compounder_list_opens(tab):
     expected = S.scan_table(_frame(), next(s for s in S.SCANS if s["key"] == "compounder"))
     assert len(tab.dataframe) == 1 and len(expected) > 0
     assert sorted(tab.dataframe[0].value["name"]) == sorted(expected["name"])
+
+
+def test_the_view_switch_reaches_the_table(tab):
+    """RUN (2026-10-13): the table opens on 🏆 Core; choosing 📈 Technical shows the Technical columns
+    on the same stocks — the switch reaches the table, not just the source (tests/test_scan_views.py)."""
+    from ui import ui_scans as S
+    play = S.SCANS[0]
+    view = tab.get("button_group")[0]
+    assert view.value == "🏆 Core"
+    assert list(tab.dataframe[0].proto.column_order) == list(S.table_columns(play, "🏆 Core"))
+    core_names = list(tab.dataframe[0].value["name"])
+    view.set_value("📈 Technical").run()
+    assert not tab.exception, [e.value for e in tab.exception]
+    assert list(tab.dataframe[0].proto.column_order) == list(S.table_columns(play, "📈 Technical"))
+    assert list(tab.dataframe[0].value["name"]) == core_names, "a view changes columns, never the list"
 
 
 def test_the_full_record_panel_follows_the_chosen_scan(tab):

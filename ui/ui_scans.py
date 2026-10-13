@@ -42,6 +42,7 @@ from core.data_engine import traded_value_cr        # ONE liquidity number (move
 from core.forward_returns import MIN_HORIZON_DAYS
 from core.scoring_engine import _compute_improvement_score, compute_momentum_score, strong_quarter
 from ui.ui_group_views import MEASURES, group_measures
+from ui.ui_scanner import _SCANNER_HEADER_TIPS        # the Deep Scanner's header tips: one tip per column
 # LIQUIDITY_STEPS and step_label are also re-exported for app.py's Scans selector (its one ui_scans import).
 from ui.ui_liquidity import (HEADER as LIQUIDITY_HEADER, LIQUIDITY_STEPS, ORDER_SHARE, SURVEILLANCE_NOTE,
                              order_guide, order_size_lakh, step_label)
@@ -532,7 +533,21 @@ TABLE_COLUMNS = ("rank", "_new", "name", "sector", "composite_score", "momentum_
 # fits 90, "Receivables · Neg FCF" needs 133, the headers of the number columns need their width.
 TABLE_WIDTHS = {"rank": 55, "_new": 55, "name": 170, "sector": 110, "composite_score": 105,
                 "momentum_score": 85, "improvement_score": 100, "_strong_q": 40,
-                "_measured_flags": 135, "weinstein_stage": 90, "_liq_cr": 80, "_cycle": 60}
+                "_measured_flags": 135, "weinstein_stage": 90, "_liq_cr": 80, "_cycle": 60,
+                # 📈 Technical (2026-10-13): the Deep Scanner's widths for the same columns, Breakout as a
+                # number like Momentum here; "🔥 OVERHEATED" fits 110.
+                "close_price": 80, "dist_to_vstop": 60, "d49_momentum_quality": 110, "rsi_14d": 50,
+                "breakout_score": 85, "crs_52w": 60}
+# The table's views (2026-10-13), by the app-wide names (ui_group_views.VIEWS — the Deep Scanner's and
+# Market Pulse's). 🏆 Core, the default, answers "why is it in the list"; 📈 Technical answers "is now a
+# good moment, how far is the stop, can I buy one share": the Deep Scanner's Technical columns (without
+# Readiness and Off ATH, both folded into Breakout) plus Price and ₹ Cr/day, which decide whether a
+# small account can buy a share at all. Mom. Quality sits between the two numbers it reads. Adding these
+# to Core would have pushed it ~450px past a 1536px laptop. A display choice: it changes no list, record
+# or order, and the 🧹 Clear never resets it.
+SCAN_VIEWS = ("🏆 Core", "📈 Technical")
+TECHNICAL_COLUMNS = ("rank", "_new", "name", "close_price", "_liq_cr", "dist_to_vstop", "momentum_score",
+                     "d49_momentum_quality", "rsi_14d", "breakout_score", "crs_52w", "weinstein_stage")
 # The engine's Weinstein labels, shortened so the column fits; the header tip carries the words.
 TREND_SHORT = {"📈 Stage 2 Advancing": "📈 Stage 2", "🔄 Stage 1 Basing": "🔄 Stage 1",
                "⚠️ Stage 3 Top": "⚠️ Stage 3", "📉 Stage 4 Declining": "📉 Stage 4"}
@@ -543,9 +558,12 @@ TREND_SHORT = {"📈 Stage 2 Advancing": "📈 Stage 2", "🔄 Stage 1 Basing": 
 EXTRA_COLUMNS = {"_cycle": "_strong_q"}
 
 
-def table_columns(scan: dict) -> tuple:
-    """The columns this scan shows: every table column except those its recipe fixes, plus its own
-    extra columns, each right after its anchor."""
+def table_columns(scan: dict, view: str = SCAN_VIEWS[0]) -> tuple:
+    """The columns this scan shows in `view`. 🏆 Core: every table column except those its recipe fixes,
+    plus its own extra columns, each right after its anchor. 📈 Technical: TECHNICAL_COLUMNS, the same
+    for every scan (none of them is fixed by a recipe)."""
+    if view == SCAN_VIEWS[1]:
+        return tuple(c for c in TECHNICAL_COLUMNS if c not in scan.get("fixed", ()))
     cols = [c for c in TABLE_COLUMNS if c not in scan.get("fixed", ())]
     for extra in scan.get("extra", ()):
         cols.insert(cols.index(EXTRA_COLUMNS[extra]) + 1, extra)
@@ -590,10 +608,11 @@ def scan_table(df: pd.DataFrame, scan: dict, members_at_latest=None, min_cr=None
     if "weinstein_stage" in out.columns:
         out["weinstein_stage"] = out["weinstein_stage"].replace(TREND_SHORT)
     out = out.sort_values("rank", kind="mergesort")
-    for c in TABLE_COLUMNS:
+    shown = [*TABLE_COLUMNS, *(c for c in TECHNICAL_COLUMNS if c not in TABLE_COLUMNS), *EXTRA_COLUMNS]
+    for c in shown:
         if c not in out.columns:
             out[c] = np.nan
-    return out[[*TABLE_COLUMNS, *EXTRA_COLUMNS, "company_id"]].reset_index(drop=True)
+    return out[[*shown, "company_id"]].reset_index(drop=True)
 
 
 def _change(df: pd.DataFrame, now: str, prev: str) -> pd.Series:
@@ -696,6 +715,19 @@ def table_config(members_date_label: str, scan: dict = None) -> dict:
                                    help="Average daily traded value over 20 days (average volume × price), "
                                         f"in ₹ crore. Keep one order under about {ORDER_SHARE:.0%} of it: "
                                         f"2.0 → about ₹{order_size_lakh(2.0):g} lakh."),
+        # 📈 Technical (2026-10-13): the Deep Scanner's header, format and tip for each column.
+        "close_price": cc.NumberColumn("Price ₹", format="%.2f", width=w["close_price"],
+                                       help=_SCANNER_HEADER_TIPS["close_price"]),
+        "dist_to_vstop": cc.NumberColumn("Stop Δ", format="%.1f%%", width=w["dist_to_vstop"],
+                                         help=_SCANNER_HEADER_TIPS["dist_to_vstop"]),
+        "d49_momentum_quality": cc.TextColumn("Mom. Quality", width=w["d49_momentum_quality"],
+                                              help=_SCANNER_HEADER_TIPS["d49_momentum_quality"]),
+        "rsi_14d": cc.NumberColumn("RSI", format="%.0f", width=w["rsi_14d"],
+                                   help=_SCANNER_HEADER_TIPS["rsi_14d"]),
+        "breakout_score": cc.NumberColumn("Breakout", format="%.0f", width=w["breakout_score"],
+                                          help=_SCANNER_HEADER_TIPS["breakout_score"]),
+        "crs_52w": cc.NumberColumn("RS 52W", format="%.0f", width=w["crs_52w"],
+                                   help=_SCANNER_HEADER_TIPS["crs_52w"]),
     }
 
 

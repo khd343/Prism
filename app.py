@@ -148,7 +148,8 @@ from ui.ui_scans import (SCANS, CANDIDATES as SCAN_CANDIDATES, LIQUIDITY_STEPS a
                          card_summary_html as scan_card_summary_html,
                          latest_label as scan_latest_label, load_records as load_scan_records,
                          members_label as scan_members_label,
-                         record_state as scan_record_state, scan_table, table_config as scan_table_config)
+                         record_state as scan_record_state, scan_table, table_config as scan_table_config,
+                         SCAN_VIEWS)
 from config import (COLORS, TIER_COLORS, CONVICTION_TIERS, UI, HARD_GATES,
                     QUALITY_WEIGHTS, MOMENTUM_WEIGHTS, COMPOSITE_WEIGHTS,
                     VALUATION_SIGNALS,
@@ -923,6 +924,12 @@ with tabs[1]:
                   if len(_sc_tbl) < _sc_total else " stocks")
         _sc_new = (f" · 🆕 new since {_sc_new_label} · 📄 result declared since then"
                    if _sc_members is not None and _sc_new_label else "")
+        # The two views (2026-10-13, ui_scans.SCAN_VIEWS): 🏆 Core = why it is in the list; 📈 Technical =
+        # is now a good moment, how far is the stop, can I buy one share. A display choice under the
+        # app-wide names, never a filter: the 🧹 Clear does not reset it (tests/test_scan_views.py).
+        _sc_view = st.segmented_control("Column View", list(SCAN_VIEWS), default="🏆 Core", key="scan_view")
+        if not _sc_view:
+            _sc_view = "🏆 Core"
         # "load it into", not "open": Streamlit cannot switch tabs from code, so the reader clicks the tab.
         st.caption(f"{len(_sc_tbl):,}{_sc_of} · sorted by Rank{_sc_new} · click a row to load it into the "
                    f"Tear-Sheet tab")
@@ -931,10 +938,10 @@ with tabs[1]:
         _sc_ids = universe_signature(_sc_tbl["company_id"])
         _sc_pick = st.dataframe(
             _sc_tbl, column_config=scan_table_config(_sc_new_label, _sc_sel),
-            column_order=list(scan_table_columns(_sc_sel)),
+            column_order=list(scan_table_columns(_sc_sel, _sc_view)),
             hide_index=True, width="stretch", height=min(560, 38 + 35 * len(_sc_tbl)),
             on_select="rerun", selection_mode="single-row",
-            key=f"scan_tbl_{_sc_sel['key']}_{_sc_ids}")
+            key=f"scan_tbl_{_sc_sel['key']}_{_sc_view}_{_sc_ids}")
         _sc_rows = _sc_pick.selection.rows if _sc_pick and hasattr(_sc_pick, "selection") else []
         if _sc_rows:
             _sc_name = _sc_tbl.iloc[_sc_rows[0]]["name"]

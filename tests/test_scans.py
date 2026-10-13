@@ -700,7 +700,9 @@ def test_the_list_comes_before_the_footnotes_and_the_caption_does_not_overpromis
     assert table < left < measured, "the list, then who left it, then the footnote"
     src = ast.unparse(block)
     assert "load it into the Tear-Sheet tab" in src and "open its Tear-Sheet" not in src
-    assert "column_order=list(scan_table_columns(_sc_sel))" in src, "the table shows this scan's columns"
+    # Repointed 2026-10-13, not loosened: the table now shows this scan's columns IN THE CHOSEN VIEW
+    # (🏆 Core / 📈 Technical, tests/test_scan_views.py); the scan is still what decides them.
+    assert "column_order=list(scan_table_columns(_sc_sel, _sc_view))" in src, "the table shows this scan's columns"
     assert "scan_table_config(_sc_new_label, _sc_sel)" in src, "and this scan's widths"
 
 
