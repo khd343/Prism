@@ -151,6 +151,8 @@ from ui.ui_scans import (SCANS, CANDIDATES as SCAN_CANDIDATES, LIQUIDITY_STEPS a
                          members_label as scan_members_label,
                          record_state as scan_record_state, scan_table, table_config as scan_table_config,
                          SCAN_VIEWS, TREND_SHORT as SCAN_TREND_SHORT, momentum_ordered as scan_momentum_ordered)
+from ui.scan_guide import (guide_html as scan_guide_html, guide_markdown as scan_guide_markdown,
+                           reference_html as scan_reference_html)
 from config import (COLORS, TIER_COLORS, CONVICTION_TIERS, UI, HARD_GATES,
                     QUALITY_WEIGHTS, MOMENTUM_WEIGHTS, COMPOSITE_WEIGHTS,
                     VALUATION_SIGNALS,
@@ -920,6 +922,11 @@ with tabs[1]:
                      f"costs, what was left out and the caveats", expanded=False):
         st.markdown(scan_card_html(_sc_sel, _sc_counts[_sc_sel["key"]], _sc_state_sel, _sc_rec_sel, True,
                                    _sc_latest, with_head=False), unsafe_allow_html=True)
+    # HOW IT WORKS, BESIDE ITS RECORD (2026-10-14): the selected scan's guide — the same ui/scan_guide.py text
+    # the Reference tab's 🎯 Scans section shows, read with the record state its card uses.
+    with st.expander(f"📖 How it works — {_sc_sel['emoji']} {_sc_sel['name']}: each condition in plain words, "
+                     f"when a stock enters and leaves, what it cannot see", expanded=False):
+        st.markdown(scan_guide_html(_sc_sel, _sc_rec_sel, _sc_state_sel), unsafe_allow_html=True)
     # ONE FUNNEL, TOP DOWN (2026-10-06). The card's recipe ranks the WHOLE market, so every listed stock
     # is exactly the match its record measured. Then the traded-value floor and — only while the
     # sidebar actually narrows the market — the same 🎯 opt-in Market Pulse uses; then the tab's own row
@@ -3691,10 +3698,12 @@ def _render_reference():
     # {emoji,name,desc} shape the builder emits — same single source the tearsheet renders.
     _fw_md = {name: {"emoji": meta[1], "name": name, "desc": meta[2]}
               for name, meta in _FW_META.items()}
+    # The 🎯 Scans guide (2026-10-14) reads each scan's committed record, as the Scans tab's cards do.
+    _scan_recs = load_scan_records()
     st.download_button(
         "📥 Download Reference (Markdown)",
         data=build_reference_markdown(_RAW_GLOSSARY, CONCEPT_REFERENCE, _FLAG_DISPLAY, frameworks=_fw_md,
-                                      studies=WCS_STUDIES),
+                                      studies=WCS_STUDIES, scans=scan_guide_markdown(_scan_recs)),
         file_name="prism_reference.md", mime="text/markdown",
         width="stretch",
     )
@@ -3704,7 +3713,8 @@ def _render_reference():
     # pattern). SEARCH (any query) hides the tab bar and renders UNIFIED results from all five
     # corpora — preserving the one-box-searches-everything power; splitting search per-tab would
     # recreate the export/search asymmetry class (frameworks, 2026-08-28). The five pure render
-    # helpers are reused identically in both branches, so the modes can never drift.
+    # helpers are reused identically in both branches, so the modes can never drift. A sixth corpus, 🎯 Scans
+    # (the scan guide), joined both modes on 2026-10-14.
     def _sec_head(text_html, color, top=6):
         st.markdown(
             f'<div style="font-size:0.72rem;font-weight:800;color:{color};'
@@ -3744,19 +3754,28 @@ def _render_reference():
                       COLORS["gold"], top=20)
             st.markdown(h, unsafe_allow_html=True)
 
+    def _show_scans(q):
+        # Every scan in plain words (ui/scan_guide.py): the same text as the Scans tab's 📖 How it works panel
+        # and the download above; its facts come from the code and the records, never typed twice.
+        h = scan_reference_html(_scan_recs, q)
+        if h:
+            _sec_head(f"🎯 Scans — how each of the {len(SCANS)} lists works", COLORS["cyan"], top=20)
+            st.markdown(h, unsafe_allow_html=True)
+
     if _ref_q.strip():
         st.markdown(
             f'<div style="font-size:0.68rem;color:{COLORS["text_muted"]};margin:2px 0 8px 0;">'
-            f'🔎 Searching across all five sections — clear the box to browse by tab.</div>',
+            f'🔎 Searching across all six sections — clear the box to browse by tab.</div>',
             unsafe_allow_html=True)
         _show_concepts(_ref_q)
         _show_glossary(_ref_q)
         _show_flags(_ref_q)
         _show_frameworks(_ref_q)
         _show_wcs(_ref_q)
+        _show_scans(_ref_q)
     else:
         _ref_tabs = st.tabs(["🏷️ Labels & Verdicts", "📖 Glossary", "🚩 Red Flags",
-                             "🏛️ Frameworks", "📚 WCS Studies"])
+                             "🏛️ Frameworks", "📚 WCS Studies", "🎯 Scans"])
         with _ref_tabs[0]:
             _show_concepts("")
         with _ref_tabs[1]:
@@ -3767,6 +3786,8 @@ def _render_reference():
             _show_frameworks("")
         with _ref_tabs[4]:
             _show_wcs("")
+        with _ref_tabs[5]:
+            _show_scans("")
 
 
 with tabs[6]:

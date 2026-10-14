@@ -130,20 +130,23 @@ def test_reference_two_mode_layout():
     the tab bar disappears and results come UNIFIED from all five corpora — one box searches
     everything, so a user never has to know which section holds the answer (the export/search
     asymmetry class, frameworks 2026-08-28, must not recur mode-wise). Every corpus must be wired
-    into BOTH branches: dropping one from either mode turns this red."""
+    into BOTH branches: dropping one from either mode turns this red. The sixth, 🎯 Scans (2026-10-14),
+    is the scan guide (ui/scan_guide.py, tests/test_scan_guide.py)."""
     import io as _io, os
     src = _io.open(os.path.join(os.path.dirname(__file__), "..", "app.py"), encoding="utf-8").read()
-    helpers = ("_show_concepts", "_show_glossary", "_show_flags", "_show_frameworks", "_show_wcs")
+    helpers = ("_show_concepts", "_show_glossary", "_show_flags", "_show_frameworks", "_show_wcs",
+               "_show_scans")
 
-    # SEARCH MODE: between the query conditional and the browse branch, all five filtered by _ref_q.
+    # SEARCH MODE: between the query conditional and the browse branch, all six filtered by _ref_q.
     search_branch = src[src.index("if _ref_q.strip():"):src.index("_ref_tabs = st.tabs")]
     for h in helpers:
         assert f"{h}(_ref_q)" in search_branch, f"search mode lost {h} — unified search broken"
+    assert "Searching across all six sections" in search_branch
 
-    # BROWSE MODE: five inner tabs with the exact corpus labels, all five rendered unfiltered.
+    # BROWSE MODE: six inner tabs with the exact corpus labels, all six rendered unfiltered.
     browse = src[src.index("_ref_tabs = st.tabs"):]
     for label in ("🏷️ Labels & Verdicts", "📖 Glossary", "🚩 Red Flags",
-                  "🏛️ Frameworks", "📚 WCS Studies"):
+                  "🏛️ Frameworks", "📚 WCS Studies", "🎯 Scans"):
         assert label in browse, f"browse mode lost its {label} tab"
     for h in helpers:
         assert f'{h}("")' in browse, f"browse mode lost {h} — a corpus vanished from its tab"

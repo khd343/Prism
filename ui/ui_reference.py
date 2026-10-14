@@ -160,7 +160,8 @@ def render_wcs_studies(studies: list, query: str = "") -> str:
 
 
 def build_reference_markdown(glossary: dict, concept_ref: dict, flag_display: dict,
-                             frameworks: dict = None, studies: list = None, as_of: str = None) -> str:
+                             frameworks: dict = None, studies: list = None, as_of: str = None,
+                             scans: str = None) -> str:
     """The FULL Reference as one Markdown string, assembled from the SAME single-source dicts the
     render_* functions consume (NOT scraped from their HTML) — so the download, the on-screen
     Reference, and any future docs/reference.md can never drift. Exports EVERYTHING (no query filter).
@@ -168,7 +169,8 @@ def build_reference_markdown(glossary: dict, concept_ref: dict, flag_display: di
 
     `frameworks` is optional: app.py passes the tearsheet's _FW_META (adapted to {emoji,name,desc}) to
     emit a Frameworks section; None -> the section is omitted (no crash). Each value may be an
-    {emoji,name[,desc]} dict or a bare string."""
+    {emoji,name[,desc]} dict or a bare string. `scans` is the 🎯 Scans guide already written as Markdown
+    by ui/scan_guide.guide_markdown (2026-10-14) — the same sections the screen shows."""
     import datetime as _dt
     as_of = as_of or _dt.date.today().isoformat()
 
@@ -225,5 +227,8 @@ def build_reference_markdown(glossary: dict, concept_ref: dict, flag_display: di
                     f"_Published {_clean(s.get('pub', ''))}_", "",
                     _clean(s.get("says", "")), "",
                     f"**In PRISM:** {_clean(s.get('prism', ''))}", ""]
+
+    if scans:
+        out += [scans.rstrip(), ""]
 
     return "\n".join(out).rstrip() + "\n"

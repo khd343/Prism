@@ -78,16 +78,19 @@ def _app_source(records: dict = None) -> str:
     `records` replaces the committed records (a baseline the committed file does not have yet)."""
     src = open(os.path.join(ROOT, "app.py"), encoding="utf-8").read()
     tree = ast.parse(src)
-    parts = [n for n in tree.body if isinstance(n, ast.ImportFrom) and n.module in ("ui.ui_scans", "ui.ui_discovery")]
+    imports = [n for n in tree.body if isinstance(n, ast.ImportFrom)
+               and n.module in ("ui.ui_scans", "ui.ui_discovery", "ui.scan_guide")]
+    parts = list(imports)
     parts += [n for n in tree.body if isinstance(n, ast.Assign)
               and ast.unparse(n.targets[0]) in ("_MP_CAP_ORDER", "_SCAN_FILTER_DEFAULTS")]
     parts += [n for n in tree.body if isinstance(n, ast.FunctionDef)
               and n.name in ("_pick_scan", "_mp_clear_lens", "_mp_ms", "_scan_filter_row")]
     parts += [n for n in tree.body if isinstance(n, ast.With)
               and ast.unparse(n.items[0].context_expr) == "tabs[1]"]
-    assert len(parts) == 9, "app.py's Scans tab: two imports, two constants, four functions and one block"
-    if records is not None:     # after BOTH imports, or the ui_scans import re-binds load_scan_records
-        parts.insert(2, ast.parse(f"load_scan_records = lambda: __import__('json').loads({json.dumps(records)!r})"))
+    assert len(parts) == 10, "app.py's Scans tab: three imports, two constants, four functions and one block"
+    if records is not None:     # after EVERY import, or the ui_scans import re-binds load_scan_records
+        parts.insert(len(imports), ast.parse(
+            f"load_scan_records = lambda: __import__('json').loads({json.dumps(records)!r})"))
     return _HARNESS.format(root=ROOT) + "\n".join(ast.unparse(p) for p in parts)
 
 
@@ -214,6 +217,25 @@ def test_the_full_record_panel_follows_the_chosen_scan(tab):
     seed = next(s for s in S.SCANS if s["key"] == "compounder")
     assert len(panels) == 1 and seed["name"] in panels[0].label
     assert "BACKTEST · IN-SAMPLE" in "".join(m.value for m in panels[0].markdown)
+
+
+def test_how_it_works_follows_the_chosen_scan(tab):
+    """RUN (2026-10-14): the 📖 How it works panel beside 📊 Full record holds the SELECTED scan's guide —
+    the same ui/scan_guide.py text the Reference tab's 🎯 Scans section shows."""
+    from ui import ui_scans as S
+
+    def panel():
+        found = [e for e in tab.expander if e.label.startswith("📖 How it works")]
+        assert len(found) == 1, [e.label for e in tab.expander]
+        return found[0].label, "".join(m.value for m in found[0].markdown)
+
+    label, body = panel()
+    assert S.SCANS[0]["name"] in label and "top third" in body and "top 40%" not in body
+    tab.button(key="scan_open_compounder").click().run()
+    assert not tab.exception, [e.value for e in tab.exception]
+    label, body = panel()
+    comp = next(s for s in S.SCANS if s["key"] == "compounder")
+    assert comp["name"] in label and "top 40%" in body and "top third" not in body
 
 
 def test_the_cycle_column_shows_on_the_compounder_table_only(tab):
