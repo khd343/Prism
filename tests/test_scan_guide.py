@@ -208,6 +208,8 @@ def test_every_table_view_and_every_measured_flag_is_explained():
         assert view in t, view
     for col, label in S.MEASURED_FLAGS.items():
         assert f"**⚠ {label}** — {G.FLAG_WHAT[col]}" in t, label
+    if "market_category" in S.TABLE_COLUMNS:                 # the Core column added 2026-10-14
+        assert "**Category** — the company's market-cap band" in t, "the guide explains the Category column"
 
 
 # ── 4. The record is read from the records file, honestly ────────────────────────────────────────────

@@ -449,6 +449,8 @@ def general_sections(scans=None) -> list:
             "- **🆕** — not in the scan on the last archived month-end copy. **📄** — its quarterly result was "
             "declared since then. Both together: it entered on a fresh result; 🆕 alone: it entered on price "
             "movement.",
+            "- **Category** — the company's market-cap band from the data vendor: Mega, Large, Mid, Small, Micro "
+            "or Nano Cap.",
             "- **⚠ Measured flags** — red flags that went with weaker returns when measured on 6 Oct 2026, "
             "provisional until the December 2026 review re-tests them. A flagged stock is shown, never removed: "
             "open its Forensics tab before deciding.",

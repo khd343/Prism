@@ -69,6 +69,43 @@ def test_every_view_fits_a_laptop_screen_with_the_deep_scanners_headers(scan, vi
         assert label and label != c and not (label.islower() and "_" in label), (c, label)
 
 
+# ── The Category column (2026-10-14, the user's ask: "in Core, before the Sector column") ──────────────
+@pytest.mark.parametrize("scan", S.SCANS, ids=lambda s: s["key"])
+def test_core_shows_the_category_right_before_the_sector(scan):
+    cols = S.table_columns(scan, CORE)
+    assert cols[cols.index("sector") - 1] == "market_category", "Category sits right before Sector"
+    assert "market_category" not in S.table_columns(scan, TECH), "asked for in Core only"
+    cfg = S.table_config("03 Oct", scan)
+    assert cfg["market_category"]["label"] == "Category", "the user's word, and the vendor's (Market Category)"
+    assert "Mega, Large, Mid, Small, Micro or Nano Cap" in cfg["market_category"]["help"]
+
+
+def test_the_table_carries_each_stocks_category():
+    df = pd.DataFrame({"company_id": ["NSE:A", "NSE:B"], "name": ["A", "B"], "rank": [1, 2],
+                       "market_category": ["Small Cap", np.nan]})
+    t = S.scan_table(df, {"key": "all", "mask": lambda d: pd.Series(True, index=d.index)})
+    assert t.loc[0, "market_category"] == "Small Cap"
+    assert pd.isna(t.loc[1, "market_category"]), "a missing category shows blank, never a guess"
+
+
+# The narrowest each column can be and still show its header and its widest common value in full —
+# measured 2026-10-14 in the grid's own font (14px Source Sans + 16px padding), read from the live grid:
+# headers Rank 46, Momentum 84, Improvement 96, ⚠ Measured flags 119, ₹ Cr/day 64, Cycle ↓ 59, 🔥 36,
+# Category 69; values "2717" 44, "1234.56" 62, "📈 Stage 2" 81, "Small Cap" / "Large Cap" 75. A width
+# below its floor cuts the header or the common value.
+_FLOOR = {"rank": 46, "momentum_score": 84, "improvement_score": 96, "_measured_flags": 119, "_liq_cr": 64,
+          "_cycle": 59, "_strong_q": 36, "weinstein_stage": 81, "market_category": 75}
+
+
+@pytest.mark.parametrize("scan", S.SCANS, ids=lambda s: s["key"])
+def test_no_column_is_narrower_than_its_header_and_common_values(scan):
+    w = S.table_widths(scan)
+    for view in S.SCAN_VIEWS:
+        for c in S.table_columns(scan, view):
+            if c in _FLOOR:
+                assert w[c] >= _FLOOR[c], f"{scan['key']} {view}: {c} at {w[c]}px is under its {_FLOOR[c]}px"
+
+
 def test_the_new_columns_carry_the_deep_scanners_headers_and_tips():
     cfg = S.table_config("03 Oct", S.SCANS[0])
     assert {c: cfg[c]["label"] for c in ("close_price", "dist_to_vstop", "d49_momentum_quality", "rsi_14d",

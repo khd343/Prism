@@ -236,7 +236,8 @@ SCANS = (
     # Playbook requires a 🔥 Strong Quarter, so that column is ✓ on 100% of its stocks. Only columns
     # fixed BY CONSTRUCTION are hidden; Trend stays, because "above its stop" is not "above its 30-week
     # average" and a Stage 3 or 4 is possible (tests/test_scans.py). `widths` gives the hidden column's
-    # 40px to Stock and Sector (measured 2026-10-07: names fit 79% -> 90%, sectors 51% -> 75%).
+    # 40px to Stock and Sector (measured 2026-10-07: names fit 79% -> 90%, sectors 51% -> 75%; re-measured
+    # 2026-10-14 in the 14px font, with Category: names 80%, sectors 72%).
     # `inputs`: the engine functions that compute the columns a recipe reads. The fingerprint follows
     # them, and everything they call, so a re-defined score makes the record stale (2026-10-07).
     # dist_to_vstop is NOT followed: it comes from data_engine.compute_derived_signals, which computes
@@ -252,7 +253,7 @@ SCANS = (
          benchmark="NSE:NIF500MO50",                  # a momentum list across the whole market
          order="momentum",
          uses=(strong_quarter, _pct, _num), inputs=(compute_momentum_score, _compute_improvement_score),
-         fixed=("_strong_q",), widths={"name": 190, "sector": 130},
+         fixed=("_strong_q",), widths={"name": 185, "sector": 125},
          recipe="Momentum and Breakout in the top third of the market, a 🔥 Strong Quarter, Improvement "
                 "in the top half, and the price above its stop."),
     dict(key="leaders", emoji="🌬️", name="Leading-Sector Stocks", mask=leading_sector_stocks,
@@ -275,8 +276,11 @@ SCANS = (
          # by 2028 that overlap by 11 months — one year of evidence that looks like twelve.
          start_month=10,
          # "Cycle ↓" (2026-10-07): a reading aid, not part of the recipe or record; its 60px come from
-         # Stock, Sector and Score so the table keeps the laptop budget.
-         extra=("_cycle",), widths={"name": 155, "sector": 95, "composite_score": 75},
+         # Stock, Sector, Score, ⚠ flags and Trend so the table keeps the laptop budget (2026-10-14, with
+         # Category: names in full 46%, sectors 37%, from 52% and 52% — 🌱 carries two extra columns; each
+         # stays at or above its measured floor, tests/test_scan_views.py).
+         extra=("_cycle",), widths={"name": 150, "sector": 80, "composite_score": 65, "_measured_flags": 120,
+                                    "weinstein_stage": 85},
          # "Left 🌱" (2026-10-07): why a stock in 🌱 on the 🆕 baseline is not in it now. Not part of the
          # recipe, so not in the fingerprint (which follows mask, uses and inputs only).
          exit_reason=compounder_exit_reason,
@@ -539,15 +543,20 @@ def liquidity_help() -> str:
             f"market can take it without moving the price much:\n\n{guide}\n\n"
             + SURVEILLANCE_NOTE)
 
-TABLE_COLUMNS = ("rank", "_new", "name", "sector", "composite_score", "momentum_score",
+TABLE_COLUMNS = ("rank", "_new", "name", "market_category", "sector", "composite_score", "momentum_score",
                  "improvement_score", "_strong_q", "_measured_flags", "weinstein_stage", "_liq_cr")
-# Set widths (an auto-sized text column grows to its longest cell): 1,025px, inside the 1,030px a
-# 1536px laptop leaves after the 44px row-selection column (the Deep Scanner's measured budget).
-# Measured 2026-10-07 in the grid's own font (13px Source Sans + 16px padding): every short Trend label
-# fits 90, "Receivables · Neg FCF" needs 133, the headers of the number columns need their width.
-TABLE_WIDTHS = {"rank": 55, "_new": 55, "name": 170, "sector": 110, "composite_score": 105,
-                "momentum_score": 85, "improvement_score": 100, "_strong_q": 40,
-                "_measured_flags": 135, "weinstein_stage": 90, "_liq_cr": 80, "_cycle": 60,
+# Set widths (an auto-sized text column grows to its longest cell): 1,030px, the room a 1536px laptop
+# leaves after the row-selection column (the Deep Scanner's measured budget; the live grid measured
+# 1,038px for the columns on 2026-10-14). Category (2026-10-14, the user's ask, before Sector) took its 75px
+# from width no header or common value used, measured that day in the grid's own font (14px Source Sans +
+# 16px padding; tests/test_scan_views.py holds the floors): Rank 55 → 50 (header 46, "2717" 44), ₹ Cr/day
+# 80 → 65 (header 64, "1234.56" 62), ⚠ Measured flags 135 → 125 (header 119, "Squeeze · Neg FCF" 122; the
+# common "Receivables · Neg FCF" needs 142 and was cut at 135 too) — and from the Score bar, 105 → 75, the
+# width 🌱 already showed it at. Stock and Sector gained on 🌬️ (names in full 68% → 72%; its sector names
+# fit 27% anywhere from 90 to 130px).
+TABLE_WIDTHS = {"rank": 50, "_new": 55, "name": 175, "market_category": 75, "sector": 95,
+                "composite_score": 75, "momentum_score": 85, "improvement_score": 100, "_strong_q": 40,
+                "_measured_flags": 125, "weinstein_stage": 90, "_liq_cr": 65, "_cycle": 60,
                 # 📈 Technical (2026-10-13): the Deep Scanner's widths for the same columns, Breakout as a
                 # number like Momentum here; "🔥 OVERHEATED" fits 110.
                 "close_price": 80, "dist_to_vstop": 60, "d49_momentum_quality": 110, "rsi_14d": 50,
@@ -705,6 +714,13 @@ def table_config(members_date_label: str, scan: dict = None) -> dict:
                                    f"price movement (technical legs move daily — check it is not flickering "
                                    f"across the line)."),
         "name": cc.TextColumn("Stock", width=w["name"]),
+        # "Category" (2026-10-14): the user's word and the data vendor's own ("Market Category"); the Deep
+        # Scanner shows the same column as Market Cap.
+        "market_category": cc.TextColumn(
+            "Category", width=w["market_category"],
+            help="The company's market-cap category from the data vendor: Mega, Large, Mid, Small, Micro or Nano "
+                 "Cap — the size band the Market cap filter above narrows by. The Deep Scanner calls this "
+                 "column Market Cap."),
         "sector": cc.TextColumn("Sector", width=w["sector"]),
         "composite_score": cc.ProgressColumn("Score", min_value=0, max_value=100, format="%.0f",
                                              width=w["composite_score"]),
