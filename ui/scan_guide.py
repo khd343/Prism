@@ -70,32 +70,65 @@ GUIDES = {
         ],
         recipe=[
             "- **Momentum in the top third of the market.** PRISM's Momentum score (0–100) blends relative "
-            "strength against the market, trend quality, how close the price is to a breakout, volume "
-            "confirmation and sector leadership. The stock must rank in the best third of all stocks on it.",
-            "- **Breakout in the top third.** The Breakout score measures how close the price is to breaking "
-            "out of a base to new highs. Again, the best third of the market.",
+            "strength against the market (30%), trend quality (25%), how close the price is to a breakout "
+            "(20%), sector leadership (15%) and volume confirmation (10%). The stock must rank in the best "
+            "third of all stocks on it.",
+            "- **Breakout in the top third.** The Breakout score measures how near the price is to new highs: "
+            "its distance from the 52-week high (30% of the score) and from the 13-week high (20%), how "
+            "recently the 52-week high was made (20%, best within a month), whether it sits in a breakout "
+            "window (20%), and its distance from the all-time high (10%). Again, the best third of the market.",
             "- **A 🔥 Strong Quarter.** The latest reported quarter against the same quarter last year: "
             "revenue up more than 15%, profit up more than 20%, and the EBITDA margin wider. A company that "
             "made a loss a year earlier cannot be judged, so it does not pass.",
             "- **Improvement in the top half.** PRISM's Improvement score asks whether the business got better "
             "over the last full year — profit growth, revenue growth and the change in operating margin, each "
             "against the year before. The stock must rank in the better half of the market.",
-            "- **The price at or above its stop.** The Volatility Stop is a trend line that trails the price "
-            "at a distance set by how much the stock normally moves. A price below it means the uptrend has "
-            "broken.",
+            "- **The price at or above its stop.** The stop is the data vendor's 14-week Volatility Stop "
+            "(VSTOP 14W 2.5): a line that trails the price about 2.5 times the stock's average weekly range "
+            "below it. A close below it means the uptrend has broken.",
             "Every \"top third\" and \"top half\" is a rank among all the stocks PRISM covers, never among a "
             "filtered slice — so a filter can hide a stock but can never let one in.",
         ],
+        # The ways out were MEASURED 2026-10-14 (the user's question "when does a stock get out?"): for every
+        # stock in the list on the earlier snapshot and not on the later one, which conditions had failed on
+        # the later date — same method and frames as the "still in the list" figures above; both pairs on
+        # one universe. 19 Sep → 3 Oct: 51 of 286 left (no new results). 17 Jun → 22 Aug: 81 of 154 left
+        # (June-quarter results and the annual roll). Distance above the stop: the 3 Oct snapshot's 273
+        # stocks, median 17.5% (a fall of 1 − 1/1.175 ≈ 15% to cross), 10th percentile 7.1%.
         enter_leave=[
-            "PRISM rebuilds this list from scratch every time its data refreshes. A stock is in it only while "
-            "all five conditions hold that day, and it drops out the first day any one of them fails. Being in "
-            "the list yesterday never keeps a stock in today.",
-            "The usual ways out: the price falls below its stop (the uptrend broke); momentum or breakout slips "
-            "out of the market's top third — which can happen while the price holds, because other stocks "
-            "moved more; or a new quarterly result is not strong.",
-            "So a breakout that fails does not sit in the list for months: its stop or its momentum rank "
-            "removes it. Measured on the saved snapshots, 82% of the list was still in it two weeks later "
-            "(19 Sep → 3 Oct 2026) and 47% about two months later (17 Jun → 22 Aug 2026).",
+            "PRISM rebuilds this list from scratch every time its data refreshes — normally once each trading "
+            "day, after the close. A stock is in it only while all five conditions hold that day, and it drops "
+            "out the first day any one of them fails. Being in the list yesterday never keeps a stock in "
+            "today, and a stock that qualifies again comes straight back.",
+            "How stocks actually left — measured on the saved snapshots, the share of the stocks that left "
+            "which had failed each condition, in quiet weeks (19 Sep → 3 Oct 2026, no new results) and in a "
+            "results season (17 Jun → 22 Aug 2026, with the June-quarter results and the annual figures "
+            "rolling to a new year):",
+            ("table", ("Way out", "What moves it", "Quiet weeks", "Results season"), [
+                ("**Breakout** left the top third",
+                 "The price slipped back from its highs, or its 52-week high got old. It is a rank, so a flat "
+                 "price can lose it as other stocks make fresher highs.", "75%", "53%"),
+                ("**Momentum** left the top third",
+                 "Other stocks ran harder, its trend weakened, or its sector cooled.", "47%", "44%"),
+                ("**A new quarter** was not strong",
+                 "Only when a new quarterly result reaches the data.", "0%", "65%"),
+                ("**Improvement** left the top half",
+                 "Annual figures, so mostly when the data rolls to a new year.", "0%", "41%"),
+                ("**The price** closed below its stop",
+                 "A fall through the 14-week volatility stop.", "20%", "27%"),
+            ]),
+            "Many stocks fail two or more conditions at once — 51 of the 81 that left from 17 Jun to 22 Aug — so "
+            "a column adds up to more than 100%.",
+            "**The stop is the last line, not the first.** On 3 Oct 2026 the list's median stock sat 17.5% above "
+            "its stop, so its price had to fall about 15% to cross it; only 1 in 10 was within a 7% fall. A "
+            "fading breakout or momentum rank usually removes a stock long before that — the stop catches a "
+            "sudden, sharp fall.",
+            "**Results season reshuffles the list.** Companies report each quarter within about six weeks of "
+            "its end — roughly mid-July to mid-August, mid-October to mid-November and mid-January to "
+            "mid-February — and the full year by the end of May. Each new quarter is judged again the day it "
+            "reaches the data.",
+            "So a breakout that fails does not sit in the list for months: 82% of the list was still in it two "
+            "weeks later (19 Sep → 3 Oct 2026) and 47% about two months later (17 Jun → 22 Aug 2026).",
         ],
         benchmark_why="a momentum index drawn from the whole market, the closest index fund to what this "
                       "list does.",
@@ -106,6 +139,9 @@ GUIDES = {
             "comes next.",
             "- **Every match is listed, however thinly it trades.** A small stock can be hard to trade in "
             "size.",
+            "- **Leaving the list is information, not a sell signal.** The list turns over faster than most "
+            "holding periods — about half of it is gone within two months — so what to do with a stock that "
+            "leaves stays your decision.",
         ],
         changes=[
             "Its recipe changes only through a new, measured test written down before the data. The December "
@@ -573,13 +609,24 @@ def _inline(text) -> str:
                   html.escape(str(text)))
 
 
+_NUMBER = re.compile(r"[+-]?\d+(?:\.\d+)?%?")
+
+
 def _table_html(item) -> str:
+    """The first column is a label and stays on one line; a column of numbers only is as narrow as its numbers
+    and right-aligned; text columns wrap and share the rest (2026-10-14: the labels had wrapped onto two lines
+    beside share columns standing wide around "75%"). A narrow screen scrolls the table sideways."""
     _, headers, rows = item
+    numeric = [bool(rows) and all(_NUMBER.fullmatch(str(r[i]).strip()) for r in rows) for i in range(len(headers))]
+    # A number column's header stays on one line too, so keep such headers short (a long one would widen it).
+    fit = ["white-space:nowrap;" if i == 0 else "width:1%;text-align:right;white-space:nowrap;" if numeric[i]
+           else "" for i in range(len(headers))]
     cell = f"padding:6px 10px;border-bottom:1px solid {_C['border']};text-align:left;vertical-align:top;"
-    head = "".join(f'<th style="{cell}font-size:0.66rem;font-weight:700;color:{_C["text_muted"]};'
-                   f'text-transform:uppercase;letter-spacing:0.5px;">{_inline(h)}</th>' for h in headers)
-    body = "".join("<tr>" + "".join(f'<td style="{cell}font-size:0.78rem;color:{_C["text_secondary"]};">'
-                                    f'{_inline(c)}</td>' for c in row) + "</tr>" for row in rows)
+    head = "".join(f'<th style="{cell}{fit[i]}font-size:0.66rem;font-weight:700;color:{_C["text_muted"]};'
+                   f'text-transform:uppercase;letter-spacing:0.5px;">{_inline(h)}</th>' for i, h in enumerate(headers))
+    body = "".join("<tr>" + "".join(
+        f'<td style="{cell}{fit[i]}font-size:0.78rem;color:{_C["text_secondary"]};">{_inline(c)}</td>'
+        for i, c in enumerate(row)) + "</tr>" for row in rows)
     return (f'<div style="overflow-x:auto;margin:4px 0 10px 0;"><table style="border-collapse:collapse;'
             f'width:100%;"><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>')
 

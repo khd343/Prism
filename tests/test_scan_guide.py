@@ -131,8 +131,71 @@ def test_every_guide_fills_every_part():
     for key, g in G.GUIDES.items():
         for part in G.PROSE_PARTS:
             assert g.get(part), f"{key}: {part} is empty"
-        assert len(" ".join(g["recipe"])) >= 300, f"{key}: the recipe is not explained in detail"
-        assert len(" ".join(g["enter_leave"])) >= 200, f"{key}: entering and leaving is not explained"
+        # _plain reads a table's cells too (a part may hold one since 2026-10-14)
+        assert len(G._plain(g["recipe"])) >= 300, f"{key}: the recipe is not explained in detail"
+        assert len(G._plain(g["enter_leave"])) >= 200, f"{key}: entering and leaving is not explained"
+
+
+# ── 1c. 🚀: every way out, measured (2026-10-14, the user's question "when does a stock get out?") ───────
+_WAYS_OUT = ("Breakout", "Momentum", "quarter", "Improvement", "stop")   # one per condition of the recipe
+
+
+def test_the_playbook_shows_every_way_out_measured():
+    items = G.GUIDES["playbook"]["enter_leave"]
+    tables = [i for i in items if isinstance(i, tuple)]
+    assert len(tables) == 1, "one table of the ways out"
+    _, headers, rows = tables[0]
+    assert len(headers) == 4 and all(len(r) == 4 for r in rows)
+    assert len(rows) == len(_WAYS_OUT), "one way out per condition of the recipe — no more, no fewer"
+    for word in _WAYS_OUT:
+        assert sum(word in r[0] for r in rows) == 1, f"the way out through {word!r} is missing or doubled"
+    for r in rows:
+        assert re.fullmatch(r"\d+%", r[2]) and re.fullmatch(r"\d+%", r[3]), r
+    text = G._plain(items)
+    assert "The stop is the last line" in text and "about 15%" in text and "17.5%" in text, (
+        "measured, the stop removes a stock last — the guide must not lead with it")
+    assert text.index("Results season reshuffles the list") > text.index("The stop is the last line")
+
+
+def test_the_quoted_score_parts_are_the_engines():
+    """THE TRUTH PIN for the 🚀 recipe's numbers: every weight the guide quotes is the engine's own (config),
+    "best within a month" is the freshest age zone, and the stop is the vendor column PRISM maps."""
+    from config import BREAKOUT_SIGNALS, HIGH_AGE_ZONES, MOMENTUM_WEIGHTS
+    from core.data_engine import TECHNICAL_COLS
+    text = " ".join(G.GUIDES["playbook"]["recipe"])
+    for phrase, w in (("relative strength against the market (", MOMENTUM_WEIGHTS["relative_strength"]),
+                      ("trend quality (", MOMENTUM_WEIGHTS["trend_quality"]),
+                      ("how close the price is to a breakout (", MOMENTUM_WEIGHTS["breakout_proximity"]),
+                      ("sector leadership (", MOMENTUM_WEIGHTS["sector_leadership"]),
+                      ("volume confirmation (", MOMENTUM_WEIGHTS["volume_confirm"]),
+                      ("from the 52-week high (", BREAKOUT_SIGNALS["52wh_distance"]),
+                      ("from the 13-week high (", BREAKOUT_SIGNALS["13wh_distance"]),
+                      ("high was made (", BREAKOUT_SIGNALS["52wh_days"]),
+                      ("breakout window (", BREAKOUT_SIGNALS["breakout_window"]),
+                      ("all-time high (", BREAKOUT_SIGNALS["ath_distance"])):
+        assert f"{phrase}{w:.0%}" in text, f"the guide quotes {phrase!r} with a weight the engine does not use"
+    assert HIGH_AGE_ZONES["breakout_fresh"] == {"min": 0, "max": 31, "score": 100}, "'best within a month'"
+    assert TECHNICAL_COLS.get("VSTOP 14W 2.5") == "vstop_value", "the stop the guide names is the one PRISM reads"
+
+
+def test_the_ways_out_render_and_are_searchable():
+    h = G.guide_html(_BY_KEY["playbook"], _rec("playbook"), "measured")
+    section = h[h.index("When a stock enters and leaves"):h.index("How the table is ordered")]
+    assert "<table" in section and "Results season" in _text(section)
+    # Layout (seen 2026-10-14 at 1536px): the labels wrapped onto two lines while the share columns stood
+    # wide around "75%". A label column stays on one line; an all-number column is as narrow as its numbers.
+    first_cell = re.search(r"<td style=\"([^\"]*)\">", section).group(1)
+    assert "white-space:nowrap" in first_cell, "the way-out label stays on one line"
+    share = re.search(r"<td style=\"([^\"]*)\">75%</td>", section).group(1)
+    assert "width:1%" in share and "text-align:right" in share and "white-space:nowrap" in share
+    text_cell = re.search(r"<td style=\"([^\"]*)\">The price slipped back", section).group(1)
+    assert "nowrap" not in text_cell and "width:1%" not in text_cell, "a text column wraps and takes the rest"
+    assert "overflow-x:auto" in section, "a narrow screen scrolls the table sideways instead of breaking it"
+    assert "| Way out |" in G.guide_markdown(_RECORDS), "the download carries the table"
+    t = _text(G.reference_html(_RECORDS, "fresher highs"))
+    assert "Playbook Shortlist" in t, "a word that only the table holds is found by the Reference search"
+    stop = " ".join(G.GUIDES["playbook"]["recipe"])
+    assert "VSTOP 14W 2.5" in stop and "52-week high" in stop and "13-week high" in stop
 
 
 # The words each recipe's conditions are explained with — checked against ui/ui_scans.py on 2026-10-14.
