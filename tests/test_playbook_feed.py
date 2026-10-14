@@ -219,6 +219,8 @@ def _all_pass(monkeypatch, **override):
     for n in names:
         res = override.get(n, [D.Result(n, "ok", "fine")])
         monkeypatch.setattr(D, n, lambda *a, _r=res: list(_r))
+    res = override.get("check_recipe_inputs", [D.Result("check_recipe_inputs", "ok", "fine")])   # the feed's own
+    monkeypatch.setattr(F, "check_recipe_inputs", lambda *a, _r=res: list(_r), raising=False)
 
 
 def test_a_failing_check_publishes_nothing(monkeypatch, tmp_path):
@@ -330,8 +332,18 @@ def test_a_scheduled_run_never_waits(monkeypatch, tmp_path):
 
 def test_an_unreadable_sheet_name_fails_loudly(monkeypatch, tmp_path):
     _Sheet(monkeypatch, [None])
+    naps = []
     with pytest.raises(F.FeedError, match="no session date"):
-        F.run_live("id", tmp_path, trigger="schedule", now=NOW)
+        F.run_live("id", tmp_path, trigger="schedule", now=NOW, sleep=naps.append)
+    assert naps == [F.TITLE_PAUSE] * (F.TITLE_TRIES - 1)                     # read three times before failing
+
+
+def test_one_failed_name_read_is_retried(monkeypatch, tmp_path):
+    """One network blip used to fail the whole run (independent review M1, 2026-10-14)."""
+    sheet = _Sheet(monkeypatch, [None, "PRISM 2026-10-12 Mon"])
+    naps = []
+    assert F.run_live("id", tmp_path, trigger="schedule", now=NOW, sleep=naps.append) == "2026-10-12"
+    assert naps == [F.TITLE_PAUSE] and sheet.published[0][1] == "2026-10-12"
 
 
 @pytest.mark.parametrize("title", ["PRISM 2026-10-12 Mon", "PRISM 2026-10-12"])
@@ -344,8 +356,8 @@ def test_both_name_forms_give_the_session(monkeypatch, tmp_path, title):
 def test_a_rename_during_the_download_is_read_again(monkeypatch, tmp_path):
     _published(tmp_path, "2026-10-09")
     sheet = _Sheet(monkeypatch, ["PRISM 2026-10-12 Mon"], download_title="PRISM 2026-10-13 Tue")
-    with pytest.raises(F.FeedError, match="renamed"):
-        F.run_live("id", tmp_path, trigger="manual", now=datetime(2026, 10, 13, 21, 0, tzinfo=IST))
+    with pytest.raises(F.FeedError, match="renamed"):                         # Monday evening: the 12th is expected
+        F.run_live("id", tmp_path, trigger="manual", now=datetime(2026, 10, 12, 21, 0, tzinfo=IST))
     assert sheet.downloads == 2 and sheet.published == []
 
 
@@ -593,9 +605,9 @@ def test_a_display_index_without_a_price_cannot_cost_kite_a_session(monkeypatch)
     later = sorted(set(BENCHMARK_INDICES) - set(_WINDOW_SEVEN))
     assert later, "without a display-only index this test proves nothing"
     checks = _live_gate(monkeypatch, _index_rows(_WINDOW_SEVEN))                        # the later rows absent
-    assert checks == {"passed": 8, "warnings": []}, "all eight checks ran, the index rows among them"
+    assert checks == {"passed": 9, "warnings": []}, "all nine checks ran, the index rows among them"
     unpriced = pd.concat([_index_rows(_WINDOW_SEVEN), _index_rows(later, price=float("nan"))])
-    assert _live_gate(monkeypatch, unpriced) == {"passed": 8, "warnings": []}           # present, no price
+    assert _live_gate(monkeypatch, unpriced) == {"passed": 9, "warnings": []}           # present, no price
 
 
 def test_any_of_the_seven_without_a_price_still_publishes_nothing(monkeypatch):
@@ -626,13 +638,17 @@ def test_a_new_session_is_never_published_in_market_hours(monkeypatch, tmp_path,
     assert sheet.published == [] and sheet.downloads == 0
 
 
-@pytest.mark.parametrize("when", [_ist(14, 9, 14), _ist(13, 19, 0), _ist(14, 3, 0), _ist(17, 11, 0)],
+@pytest.mark.parametrize("when,title", [(_ist(14, 9, 14), "PRISM 2026-10-13 Tue"),
+                                        (_ist(13, 19, 0), "PRISM 2026-10-13 Tue"),
+                                        (_ist(14, 3, 0), "PRISM 2026-10-13 Tue"),
+                                        (_ist(17, 11, 0), "PRISM 2026-10-16 Fri")],    # a weekend expects Friday
                          ids=["09:14", "19:00", "03:00", "Saturday-11:00"])
-def test_outside_market_hours_the_same_session_publishes(monkeypatch, tmp_path, when):
+def test_outside_market_hours_the_same_session_publishes(monkeypatch, tmp_path, when, title):
     _published(tmp_path, "2026-10-12")
-    sheet = _Sheet(monkeypatch, ["PRISM 2026-10-13 Tue"])
-    assert F.run_live("id", tmp_path, trigger="dispatch", now=when) == "2026-10-13"
-    assert sheet.published == [("PRISM 2026-10-13 Tue", "2026-10-13", "recorded", "dispatch")]
+    sheet = _Sheet(monkeypatch, [title])
+    session = title.split()[1]
+    assert F.run_live("id", tmp_path, trigger="dispatch", now=when) == session
+    assert sheet.published == [(title, session, "recorded", "dispatch")]
 
 
 def test_nothing_new_in_market_hours_is_quiet_not_a_failure(monkeypatch, tmp_path):
@@ -640,6 +656,47 @@ def test_nothing_new_in_market_hours_is_quiet_not_a_failure(monkeypatch, tmp_pat
     _published(tmp_path, "2026-10-13")
     sheet = _Sheet(monkeypatch, ["PRISM 2026-10-13 Tue"])
     assert F.run_live("id", tmp_path, trigger="schedule", now=_ist(14, 11, 0)) is None and sheet.downloads == 0
+
+
+def test_an_older_unpublished_name_is_never_published_live(monkeypatch, tmp_path):
+    """Independent review I1 (2026-10-14): Prism.gs certifies a sheet only by renaming it after a complete, sane
+    ingest. A partial ingest, a failed rename or a BUSY run keeps the OLD name over new data, and when that old session
+    was never published (after a refused holiday copy, say) the feed published it under the wrong date."""
+    _published(tmp_path, "2026-10-09")
+    sheet = _Sheet(monkeypatch, ["PRISM 2026-10-12 Mon"])                   # Tuesday evening: the 13th is expected
+    with pytest.raises(F.FeedError, match="expected now"):
+        F.run_live("id", tmp_path, trigger="schedule", now=_ist(13, 20, 0))
+    assert sheet.downloads == 0 and sheet.published == []
+
+
+def test_a_dispatch_waits_for_the_expected_rename_after_a_refused_day(monkeypatch, tmp_path):
+    """sync.py dispatches before Prism.gs renames: the day after a refused holiday copy, the old name is unpublished
+    AND old, and the rename lands a minute or two later."""
+    _published(tmp_path, "2026-10-12")
+    sheet = _Sheet(monkeypatch, ["PRISM 2026-10-13 Tue", "PRISM 2026-10-13 Tue", "PRISM 2026-10-14 Wed"])
+    naps = []
+    assert F.run_live("id", tmp_path, trigger="dispatch", now=_ist(14, 20, 0), sleep=naps.append) == "2026-10-14"
+    assert naps == [F.WAIT_STEP, F.WAIT_STEP] and sheet.published[0][1] == "2026-10-14"
+
+
+def test_a_dispatch_that_never_sees_the_expected_rename_publishes_nothing(monkeypatch, tmp_path):
+    _published(tmp_path, "2026-10-12")
+    sheet = _Sheet(monkeypatch, ["PRISM 2026-10-13 Tue"])
+    naps = []
+    with pytest.raises(F.FeedError, match="expected now"):
+        F.run_live("id", tmp_path, trigger="dispatch", now=_ist(14, 20, 0), sleep=naps.append)
+    assert sum(naps) == F.WAIT_SECONDS and sheet.downloads == 0
+
+
+@pytest.mark.parametrize("when,title", [(_ist(14, 6, 0), "PRISM 2026-10-13 Tue"),
+                                        (_ist(13, 19, 30), "PRISM 2026-10-13 Tue"),
+                                        (_ist(17, 6, 0), "PRISM 2026-10-16 Fri"),
+                                        (_ist(19, 6, 0), "PRISM 2026-10-16 Fri")],
+                         ids=["next-morning", "same-evening", "saturday", "monday-morning"])
+def test_the_expected_session_publishes_from_any_backstop(monkeypatch, tmp_path, when, title):
+    _published(tmp_path, "2026-10-09")
+    sheet = _Sheet(monkeypatch, [title])
+    assert F.run_live("id", tmp_path, trigger="schedule", now=when) == title.split()[1] and sheet.downloads == 1
 
 
 def test_the_manifest_names_the_code_that_ran(monkeypatch):
@@ -650,3 +707,72 @@ def test_the_manifest_names_the_code_that_ran(monkeypatch):
     assert _meta(frame)["engine_commit"] == "a" * 40
     monkeypatch.delenv("FEED_CODE_SHA")
     assert _meta(frame)["engine_commit"] == "b" * 40                               # unpinned: unchanged
+
+
+# ── 15. The recipe's own inputs are guarded live (2026-10-14, independent review I4) ──────────────────────────
+# The data check guards the columns its daily email is about; the Playbook also reads the quarterly levels behind
+# 🔥 Strong Quarter, the stop distance and the moving averages behind the stage and the trend scores. A vendor that
+# thins one shrinks and skews the list while every other check stays green.
+_RECIPE_COLUMNS = ["dist_to_vstop", "ebitda_lq", "ebitda_pyq", "pat_lq", "pat_pyq", "rev_lq", "rev_pyq", "sma_200d",
+                   "sma_30w"]
+
+
+def _recipe_frame():
+    df = _scored(n=200, members=20)
+    df["sma_30w"], df["sma_200d"] = 100.0, 100.0
+    return df
+
+
+def _live_gate_recipe(monkeypatch, scored, backfill=False):
+    """The gate with every data check passing and the REAL recipe-input check."""
+    real = F.check_recipe_inputs
+    _all_pass(monkeypatch)
+    monkeypatch.setattr(F, "check_recipe_inputs", real)
+    return F.gate({}, None, None, scored, backfill=backfill)
+
+
+def test_the_recipe_floors_are_the_measured_ones():
+    """About ten points under the lowest share on all 24 archive copies (29 Jun - 9 Oct 2026): latest quarter 99.2%,
+    the stop 99.6%, last year's quarter 95.0%, sma_30w 95.2%, sma_200d 93.0%."""
+    assert F.RECIPE_FLOORS == {"rev_lq": 0.90, "pat_lq": 0.90, "ebitda_lq": 0.90, "dist_to_vstop": 0.90,
+                               "rev_pyq": 0.85, "pat_pyq": 0.85, "ebitda_pyq": 0.85, "sma_30w": 0.85,
+                               "sma_200d": 0.85}
+
+
+def test_full_recipe_inputs_pass(monkeypatch):
+    assert _live_gate_recipe(monkeypatch, _recipe_frame()) == {"passed": 10, "warnings": []}     # 8 + its two
+
+
+@pytest.mark.parametrize("col", _RECIPE_COLUMNS)
+def test_a_thinned_recipe_input_publishes_nothing(monkeypatch, col):
+    df = _recipe_frame()
+    df.loc[df.index[:70], col] = np.nan                                    # 65% left, under every floor
+    with pytest.raises(F.FeedError, match=f"Recipe inputs: .*{col} 65.0%"):
+        _live_gate_recipe(monkeypatch, df)
+
+
+def test_a_missing_recipe_column_is_thin_not_skipped(monkeypatch):
+    with pytest.raises(F.FeedError, match="sma_30w 0.0%"):                # unverifiable is not passed
+        _live_gate_recipe(monkeypatch, _recipe_frame().drop(columns="sma_30w"))
+
+
+@pytest.mark.parametrize("col", ["breakout_score", "improvement_score"])
+def test_a_flat_recipe_score_publishes_nothing(monkeypatch, col):
+    """The engine fills a missing input, so these scores are never empty: a broken input shows as a FLAT score."""
+    df = _recipe_frame()
+    df[col] = 50.0
+    with pytest.raises(F.FeedError, match=rf"Recipe scores vary: flat: \['{col}'\]"):
+        _live_gate_recipe(monkeypatch, df)
+
+
+def test_backfill_never_runs_the_recipe_floors(monkeypatch):
+    """An old archive copy may lack a column the live sheet has; the floors guard the LIVE path. A back-fill runs 7
+    checks: the index rows and the recipe floors are both live-only."""
+    assert _live_gate_recipe(monkeypatch, _recipe_frame().drop(columns="sma_30w"), backfill=True) == {
+        "passed": 7, "warnings": []}
+
+
+@pytest.mark.skipif(not _ARCHIVE.exists(), reason="the archive copies are local only (gitignored)")
+def test_the_recipe_floors_pass_a_real_archive_copy():
+    datasets, stocks, bench, scored = F.score(_ARCHIVE.read_bytes())
+    assert [r.status for r in F.check_recipe_inputs(scored)] == ["ok", "ok"]

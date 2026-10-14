@@ -204,6 +204,25 @@ BACKFILL_TOLERATED = {("Key columns", "listed_days absent")}
 # requires every one, so a missing row is still mailed.
 FEED_GATE_INDICES = ("NSE:CNX500", "NSE:SMALLCA250", "NSE:NFMICRO250", "NSE:NIF500MO50", "NSE:NI200MOM30",
                      "NSE:NQUALITY30", "NSE:NS250MQ100")
+# THE RECIPE'S OWN INPUTS (2026-10-14, independent review I4). The data check guards the columns its daily email is
+# about; the Playbook also reads the quarterly levels behind 🔥 Strong Quarter, the stop distance, and the moving
+# averages behind the stage and the trend scores. A vendor that thins one shrinks and skews the list while every other
+# check stays green. Floors sit about ten points under the lowest share measured on all 24 archive copies (29 Jun -
+# 9 Oct 2026): latest quarter 99.2%, the stop 99.6%, last year's quarter 95.0%, sma_30w 95.2%, sma_200d 93.0%. The
+# scores are always filled (the engine fills a missing input), so a broken input shows as a FLAT score instead.
+RECIPE_FLOORS = {"rev_lq": 0.90, "pat_lq": 0.90, "ebitda_lq": 0.90, "dist_to_vstop": 0.90,
+                 "rev_pyq": 0.85, "pat_pyq": 0.85, "ebitda_pyq": 0.85, "sma_30w": 0.85, "sma_200d": 0.85}
+
+
+def check_recipe_inputs(scored: pd.DataFrame) -> list:
+    def num(c):                                          # an absent column is empty, never skipped
+        return (pd.to_numeric(scored[c], errors="coerce") if c in scored.columns
+                else pd.Series(float("nan"), index=scored.index))
+    thin = [f"{c} {num(c).notna().mean():.1%}" for c in RECIPE_FLOORS if num(c).notna().mean() < RECIPE_FLOORS[c]]
+    flat = [c for c in ("breakout_score", "improvement_score") if num(c).round(1).nunique() < D.MIN_DISTINCT]
+    return [D._ok(not thin, "Recipe inputs", f"below the floor: {thin}" if thin
+                  else f"all {len(RECIPE_FLOORS)} at or above their floor"),
+            D._ok(not flat, "Recipe scores vary", f"flat: {flat}" if flat else "breakout and improvement vary")]
 
 
 def score(workbook: bytes):
@@ -219,7 +238,8 @@ def gate(datasets, stocks, bench, scored, backfill: bool) -> dict:
     results = (D.check_tabs(datasets) + D.check_universe(stocks)
                + ([] if backfill else D.check_benchmarks(bench, FEED_GATE_INDICES))
                + D.check_coverage(stocks) + D.check_types(datasets) + D.check_taxonomy(stocks)
-               + D.check_identities(stocks) + D.check_engine(scored))
+               + D.check_identities(stocks) + D.check_engine(scored)
+               + ([] if backfill else check_recipe_inputs(scored)))
     tolerated = [r for r in results if backfill and r.status == "fail" and (r.name, r.detail) in BACKFILL_TOLERATED]
     failed = [r for r in results if r.status == "fail" and r not in tolerated]
     if failed:
@@ -279,6 +299,7 @@ def publish(workbook: bytes, title: str, session: str, feed: Path, *, origin: st
 # start before Prism.gs renames the sheet: it re-reads the name every minute for up to 15. A scheduled or
 # manual run never waits — it publishes what is there or exits.
 WAIT_SECONDS, WAIT_STEP = 900, 60
+TITLE_TRIES, TITLE_PAUSE = 3, 20            # a failed name read is read again (independent review M1, 2026-10-14)
 TRIGGERS = ("dispatch", "schedule", "manual")
 
 
@@ -306,6 +327,13 @@ def _new_session(title, have: list, now: datetime) -> str | None:
     if have and session < have[-1]:
         print(f"the sheet holds {session}, older than the newest published {have[-1]} — nothing to do")
         return None
+    # ONLY THE SESSION EXPECTED NOW IS PUBLISHED LIVE (2026-10-14, independent review I1). Prism.gs certifies a sheet
+    # only by renaming it after a complete, sane ingest; a partial ingest, a failed rename or a BUSY run keeps the OLD
+    # name over new data, and when that old session was never published (a refused holiday copy, say) it went out
+    # under the wrong date. A missed session belongs to --backfill, never to the live path.
+    if date.fromisoformat(session) < expected_session(now):
+        raise FeedError(f"the sheet holds {session}, but the session expected now is {expected_session(now)}: an "
+                        f"ingest that did not finish keeps the old name over new data, so it is never published live")
     if date.fromisoformat(session) > expected_session(now):
         raise FeedError(f"the sheet claims {session}, ahead of the newest possible session "
                         f"{expected_session(now)}")
@@ -325,17 +353,33 @@ def _in_market_hours(now: datetime) -> bool:
     return t.weekday() < 5 and _MARKET_OPEN <= (t.hour, t.minute) < _DATA_READY
 
 
+def _title(sheet_id: str, sleep) -> str | None:
+    """The sheet's name, read up to TITLE_TRIES times: one network blip used to fail the whole run."""
+    for attempt in range(TITLE_TRIES):
+        title = fetch_sheet_title(sheet_id)
+        if title or attempt == TITLE_TRIES - 1:
+            return title
+        sleep(TITLE_PAUSE)
+
+
+def _not_renamed(title, have: list, now: datetime) -> bool:
+    """A dispatch can land before Prism.gs renames the sheet: its name is still a published session, or older than
+    the session expected now (the day after a refused copy the old name is unpublished, and the rename still comes)."""
+    s = _session(title)
+    return s is not None and (s in have or date.fromisoformat(s) < expected_session(now))
+
+
 def run_live(sheet_id: str, feed: Path, *, trigger: str, now: datetime | None = None,
              sleep=time.sleep) -> str | None:
     """Publish the sheet's session if it is new. Returns the session written, or None."""
     now = now or datetime.now(IST)
     have = sessions_on_branch(feed)
-    title = fetch_sheet_title(sheet_id)
+    title = _title(sheet_id, sleep)
     waited = 0
-    while trigger == "dispatch" and _session(title) in have and waited < WAIT_SECONDS:
+    while trigger == "dispatch" and _not_renamed(title, have, now) and waited < WAIT_SECONDS:
         sleep(WAIT_STEP)
         waited += WAIT_STEP
-        title = fetch_sheet_title(sheet_id)
+        title = _title(sheet_id, sleep)
     if _new_session(title, have, now) is None:
         return None
     if _in_market_hours(now):
@@ -345,7 +389,7 @@ def run_live(sheet_id: str, feed: Path, *, trigger: str, now: datetime | None = 
         got, workbook = download(sheet_id)
         if got == title:
             break
-        title = fetch_sheet_title(sheet_id)
+        title = _title(sheet_id, sleep)
     else:
         raise FeedError("the sheet was renamed during the download twice — the next run retries")
     session = _new_session(title, have, now)
