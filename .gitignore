@@ -6,6 +6,8 @@ Other Resources/
 Stockscan-main (old version) (v1)/
 Stockscan-main(old version) (v2)/
 docs/
+# Daily copies of the private PRISM sheet ("PRISM YYYY-MM-DD.xlsx") — the live data itself, never public.
+Daily/
 
 # Local-only project files (repo contains ONLY: app.py, config.py, requirements.txt,
 # .gitignore, .devcontainer/, core/, ui/, tests/)
