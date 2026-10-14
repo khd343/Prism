@@ -14,6 +14,9 @@ kinds of text:
   guide_stamp() = its recipe fingerprint (the recipe and every score it reads) plus each setting the guide
   explains. tests/test_scan_guide.py fails while a stamp is stale, a scan has no guide, or a guide has no
   scan: an explanation never outlives its scan, the rule the scan record already follows.
+- A scan whose record is a STUDY (🌱) also says how that backtest was run — the data, the StockScans
+  columns, the formulas, the traps and how to run it again (GUIDES "backtest"), stamped with
+  study_stamp(): a re-run or any edit of the study block makes it be re-read.
 
 Numbers quoted in GUIDES are dated measurements; re-measure them, by the method noted beside them, before
 re-stamping. Pure: no Streamlit calls and no I/O (the records are passed in).
@@ -42,6 +45,12 @@ def guide_stamp(scan: dict) -> str:
     blob = json.dumps({"recipe": S.recipe_fingerprint(scan), "settings": settings}, sort_keys=True,
                       ensure_ascii=False)
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
+
+
+def study_stamp(study: dict) -> str:
+    """The study a backtest method was written for: every number and note of its record's study block, so a
+    re-run (or any edit) makes the method be re-read — 16 hex characters."""
+    return hashlib.sha256(json.dumps(study, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()[:16]
 
 
 # ── The explanations, one per scan ─────────────────────────────────────────────────────────────────────
@@ -192,6 +201,68 @@ GUIDES = {
             "The December 2026 plan fixes this recipe until its first 12-month unseen window has finished. The "
             "candidates being measured beside it can join only through their own measured test.",
         ],
+        # How the backtest behind the record was run (2026-10-14, the user's ask: "so in future we can check
+        # and do it again"). Verified against the 🌱 commit of 2026-10-07 (e4193c5), the record's own notes,
+        # tools/compounder_years.py and the 2026-10-03 code whose study it reproduced to the stock (median
+        # 3Y CAGR; doubled = 26%+ a year). Stamped with the study it describes (study_stamp): a re-run that
+        # changes the record makes this be re-read (tests/test_scan_guide.py).
+        backtest=dict(
+            written_for="b49a4a17fde1607a",
+            items=[
+                "**The data.** Two downloads joined on each company's StockScans id: PRISM's scored export of 6 "
+                "Oct 2026 — 2,712 stocks, whose yearly profit, sales and margin history are PRISM's own StockScans "
+                "columns — and a StockScans export of 7 Oct 2026 with every stock's returns.",
+                "**The StockScans columns.** On that data the profit-and-loss had rolled to FY26, so:",
+                "- **PAT**, **PAT 1 Year Back** … **PAT 5 Years Back** — yearly profit, FY26 back to FY21.",
+                "- **Revenue**, **Revenue 1 Year Back** … **Revenue 5 Years Back** — yearly sales, FY26 back to "
+                "FY21.",
+                "- **OPM 3 Years Back** and **OPM 5 Years Back** — operating margin in FY23 and FY21. PRISM's data "
+                "has no OPM 2 or 4 Years Back, so the FY22 and FY24 margins are missing.",
+                "- **Returns 1Y**, **Returns 2Y** and **Returns 3Y** — each a per-year rate over the last 1, 2 and 3 "
+                "years, not a total, adjusted for splits and bonuses (checked on 3 Oct 2026: HUL, Infosys, TCS and "
+                "Reliance reproduce their October 2023 prices).",
+                "- **Listed Days** — how long the stock has traded, so it counts only in windows it was listed for.",
+                "**The 3-year test, Oct 2023 → Oct 2026.** Each stock is judged on its numbers as they stood in FY23, "
+                "public by mid-2023:",
+                "- Profit growth FY22 → FY23 = PAT 3 Years Back ÷ PAT 4 Years Back − 1, and sales growth FY22 → FY23 "
+                "= Revenue 3 Years Back ÷ Revenue 4 Years Back − 1 — each only where both years were positive.",
+                "- Margin change FY21 → FY23 = OPM 3 Years Back − OPM 5 Years Back: two years, because the FY22 "
+                "margins are missing — the one way the backtest differs from the live one-year recipe.",
+                "- The recipe's own rules on those numbers: profit growth and margin change each in the top 40% of "
+                "the stocks that can be judged, ranked across the whole market, AND sales up more than 10% with "
+                "profit growing faster.",
+                "- The return is Returns 3Y. A group's yearly figure is its median stock's; \"doubled\" means a "
+                "per-year return of at least 26% (1.26³ ≈ 2). A stock counts if it has a 3-year return — listed "
+                "for 3+ years — and the numbers the recipe reads; the rest are the stocks that count and did not "
+                "match.",
+                "**The year-by-year test — three one-year windows**, each judged only on the annual results public "
+                "at its start:",
+                "- Oct 2023 → Oct 2024 on FY23 (PAT and Revenue 3 and 4 Years Back), Oct 2024 → Oct 2025 on FY24 "
+                "(2 and 3 Years Back), Oct 2025 → Oct 2026 on FY25 (1 and 2 Years Back).",
+                "- One year's return from the per-year rates, with R1, R2 and R3 = Returns 1Y, 2Y and 3Y as "
+                "fractions (12.5% = 0.125): 23→24 = (1 + R3)³ ÷ (1 + R2)² − 1; 24→25 = (1 + R2)² ÷ (1 + R1) − 1; "
+                "25→26 = R1. A stock counts only if its Listed Days cover the window's start: 3, 2 and 1 years.",
+                "- Margin change is net margin (PAT ÷ Revenue) against the year before, because the data has no "
+                "yearly operating-margin history.",
+                "- Points above the market are measured against the median of every stock with a return in that "
+                "window; the record also reads each stock against its own industry's median (industries of 5+ "
+                "stocks), within terciles of the previous year's return, and within terciles of start-year sales.",
+                "**Checked before use:** Returns 1Y, 2Y and 3Y are per-year rates. Never use Returns Vs Nifty 500 "
+                "3Y: it subtracts a 3-year total (Nifty 500 Returns 3Y) from a per-year rate.",
+                "**To run it again:**",
+                "- On one day, download PRISM's scored export and a StockScans export with Returns 1Y, 2Y and 3Y and "
+                "Listed Days for every stock — and keep both. The 7 Oct 2026 StockScans download was not kept, so "
+                "these exact numbers can be re-run but not re-checked.",
+                "- Map every Years Back column to its fiscal year on that day's data: a year later, each one has "
+                "moved by a year.",
+                "- The year-by-year windows are the local script tools/compounder_years.py (a PRISM export and a "
+                "folder of StockScans exports in, the year rows out as JSON); its year map is fixed to the 6 Oct "
+                "2026 data, so move it a year for each later download. The 3-year test's script was not kept; the "
+                "steps above rebuild it.",
+                "- The scan's own unseen record, above, is the real test: it is measured automatically from the "
+                "daily archive, with no backtest needed.",
+            ],
+        ),
     ),
 }
 
@@ -377,6 +448,8 @@ def scan_sections(scan: dict, rec=None, state: str = "unmeasured") -> list:
     """One scan's guide as (title, items) sections: its explanation (GUIDES) between the facts read from the
     code and from its record. `rec` / `state` are what ui_scans.record_state returns for it."""
     g = GUIDES[scan["key"]]
+    # A scan whose record is a study says, right under it, how that backtest was run (GUIDES "backtest").
+    method = [("How the backtest was run", list(g["backtest"]["items"]))] if g.get("backtest") else []
     return [
         ("At a glance", _glance(scan)),
         ("The idea", list(g["idea"])),
@@ -385,6 +458,7 @@ def scan_sections(scan: dict, rec=None, state: str = "unmeasured") -> list:
         ("How the table is ordered", _order(scan)),
         ("Its record", _record(scan, rec, state) + _unseen(scan, rec, state)
          + [f"**Compared with {_index(scan)}** — {g['benchmark_why']}"] + _order_check(scan, rec, state)),
+        *method,
         ("What it cannot see", list(g["limits"])
          + [f"The limits every scan shares — SME lots, surveillance, forecasts, data timing — are under "
             f"{GENERAL_TITLE} in 📖 Reference → 🎯 Scans."]),

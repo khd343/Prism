@@ -75,6 +75,58 @@ def test_the_stamp_follows_the_recipe_and_every_setting_the_guide_explains():
     assert re.fullmatch(r"[0-9a-f]{16}", base)
 
 
+# ── 1b. A backtest's method never outlives its study (2026-10-14, the user's ask: "so in future we can
+# check and do it again") ─────────────────────────────────────────────────────────────────────────────
+# The StockScans columns, formulas and traps the 🌱 study used — verified 2026-10-14 against the 🌱 commit
+# (e4193c5), the record's own notes, tools/compounder_years.py and the 2026-10-03 code it reproduced.
+_METHOD_WORDS = ("PAT 3 Years Back", "PAT 4 Years Back", "Revenue 3 Years Back", "Revenue 4 Years Back",
+                 "OPM 3 Years Back", "OPM 5 Years Back", "Returns 1Y", "Returns 2Y", "Returns 3Y", "Listed Days",
+                 "FY21 → FY23", "median", "26%", "(1 + R3)³ ÷ (1 + R2)² − 1", "(1 + R2)² ÷ (1 + R1) − 1",
+                 "Returns Vs Nifty 500 3Y", "per-year", "tools/compounder_years.py")
+
+
+def test_a_backtest_method_never_outlives_its_study():
+    recs = _RECORDS["scans"]
+    for key, g in G.GUIDES.items():
+        study, method = (recs.get(key) or {}).get("study"), g.get("backtest")
+        if study is None:
+            assert method is None, f"{key}: a backtest method, but its record holds no study"
+            continue
+        assert method and method.get("items"), f"{key}: its record is a study — say how it was run"
+        assert method["written_for"] == G.study_stamp(study), (
+            f"{key}: the study changed since its method was written. Re-read every line of GUIDES['{key}']"
+            f"['backtest'] against the new study, then set written_for={G.study_stamp(study)}")
+
+
+def test_the_study_stamp_follows_every_number_and_note():
+    study = _rec("compounder")["study"]
+    base = G.study_stamp(study)
+    assert re.fullmatch(r"[0-9a-f]{16}", base) and G.study_stamp(json.loads(json.dumps(study))) == base
+    assert G.study_stamp(dict(reversed(list(study.items())))) == base, (
+        "the weekly job may re-save the records with its keys in another order — that is not a new study")
+    for change in ({"n_match": 183}, {"source": "another export"}, {"definition_note": "other legs"},
+                   {"years": study["years"][:2]}):
+        assert G.study_stamp(dict(study, **change)) != base, change
+
+
+def test_the_method_names_every_column_formula_and_trap():
+    text = " ".join(G.GUIDES["compounder"]["backtest"]["items"])
+    missing = [w for w in _METHOD_WORDS if w not in text]
+    assert not missing, f"the 🌱 method never mentions {missing}"
+    assert G.GUIDES["compounder"]["backtest"]["items"][0].startswith("**"), "it opens on a named step"
+
+
+def test_the_method_shows_under_the_record_and_only_for_a_study():
+    comp = _guide("compounder", _rec("compounder"))
+    assert "How the backtest was run" in comp and comp.index("Its record") < comp.index("How the backtest was run")
+    assert comp.index("How the backtest was run") < comp.index("What it cannot see")
+    for key in ("playbook", "leaders"):
+        assert "How the backtest was run" not in _guide(key, _rec(key)), f"{key} is measured on snapshots"
+    t = _text(G.reference_html(_RECORDS, "Returns 2Y"))
+    assert "Compounder Candidates" in t and "How the backtest was run" in t, "the Reference search finds it"
+    assert "#### How the backtest was run" in G.guide_markdown(_RECORDS), "the download carries it"
+
+
 def test_every_guide_fills_every_part():
     for key, g in G.GUIDES.items():
         for part in G.PROSE_PARTS:
