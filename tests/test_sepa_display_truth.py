@@ -31,6 +31,7 @@ _SIX = ("sepa_trend_template", "sepa_adx_confirmed", "sepa_low_base",
 def _panel(**over) -> str:
     """render_sepa_radar for one stock — six green pillars and both gates met unless overridden."""
     base = {**{k: 1 for k in _SIX}, "sepa_vcp_dryup": 0, "sepa_score": 6, "sepa_pass": 1,
+            "sepa_above_50d": 1, "price_vs_50d_pct": 2.1,
             "sepa_near_high": 1, "sepa_mcap_ok": 1, "dist_52wh": 12.0, "market_cap": 1234.0,
             "vcp_volume_ratio": 0.9}
     base.update(over)
@@ -63,14 +64,27 @@ def test_the_t_box_names_the_five_checks_the_engine_counts():
 def test_also_required_states_each_gate_with_the_stocks_own_number():
     seen = _seen(_panel(sepa_pass=0, sepa_mcap_ok=0, market_cap=312.0))
     assert "SEPA Criteria Not Met" in seen
+    assert "✓ price above its 50-day average (2% above)" in seen
     assert "✓ within 25% of its 52-week high (12% below)" in seen
     assert "✗ market cap ₹500 Cr+ (₹312 Cr)" in seen
 
 
+def test_a_price_below_its_50_day_is_named_as_the_reason():
+    """Criterion 5 (2026-10-15): 15 of 58 certified stocks on the 14 Oct sheet sat 0.3-4.0% below their
+    50-day — six green boxes, and now the line says which rule they miss."""
+    seen = _seen(_panel(sepa_pass=0, sepa_above_50d=0, price_vs_50d_pct=-3.9))
+    assert "SEPA Criteria Not Met" in seen
+    assert "✗ price above its 50-day average (4% below)" in seen
+
+
 def test_also_required_reads_the_engines_flags_never_the_inputs():
-    """Pure display: the flag says no while the input says 10% below — the panel shows the flag's verdict."""
-    seen = _seen(_panel(sepa_near_high=0, dist_52wh=10.0, sepa_pass=0))
+    """Pure display: each flag says no while its input looks fine — the panel shows the flag's verdict
+    for every gate (a mutation that re-judged the 50-day number in the UI survived until this covered it)."""
+    seen = _seen(_panel(sepa_pass=0, sepa_above_50d=0, price_vs_50d_pct=2.1, sepa_near_high=0, dist_52wh=10.0,
+                        sepa_mcap_ok=0, market_cap=1234.0))
+    assert "✗ price above its 50-day average" in seen
     assert "✗ within 25% of its 52-week high" in seen
+    assert "✗ market cap ₹500 Cr+" in seen
 
 
 def test_a_printed_number_never_contradicts_its_mark():
@@ -79,11 +93,17 @@ def test_a_printed_number_never_contradicts_its_mark():
     assert "(₹499.6 Cr)" in seen, "₹499.6 Cr missed the ₹500 Cr floor, so it never prints as ₹500"
     seen = _seen(_panel(dist_52wh=0.2, market_cap=123456.0))
     assert "(at its high)" in seen and "(₹123,456 Cr)" in seen
+    assert "(0.04% above)" in _seen(_panel(price_vs_50d_pct=0.04)), "a ✓ never prints as 0% above"
+    assert "(0.04% below)" in _seen(_panel(sepa_pass=0, sepa_above_50d=0, price_vs_50d_pct=-0.04))
+    # Above vs below IS criterion 5, so the sign must survive the rounding: 0.3% below never reads as
+    # "at its average" (rounding -0.3 to 0 keeps "not above" but loses "below").
+    assert "(0.3% below)" in _seen(_panel(sepa_pass=0, sepa_above_50d=0, price_vs_50d_pct=-0.3))
 
 
 def test_missing_numbers_are_named_not_guessed():
-    seen = _seen(_panel(sepa_pass=0, sepa_near_high=0, dist_52wh=np.nan, sepa_mcap_ok=0, market_cap=np.nan))
-    assert seen.count("(not reported)") == 2
+    seen = _seen(_panel(sepa_pass=0, sepa_near_high=0, dist_52wh=np.nan, sepa_mcap_ok=0, market_cap=np.nan,
+                        sepa_above_50d=0, price_vs_50d_pct=np.nan))
+    assert seen.count("(not reported)") == 3
 
 
 def test_the_line_quotes_the_engines_own_lines():
@@ -113,6 +133,7 @@ def _ref(category: str, label: str) -> str:
 def test_the_reference_sepa_line_states_what_certification_checks():
     txt = _ref("⚡ Frameworks — Momentum & Growth", "⚡ SEPA Momentum")
     assert f"{TREND_TEMPLATE_MAX_BELOW_HIGH}%" in txt and f"₹{SEPA_MIN_MARKET_CAP_CR:,} Cr" in txt
+    assert "above its 50-day average" in txt, "criterion 5 is part of certification (2026-10-15)"
     assert f"{VCP_DRYUP_SHARE:.0%}" in txt and "not required" in txt
     assert "rising" not in txt, "no moving-average slope is in the data"
 

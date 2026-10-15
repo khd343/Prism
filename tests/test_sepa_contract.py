@@ -132,6 +132,7 @@ def _build_mock_sepa_row(**overrides) -> dict:
         "market_cap":        1000.0,   # pass: >= 500
         # scaffold
         "close_price":        250.0,
+        "sma_50d":            240.0,   # C5: price above its 50-day average (4.2% above)
         "name":               "TestSepaStock",
         "sector":             "Consumer",
         "is_financial":       False,
@@ -545,10 +546,22 @@ class TestSepaNonPillarGates:
         df = _run_sepa([_build_mock_sepa_row(market_cap=m) for m in (500.0, 499.9, np.nan)])
         assert df["sepa_mcap_ok"].tolist() == [1, 0, 0], ">= ₹500 Cr passes; a missing cap fails"
 
-    def test_certification_is_the_six_pillars_and_both_flags(self):
-        df = _run_sepa([_build_mock_sepa_row(d45_trend_structure=t, dist_52wh=d, market_cap=m)
-                        for t in (3, 5) for d in (10.0, 30.0) for m in (300.0, 900.0)])
+    def test_certification_is_the_six_pillars_and_all_three_flags(self):
+        df = _run_sepa([_build_mock_sepa_row(d45_trend_structure=t, dist_52wh=d, market_cap=m, sma_50d=s)
+                        for t in (3, 5) for d in (10.0, 30.0) for m in (300.0, 900.0) for s in (240.0, 260.0)])
         six = df[list(self._SIX)].eq(1).all(axis=1)
-        gates = df["sepa_near_high"].eq(1) & df["sepa_mcap_ok"].eq(1)
+        gates = df["sepa_near_high"].eq(1) & df["sepa_mcap_ok"].eq(1) & df["sepa_above_50d"].eq(1)
         assert df["sepa_pass"].tolist() == (six & gates).astype(int).tolist()
-        assert int(df["sepa_pass"].sum()) == 1, "only trend 5 + 10% below the high + ₹900 Cr passes"
+        assert int(df["sepa_pass"].sum()) == 1, (
+            "only trend 5 + 10% below the high + ₹900 Cr + above the 50-day passes")
+
+    def test_criterion_5_is_the_price_above_its_50_day_average(self):
+        """Trend Template criterion 5 (added 2026-10-15): checkable and never checked — 15 of 58 certified
+        stocks on the 14 Oct sheet traded 0.3-4.0% below their 50-day. Equal is not above; a missing or
+        zero average is unverifiable, so it fails."""
+        df = _run_sepa([_build_mock_sepa_row(sma_50d=s) for s in (240.0, 250.0, 260.0, np.nan, 0.0)])
+        assert df["sepa_above_50d"].tolist() == [1, 0, 0, 0, 0]
+        assert df["sepa_pass"].tolist() == [1, 0, 0, 0, 0]
+        pct = df["price_vs_50d_pct"].tolist()
+        assert pct[0] == pytest.approx(25 / 6) and pct[1] == 0.0 and pct[2] == pytest.approx(-100 / 26)
+        assert np.isnan(pct[3]) and np.isnan(pct[4]), "no average, no number — never a made-up 0"

@@ -2728,7 +2728,7 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     #         Ch.5 (VCP). SEPA Trading Codex (India Edition).
     # Spec: docs/sepa_momentum_specs.json
     #
-    # sepa_pass  = 6 hard-gate pillars AND mcap >= 500 (stock qualifies for SEPA analysis)
+    # sepa_pass  = 6 hard-gate pillars AND criteria 5 + 7 AND mcap >= 500 (stock qualifies for SEPA analysis)
     # sepa_score = 7 pillars (sepa_vcp_dryup is score bonus — NOT hard gate, same as can_slim_vcp)
     # A stock with sepa_score=7 has both the quality AND the active VCP setup firing.
     # A stock with sepa_score=6 qualifies but the VCP isn't formed yet — add to watchlist.
@@ -2787,6 +2787,16 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     # reads the flags, never the inputs; the lines are config's, which the panel's words also read.
     df["sepa_near_high"] = (_dist_wh_sp <= TREND_TEMPLATE_MAX_BELOW_HIGH).astype(int)
     df["sepa_mcap_ok"]   = (_mcap_sp >= SEPA_MIN_MARKET_CAP_CR).astype(int)
+    # Trend Template criterion 5 (added 2026-10-15): the price above its 50-day average. Checkable, and
+    # never checked — d45 stacks the averages but never sets the PRICE against the 50-day — so on the
+    # 14 Oct sheet 15 of 58 "SEPA MOMENTUM CERTIFIED" stocks traded 0.3-4.0% below their 50-day: almost
+    # passing, which the codex calls a FAIL (the same doctrine that added criterion 7 above). The % is
+    # kept for the panel's "Also required" line and the flag is that % above zero — one number, one
+    # verdict. A missing or zero average is unverifiable, so it fails. Certified 58 → 43 that day.
+    _sma50_sp = df.get("sma_50d", _sp_nan)
+    df["price_vs_50d_pct"] = np.where(_sma50_sp > 0.0,
+                                      (df.get("close_price", _sp_nan) / _sma50_sp - 1.0) * 100.0, np.nan)
+    df["sepa_above_50d"] = (df["price_vs_50d_pct"] > 0.0).astype(int)
     fw_sepa = (
         (df["sepa_trend_template"] == 1) &
         (df["sepa_adx_confirmed"]  == 1) &
@@ -2794,6 +2804,7 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
         (df["sepa_rs_confirmed"]   == 1) &
         (df["sepa_earnings_fuel"]  == 1) &
         (df["sepa_institutional"]  == 1) &
+        (df["sepa_above_50d"]      == 1) &
         (df["sepa_near_high"]      == 1) &
         (df["sepa_mcap_ok"]        == 1)
     )

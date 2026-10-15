@@ -68,13 +68,14 @@ def _shown(value, dp: int = 0) -> float:
 
 
 def _same_side(raw: float, rule) -> str:
-    """`raw` printed with the fewest decimals (0-2) that leave `rule` as true or false as it is for the
-    raw value — the "real economic line" case in _shown's docstring, where precision is added rather
-    than the value moved. The ⏳ Consolidation Base card's lines are the engine's own: a 69.7% volume
-    ratio is a dry-up (below 70%), so it never prints as "70%"; 25.3% below the high missed the 25%
-    line, so it never prints as "25%"."""
+    """`raw` printed with the fewest decimals (0-2) whose `rule` gives the same answer as the raw value —
+    the "real economic line" case in _shown's docstring, where precision is added rather than the value
+    moved. The ⏳ Consolidation Base card's lines are the engine's own: a 69.7% volume ratio is a dry-up
+    (below 70%), so it never prints as "70%"; 25.3% below the high missed the 25% line, so it never
+    prints as "25%". `rule` may answer more than yes/no: a sign rule keeps above / at / below apart, so
+    a price 0.3% under its 50-day never prints as "0%" (2026-10-15)."""
     for dp in (0, 1, 2):
-        if bool(rule(round(raw, dp))) == bool(rule(raw)):
+        if rule(round(raw, dp)) == rule(raw):
             return f"{raw:.{dp}f}"
     return f"{raw:.3f}"
 
@@ -3201,17 +3202,25 @@ def render_sepa_radar(stock: pd.Series):
     hdr_color  = _SEPA_BLUE if s_pass else COLORS["text_muted"]
     status_msg = "SEPA MOMENTUM CERTIFIED" if s_pass else "SEPA Criteria Not Met"
 
-    # ── What certification also needs (2026-10-15): criterion 7 and the ₹500 Cr floor gate the pass but
-    # have no pillar box, so six green boxes could read "Criteria Not Met" with nothing saying why (9 stocks
-    # on the 14 Oct sheet). ✓/✗ are the engine's flags (sepa_near_high / sepa_mcap_ok), never re-judged
-    # here; the stock's own numbers sit beside them, each printed on its mark's side of the line. Hidden on
-    # a frame scored before the flags existed: never a ✗ for a gate that was not measured.
+    # ── What certification also needs (2026-10-15): criteria 5 and 7 and the ₹500 Cr floor gate the pass
+    # but have no pillar box, so six green boxes could read "Criteria Not Met" with nothing saying why
+    # (9 stocks on the 14 Oct sheet, 24 once criterion 5 joined). ✓/✗ are the engine's flags
+    # (sepa_above_50d / sepa_near_high / sepa_mcap_ok), never re-judged here; the stock's own numbers sit
+    # beside them, each printed on its mark's side of the line. Hidden on a frame scored before the flags
+    # existed: never a ✗ for a gate that was not measured.
     _also_html = ""
-    if all(k in stock.index for k in ("sepa_near_high", "sepa_mcap_ok")):
+    if all(k in stock.index for k in ("sepa_above_50d", "sepa_near_high", "sepa_mcap_ok")):
         def _gate(ok: bool, words: str, number: str) -> str:
             mark, clr = ("✓", "#3fb950") if ok else ("✗", "#f85149")
             return (f'<span style="color:{clr};font-weight:800;">{mark}</span> {_esc(words)} '
                     f'<span style="color:#6e7681;">({_esc(number)})</span>')
+        _p50 = stock.get("price_vs_50d_pct")
+        if pd.isna(_p50):
+            _p50_txt = "not reported"
+        else:
+            _p50_s = _same_side(float(_p50), lambda v: (v > 0) - (v < 0))     # above / at / below
+            _p50_txt = (f"{_p50_s}% above" if float(_p50_s) > 0 else
+                        f"{_p50_s.lstrip('-')}% below" if float(_p50_s) < 0 else "at its average")
         _d52 = stock.get("dist_52wh")
         if pd.isna(_d52):
             _d52_txt = "not reported"
@@ -3226,6 +3235,8 @@ def render_sepa_radar(stock: pd.Series):
             _mc_txt = f"₹{float(_mc):,.{len(_mc_s.partition('.')[2])}f} Cr"
         _also_html = (
             '<div style="font-size:0.68rem;color:#8b949e;margin-top:4px;">Also required: '
+            + _gate(int(_g(stock, "sepa_above_50d", 0)) == 1, "price above its 50-day average", _p50_txt)
+            + " · "
             + _gate(int(_g(stock, "sepa_near_high", 0)) == 1,
                     f"within {TREND_TEMPLATE_MAX_BELOW_HIGH}% of its 52-week high", _d52_txt)
             + " · "
