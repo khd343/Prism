@@ -11,10 +11,10 @@ core/scoring_engine.py, and ui/ui_tearsheet.py are in perfect alignment.
   R — sepa_rs_confirmed    (crs_aligned == 1)                  HARD_GATE
   E — sepa_earnings_fuel   (eps>=25 & rev>=20 & roe>=17)       HARD_GATE
   I — sepa_institutional   (change_fii_lq>0 OR change_dii_lq>0) HARD_GATE
-  V — sepa_vcp_dryup       (vol_sma_10d < vol_sma_50d)         SCORE_BONUS (not in pass)
+  V — sepa_vcp_dryup       (vol_sma_10d < 70% of vol_sma_50d)  SCORE_BONUS (not in pass)
 
 Key invariants:
-  • sepa_pass = 6 hard gates AND market_cap >= 500
+  • sepa_pass = 6 hard gates AND sepa_near_high (Trend Template C7) AND sepa_mcap_ok (>= ₹500 Cr)
   • sepa_score = 7 pillars (incl. VCP bonus); range 0-7
   • sepa_pass==1  ⇒  sepa_score in {6, 7}   (VCP is the only optional point)
   • sepa_score==7 does NOT guarantee sepa_pass (mcap gate may fail)
@@ -522,3 +522,33 @@ class TestSepaTokenBoundary:
         tokens = re.findall(r'np\.where\([^,]+,\s*"([^"|]+)\|"', se_source)
         sepa_like = [t for t in tokens if "SEPA Momentum" in t and t != "SEPA Momentum"]
         assert not sepa_like, f"Token collision with 'SEPA Momentum': {sepa_like}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TestSepaNonPillarGates (2026-10-15) — certification's gates that have no pillar box
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TestSepaNonPillarGates:
+    """Certification also needs Trend Template criterion 7 (within 25% of the 52-week high) and the
+    ₹500 Cr floor, and no pillar box shows either: on the 14 Oct sheet 9 stocks showed six green boxes
+    and "Criteria Not Met" with nothing saying why. The engine writes each as a flag the SEPA panel
+    reads — never re-judges."""
+
+    _SIX = ("sepa_trend_template", "sepa_adx_confirmed", "sepa_low_base",
+            "sepa_rs_confirmed", "sepa_earnings_fuel", "sepa_institutional")
+
+    def test_near_high_flag_is_criterion_7_inclusive(self):
+        df = _run_sepa([_build_mock_sepa_row(dist_52wh=d) for d in (25.0, 25.01, np.nan)])
+        assert df["sepa_near_high"].tolist() == [1, 0, 0], "<= 25% passes; a missing distance fails"
+
+    def test_market_cap_flag_is_the_floor_inclusive(self):
+        df = _run_sepa([_build_mock_sepa_row(market_cap=m) for m in (500.0, 499.9, np.nan)])
+        assert df["sepa_mcap_ok"].tolist() == [1, 0, 0], ">= ₹500 Cr passes; a missing cap fails"
+
+    def test_certification_is_the_six_pillars_and_both_flags(self):
+        df = _run_sepa([_build_mock_sepa_row(d45_trend_structure=t, dist_52wh=d, market_cap=m)
+                        for t in (3, 5) for d in (10.0, 30.0) for m in (300.0, 900.0)])
+        six = df[list(self._SIX)].eq(1).all(axis=1)
+        gates = df["sepa_near_high"].eq(1) & df["sepa_mcap_ok"].eq(1)
+        assert df["sepa_pass"].tolist() == (six & gates).astype(int).tolist()
+        assert int(df["sepa_pass"].sum()) == 1, "only trend 5 + 10% below the high + ₹900 Cr passes"

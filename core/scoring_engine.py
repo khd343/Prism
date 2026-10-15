@@ -22,7 +22,7 @@ from config import (
     MASTER_PROFILES, ANALYSIS_MODES, DEFAULT_ANALYSIS_MODE,
     REGIME_ADJUSTMENTS, REGIME_DRIVES_SCORING, get_adaptive_weights,
     EPOCH2_REINVESTMENT, EPOCH3_TAXONOMY, EPOCH4_SQGLP, EPOCH5_MODERN, EPOCH35_UNUSUAL_BILLIONAIRES,
-    COST_OF_EQUITY,
+    COST_OF_EQUITY, TREND_TEMPLATE_MAX_BELOW_HIGH, SEPA_MIN_MARKET_CAP_CR,
 )
 
 
@@ -2782,6 +2782,11 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     # a stock 40% below its high could pass). fillna(999): missing 52WH distance →
     # C7 unverifiable → conservative fail. Non-pillar hard gate, same as the mcap floor.
     _dist_wh_sp = df.get("dist_52wh", _sp_nan).fillna(999)
+    # Both non-pillar gates as flags (2026-10-15), so the SEPA panel can say WHY six green pillars still
+    # read "Criteria Not Met" — 9 stocks on the 14 Oct sheet, nothing on screen explaining it. The panel
+    # reads the flags, never the inputs; the lines are config's, which the panel's words also read.
+    df["sepa_near_high"] = (_dist_wh_sp <= TREND_TEMPLATE_MAX_BELOW_HIGH).astype(int)
+    df["sepa_mcap_ok"]   = (_mcap_sp >= SEPA_MIN_MARKET_CAP_CR).astype(int)
     fw_sepa = (
         (df["sepa_trend_template"] == 1) &
         (df["sepa_adx_confirmed"]  == 1) &
@@ -2789,8 +2794,8 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
         (df["sepa_rs_confirmed"]   == 1) &
         (df["sepa_earnings_fuel"]  == 1) &
         (df["sepa_institutional"]  == 1) &
-        (_dist_wh_sp <= 25) &
-        (_mcap_sp >= 500)
+        (df["sepa_near_high"]      == 1) &
+        (df["sepa_mcap_ok"]        == 1)
     )
     df["sepa_pass"] = fw_sepa.astype(int)
 

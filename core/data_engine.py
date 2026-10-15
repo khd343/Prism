@@ -18,7 +18,7 @@ from config import (CSV_FILES, MCAP_TIERS,
                     COST_OF_EQUITY, INDIA_GSEC_YIELD,
                     EPOCH3_TAXONOMY, EPOCH5_MODERN, CONSISTENT_SECTORS,
                     PRELISTING_BASELINE_DAYS, STALE_RESULT_DAYS, BENCHMARK_INDICES,
-                    _vintage_sort_key, newer_vintage)
+                    TREND_TEMPLATE_MAX_BELOW_HIGH, _vintage_sort_key, newer_vintage)
 from core.cyclicality_map import INDUSTRY_TIER, SECTOR_TIER_FALLBACK, TIER_LABELS
 from core.taxonomy import canonicalize_taxonomy
 
@@ -696,7 +696,8 @@ def _collapse_dual_listings(df: pd.DataFrame) -> pd.DataFrame:
 # The card's small print said "10D < 50D" for months after the engine moved to 70%; reading the
 # constants keeps the words and the rule one thing (tests/test_consolidation_base.py).
 VCP_DRYUP_SHARE = 0.70          # volume "dries up": the 10-day average below 70% of the 50-day
-VCP_SETUP_MAX_BELOW_HIGH = 25   # % below the 52-week high: Minervini's Trend Template criterion 7
+# (The ⭐ setup's other line — within 25% of the 52-week high — is config.TREND_TEMPLATE_MAX_BELOW_HIGH,
+# shared with the SEPA certification gate: one criterion 7 for both.)
 # The states compute_derived_signals writes to `consolidation_base`, in reading order ("" = the volume
 # averages are missing, the sidebar's ❔ Unknown). ui_reference_data.py explains each one.
 CONSOLIDATION_BASE_LABELS = ("⭐ VCP Setup", "💤 Drying Up", "⚪ Normal Volume")
@@ -2864,7 +2865,8 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # intra-stage events from Weinstein (Secrets…) and Grimes (Art & Science of TA), each graded by
     # Grimes' statistical confidence (continuation = edge; termination = low-edge caution):
     #   ↩️ Pullback  HIGH edge (trend continuation): Stage-2 dip below 50D, still above 30W MA, on
-    #               VOLUME DRY-UP (vol_sma_10d < vol_sma_50d — the CLEAN ladder). Grimes' verified edge.
+    #               LIGHTER VOLUME (vol_sma_10d < vol_sma_50d — the CLEAN ladder; not the 70% VCP dry-up of
+    #               ⏳ Consolidation Base, so the Reference says "lighter volume"). Grimes' verified edge.
     #   🚀 Breakout with-trend edge: Stage-2 within 3% of the 52W high, NOT extended (≤1.35× 30W), on
     #               VOLUME EXPANSION (raw Volume ≥ 1.5× 50D avg — book-faithful). NOTE: raw Volume is
     #               ~8× source-deflated today, so this UNDER-fires until the source column is fixed; it
@@ -2927,7 +2929,7 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # A missing stage, high or stop leaves a dry-up 💤: unverifiable is not passed. The narrowing price
     # swings that complete a VCP need a chart; nothing here sees them. Never scored (tested).
     _cb_dry = df["vcp_volume_dryup"] == 1
-    _cb_setup = (_cb_dry & _t_up & (_t_d52 <= VCP_SETUP_MAX_BELOW_HIGH)
+    _cb_setup = (_cb_dry & _t_up & (_t_d52 <= TREND_TEMPLATE_MAX_BELOW_HIGH)
                  & (df.get("dist_to_vstop", pd.Series(np.nan, index=df.index)) >= 0))
     df["consolidation_base"] = np.select(
         [_cb_setup, _cb_dry, df["vcp_volume_ratio"].notna()],

@@ -311,7 +311,8 @@ def test_every_explanation_quotes_the_engines_own_lines():
     """The card's old small print said "10D < 50D" months after the engine moved to 70% — the drift this
     pins shut: the sidebar help, the card's tip and the Reference entry must state the engine's lines."""
     from ui.ui_reference_data import CONCEPT_REFERENCE
-    dry, high = f"{DE.VCP_DRYUP_SHARE:.0%}", f"{DE.VCP_SETUP_MAX_BELOW_HIGH}%"
+    from config import TREND_TEMPLATE_MAX_BELOW_HIGH        # one line for criterion 7, shared with SEPA
+    dry, high = f"{DE.VCP_DRYUP_SHARE:.0%}", f"{TREND_TEMPLATE_MAX_BELOW_HIGH}%"
     texts = {
         "sidebar help": _sidebar().multiselect(key="sb_consolbase").help,
         "card tip": _card(consolidation_base="⭐ VCP Setup", vcp_volume_ratio=0.49, **_STAGE2),

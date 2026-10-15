@@ -1000,6 +1000,17 @@ HIGH_AGE_ZONES = {
 # NaN → default 50 (neutral) — missing data never penalises
 
 # ═══════════════════════════════════════════════════════════════
+# 9c. MINERVINI LINES MORE THAN ONE MODULE READS (2026-10-15)
+# ═══════════════════════════════════════════════════════════════
+# One definition each: the engine applies them and every screen that states them reads them, so a
+# retuned line cannot leave stale words behind (the SEPA panel said "10D < 50D" for months after the
+# dry-up moved to 70%). Trend Template criterion 7: within this % of the 52-week high — the SEPA
+# certification gate and the ⏳ Consolidation Base ⭐ setup both apply it.
+TREND_TEMPLATE_MAX_BELOW_HIGH = 25
+# SEPA's India market-cap floor (₹ Cr) for certification.
+SEPA_MIN_MARKET_CAP_CR = 500
+
+# ═══════════════════════════════════════════════════════════════
 # 10. UI CONFIGURATION
 # ═══════════════════════════════════════════════════════════════
 UI = {

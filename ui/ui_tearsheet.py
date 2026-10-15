@@ -15,7 +15,7 @@ import numpy as np
 import html as _html
 from config import (COLORS, CONVICTION_TIERS, TIER_COLORS, FORENSIC_MAX_FLAGS,
                     FRAMEWORK_CATEGORIES, MASTER_PROFILES, INDIA_GSEC_YIELD, COST_OF_EQUITY,
-                    PRELISTING_BASELINE_DAYS)
+                    PRELISTING_BASELINE_DAYS, TREND_TEMPLATE_MAX_BELOW_HIGH, SEPA_MIN_MARKET_CAP_CR)
 # Single source of truth for the "?" help chip lives in ui_components (which owns the .ts-help CSS).
 # Re-imported here so this module's renderers AND existing `from ui.ui_tearsheet import ...` callers
 # (the scanner, the tests) resolve against the SAME objects — one definition, zero drift.
@@ -26,7 +26,7 @@ from ui.ui_liquidity import trade_line
 # which is exactly how the ">75d / >120d" string below got stranded (see the handler's comment).
 from core.forensic_engine import _SECTOR_DSO_THRESHOLDS, _DEFAULT_DSO_THRESHOLD
 # Same rule for the ⏳ Consolidation Base card and the SEPA panel's V box: the engine's lines and labels.
-from core.data_engine import CONSOLIDATION_BASE_LABELS, VCP_DRYUP_SHARE, VCP_SETUP_MAX_BELOW_HIGH
+from core.data_engine import CONSOLIDATION_BASE_LABELS, VCP_DRYUP_SHARE
 
 
 # ─── Display Utilities ──────────────────────────────────────────────────────
@@ -1252,7 +1252,7 @@ _FW_IDEA = {
     "Quality Compounder":     "The asset-light, cash-generative quality business — low capital intensity, strong free cash flow, high returns.",
     # ⚡ Technical momentum & growth sieves
     "CAN SLIM":               "O'Neil's screen for an elite grower breaking out with institutional backing — all seven criteria, very rare to pass.",
-    "SEPA Momentum":          "Minervini's Specific Entry Point Analysis — buy strength at a low-risk pivot after a volatility contraction.",
+    "SEPA Momentum":          "Minervini's Specific Entry Point Analysis — buy strength in a Stage 2 uptrend near its highs. A volatility contraction (VCP) is his ideal entry; here it adds to the score but is not required.",
     "Quality Momentum":       "Gray's strongest, smoothest uptrends among quality names — top-20% relative strength with a governance guard.",
     "Lynch Dream":            "Peter Lynch's fast grower at a fair price — growth-at-a-reasonable-price the big funds haven't crowded yet.",
     "EP Improver":            "28th WCS turnaround stage: economic profit still negative but climbing, with RoE, ROCE and margins all turning. Speculative by the study's own word.",
@@ -3178,7 +3178,8 @@ def render_sepa_radar(stock: pd.Series):
     hard_pillars = [
         ("T", "Trend Template",
          int(_g(stock, "sepa_trend_template", 0)) == 1,
-         "Stage 2 MA Stacking: 50D > 150D > 200D all rising (C1–C5)"),
+         "4 of 5 trend checks: price above its 30-week & 200-day averages, 30-week above 200-day, "
+         "50-day above both, price above its stop"),
         ("A", "ADX Confirmed",
          int(_g(stock, "sepa_adx_confirmed", 0)) == 1,
          "Trend Strength Gate: ADX 14W ≥ 20 — confirmed directional trend"),
@@ -3200,6 +3201,38 @@ def render_sepa_radar(stock: pd.Series):
     hdr_color  = _SEPA_BLUE if s_pass else COLORS["text_muted"]
     status_msg = "SEPA MOMENTUM CERTIFIED" if s_pass else "SEPA Criteria Not Met"
 
+    # ── What certification also needs (2026-10-15): criterion 7 and the ₹500 Cr floor gate the pass but
+    # have no pillar box, so six green boxes could read "Criteria Not Met" with nothing saying why (9 stocks
+    # on the 14 Oct sheet). ✓/✗ are the engine's flags (sepa_near_high / sepa_mcap_ok), never re-judged
+    # here; the stock's own numbers sit beside them, each printed on its mark's side of the line. Hidden on
+    # a frame scored before the flags existed: never a ✗ for a gate that was not measured.
+    _also_html = ""
+    if all(k in stock.index for k in ("sepa_near_high", "sepa_mcap_ok")):
+        def _gate(ok: bool, words: str, number: str) -> str:
+            mark, clr = ("✓", "#3fb950") if ok else ("✗", "#f85149")
+            return (f'<span style="color:{clr};font-weight:800;">{mark}</span> {_esc(words)} '
+                    f'<span style="color:#6e7681;">({_esc(number)})</span>')
+        _d52 = stock.get("dist_52wh")
+        if pd.isna(_d52):
+            _d52_txt = "not reported"
+        else:
+            _far = _same_side(float(_d52), lambda v: v <= TREND_TEMPLATE_MAX_BELOW_HIGH)
+            _d52_txt = "at its high" if float(_far) <= 0 else f"{_far}% below"
+        _mc = stock.get("market_cap")
+        if pd.isna(_mc):
+            _mc_txt = "not reported"
+        else:
+            _mc_s = _same_side(float(_mc), lambda v: v >= SEPA_MIN_MARKET_CAP_CR)
+            _mc_txt = f"₹{float(_mc):,.{len(_mc_s.partition('.')[2])}f} Cr"
+        _also_html = (
+            '<div style="font-size:0.68rem;color:#8b949e;margin-top:4px;">Also required: '
+            + _gate(int(_g(stock, "sepa_near_high", 0)) == 1,
+                    f"within {TREND_TEMPLATE_MAX_BELOW_HIGH}% of its 52-week high", _d52_txt)
+            + " · "
+            + _gate(int(_g(stock, "sepa_mcap_ok", 0)) == 1,
+                    f"market cap ₹{SEPA_MIN_MARKET_CAP_CR:,} Cr+", _mc_txt)
+            + "</div>")
+
     st.markdown(f"""
     <div style="background:linear-gradient(135deg,#0d1117 0%,#0a1422 100%);
                 border:1px solid {COLORS['border']};border-top:3px solid {hdr_color};
@@ -3211,7 +3244,7 @@ def render_sepa_radar(stock: pd.Series):
           </div>
           <div style="font-size:0.72rem;color:#8b949e;margin-top:2px;">
             Status: <strong style="color:{hdr_color};">{_esc(status_msg)}</strong>
-          </div>
+          </div>{_also_html}
         </div>
         <div style="text-align:right;">
           <div style="font-size:1.5rem;font-weight:900;color:{hdr_color};line-height:1.0;">
@@ -4321,7 +4354,7 @@ def render_valuation_inversion_and_sizing_cockpit(stock: pd.Series):
         _cb_facts.append(_cb_stage.group(0) if _cb_stage else "stage unknown")
         _cb_d52 = stock.get("dist_52wh")
         if pd.notna(_cb_d52):
-            _cb_far = _same_side(float(_cb_d52), lambda v: v <= VCP_SETUP_MAX_BELOW_HIGH)
+            _cb_far = _same_side(float(_cb_d52), lambda v: v <= TREND_TEMPLATE_MAX_BELOW_HIGH)
             _cb_facts.append("at its 52-week high" if float(_cb_far) <= 0
                              else f"{_cb_far}% below its 52-week high")
         _cb_stop = stock.get("dist_to_vstop")
@@ -4390,7 +4423,7 @@ def render_valuation_inversion_and_sizing_cockpit(stock: pd.Series):
             "⏳ Consolidation Base", _cb or "N/A", _cb_sub, _cb_clr, COLORS["text_muted"],
             tip=(f"Minervini's Volatility Contraction Pattern, as far as one day's data can see it. "
                  f"⭐ VCP Setup: the 10-day average volume below {VCP_DRYUP_SHARE:.0%} of the 50-day "
-                 f"(supply drying up) in a 📈 Stage 2 stock within {VCP_SETUP_MAX_BELOW_HIGH}% of its "
+                 f"(supply drying up) in a 📈 Stage 2 stock within {TREND_TEMPLATE_MAX_BELOW_HIGH}% of its "
                  f"52-week high and not below its stop. 💤 Drying Up: the same dry-up anywhere else — "
                  f"quiet alone is not a base. ⚪ Normal Volume: no dry-up. The narrowing price swings "
                  f"that complete a VCP need a chart. The sidebar's ⏳ Consolidation Base filter offers "

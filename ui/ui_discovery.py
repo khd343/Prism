@@ -11,9 +11,8 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from config import COLORS, FRAMEWORK_CATEGORIES, STALE_RESULT_DAYS
-from core.data_engine import (CONSOLIDATION_BASE_LABELS, VCP_DRYUP_SHARE, VCP_SETUP_MAX_BELOW_HIGH,
-                              traded_value_cr)
+from config import COLORS, FRAMEWORK_CATEGORIES, STALE_RESULT_DAYS, TREND_TEMPLATE_MAX_BELOW_HIGH
+from core.data_engine import CONSOLIDATION_BASE_LABELS, VCP_DRYUP_SHARE, traded_value_cr
 from ui.ui_liquidity import LIQUIDITY_STEPS, ORDER_SHARE, SURVEILLANCE_NOTE, order_guide, step_label, step_value
 
 
@@ -881,7 +880,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                 "⏳ Consolidation Base", _cb_opts, "sb_consolbase", default=[],
                 help=(f"The Tear-Sheet's ⏳ Consolidation Base card. ⭐ VCP Setup: the 10-day average "
                       f"volume below {VCP_DRYUP_SHARE:.0%} of the 50-day, in a 📈 Stage 2 stock within "
-                      f"{VCP_SETUP_MAX_BELOW_HIGH}% of its 52-week high and not below its stop. 💤 Drying "
+                      f"{TREND_TEMPLATE_MAX_BELOW_HIGH}% of its 52-week high and not below its stop. 💤 Drying "
                       f"Up: the same dry-up anywhere else. ⚪ Normal Volume: no dry-up. Pick ⭐ and 💤 "
                       f"together for every dry-up. The narrowing price swings of a true VCP need a chart. "
                       f"Empty = all stocks."),
