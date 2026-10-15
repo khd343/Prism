@@ -34,8 +34,8 @@ jobs:
       # THE FEED'S CODE IS PINNED (2026-10-13) for Kite's frozen Playbook test, 12 Oct - 20 Nov 2026 (Kite Algo
       # docs/playbook-test-2026-11.md): a commit to main no longer reaches the list, as 2a87ac4 did. The manifest
       # records this commit. A feed fix moves it in a commit of its own, recorded on that page; unpin after the
-      # read-out.
-      FEED_CODE_SHA: 8f86933c19c0a6a1b4309d46bac904c7a609530a
+      # read-out. Moved 2026-10-15 from 8f86933 to 68b38e0 (review I1/M1/I4): 23 saved days rebuilt byte-identical.
+      FEED_CODE_SHA: 68b38e0b5cfcf52345902a35ddd7bbefc4247e05
     steps:
       - uses: actions/checkout@v7
         with:
