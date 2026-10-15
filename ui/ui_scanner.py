@@ -78,7 +78,7 @@ _SCANNER_HEADER_TIPS = {
     "breakout_score":         _GLOSSARY["Breakout Scr"],
     "vstop_green":            _GLOSSARY["VSTOP Green"],
     "gate_pass":              "Whether the stock clears ALL the engine's hard quality gates (e.g. ROCE, growth, positive-PAT floors).",
-    "tsunami_signal":         "A rare confluence flag — a quality breakout meeting institutional accumulation; fires for only a handful of stocks by design.",
+    "tsunami_signal":         "A rare confluence flag — a quality breakout meeting institutional accumulation; on most days no stock qualifies, by design.",
 }
 
 

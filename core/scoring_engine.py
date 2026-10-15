@@ -1524,6 +1524,10 @@ def detect_catalysts_and_tsunami(df: pd.DataFrame) -> pd.DataFrame:
     # candidates and quality ≥ 70 killed ALL of them — the signal was DEAD (0 of
     # 2107, permanently). At 65 (still ~top 15% of post-penalty quality) Tsunami
     # fires for ~2 stocks: rarest-signal design intent, alive.
+    # 2026-10-15: those ~12 candidates were counted while vstop_fresh read a count of
+    # WEEKS as days ("fresh" meant 30 weeks). With a true fresh flip (≤ 4 weekly bars)
+    # Tsunami fired on 1 of 6 vintages Jun–Oct 2026 — rare, not unreachable;
+    # tools/verify.py checks it stays reachable.
     tsunami_conditions = (
         (df["gate_pass"] == 1) &
         (df.get("above_sma200", pd.Series(0, index=df.index)) == 1) &

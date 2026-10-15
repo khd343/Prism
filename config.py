@@ -366,13 +366,19 @@ RS_SIGNALS = {
     "crs_26w":          0.30,
 }
 
+# "Last VSTOP Change 14W 2.5" (last_vstop_change) counts WEEKLY BARS since the V-Stop last flipped, not days:
+# measured 2026-10-15, from 5 Oct to 12 Oct it rose by exactly 1 for 2,445 of 2,710 stocks, and a new flip
+# reads 1. "Fresh" = flipped within this many bars, the largest whole-week window inside the documented 30 days
+# (4 x 7 = 28; 5 x 7 = 35). Read as days, the old `<= 30` meant 30 WEEKS and fired for 75% of the market.
+VSTOP_FRESH_MAX_WEEKS = 4
+
 TREND_SIGNALS = {
     # above_sma200 moved FROM hard gate TO scoring signal.
     # Penalises stocks below 200D SMA continuously (−20 pts on trend score)
     # rather than eliminating them. Fundamental quality carries through corrections.
     "above_sma200":     0.20,   # Price > SMA 200D — trend direction (was hard gate)
     "vstop_green":      0.20,   # VSTOP 14W 2.5 = green (reduced: correlated with sma200)
-    "vstop_fresh":      0.15,   # last change ≤ 30 days (reduced)
+    "vstop_fresh":      0.15,   # flipped within VSTOP_FRESH_MAX_WEEKS weekly bars, ≤ 30 days (reduced)
     "adx_strong":       0.20,   # ADX 14W > 25 — trend strength (independent signal)
     "rsi_zone":         0.15,   # RSI 55-70 sweet spot
     "golden_cross":     0.10,   # recent golden cross — trend recovery signal

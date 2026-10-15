@@ -18,7 +18,7 @@ from config import (CSV_FILES, MCAP_TIERS,
                     COST_OF_EQUITY, INDIA_GSEC_YIELD,
                     EPOCH3_TAXONOMY, EPOCH5_MODERN, CONSISTENT_SECTORS,
                     PRELISTING_BASELINE_DAYS, STALE_RESULT_DAYS, BENCHMARK_INDICES,
-                    TREND_TEMPLATE_MAX_BELOW_HIGH, _vintage_sort_key, newer_vintage)
+                    TREND_TEMPLATE_MAX_BELOW_HIGH, VSTOP_FRESH_MAX_WEEKS, _vintage_sort_key, newer_vintage)
 from core.cyclicality_map import INDUSTRY_TIER, SECTOR_TIER_FALLBACK, TIER_LABELS
 from core.taxonomy import canonicalize_taxonomy
 
@@ -267,7 +267,7 @@ TECHNICAL_COLS = {
     "Close Price": "close_price",
     # PRIMARY TRIGGER (VSTOP 14W 2.5 — optimal timeframe + sensitivity)
     "VSTOP 14W 2.5": "vstop_value",
-    "Last VSTOP Change 14W 2.5": "last_vstop_change",
+    "Last VSTOP Change 14W 2.5": "last_vstop_change",   # WEEKLY BARS since the stop last flipped, not days
     # ── Mapped 2026-09-18, NOT YET WIRED (source sheet does not carry them yet) ────────────
     # Listed Days — the column docs/known-issues.md names as the reason the dilution IPO tier
     # "cannot be built": "There is no listing-date column, and history depth does not discriminate
@@ -1736,7 +1736,9 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # Re-fetch after in-place guard so local vars reflect any nullifications above.
     _vstop_t = df.get("vstop_value", pd.Series(np.nan, index=df.index))
 
-    df["vstop_fresh"] = np.where(_vstop_chg.notna(), (_vstop_chg <= 30).astype(int), 0)
+    # Fresh = the stop flipped within VSTOP_FRESH_MAX_WEEKS weekly bars (≤ 30 days). Until 2026-10-15 this read
+    # `<= 30` as days on a count of WEEKS ("within seven months", 75% of stocks); config.py has the measurement.
+    df["vstop_fresh"] = np.where(_vstop_chg.notna(), (_vstop_chg <= VSTOP_FRESH_MAX_WEEKS).astype(int), 0)
     df["above_sma200"] = (_close_t > _sma200d).astype(int)
     df["vstop_green"] = np.where(_vstop_t.notna(), (_close_t > _vstop_t).astype(int), 0)
 
