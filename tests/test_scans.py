@@ -1099,7 +1099,9 @@ def test_the_summary_reports_unseen_windows_once_they_exist():
                             dict(start="2026-10-31", end="2027-01-08", days=69, n=118, median_excess_pp=2.0,
                                  beat_pct=56)]
     h = S.card_summary_html(S.SCANS[0], 235, "measured", rec, False)
-    assert "ahead in 1 of 2 unseen windows (-1.4 to +2.0 pts)" in h and "pending" not in h
+    # Worded like the design-period line since 2026-10-15: "pts before costs", and after costs beside it
+    # whenever the windows carry the net reading (test_the_unseen_line_says_before_and_after_costs).
+    assert "ahead in 1 of 2 unseen windows: -1.4 to +2.0 pts before costs" in h and "pending" not in h
 
 
 def test_a_stale_or_unmeasured_summary_shows_no_numbers():
@@ -1286,7 +1288,7 @@ def test_the_unseen_lines_say_it_too():
     rec = _record()
     rec["out_of_sample"] = _unseen(None, None)                                 # both start 31 Oct: nested
     summ = _html.unescape(S.card_summary_html(S.SCANS[0], 235, "measured", rec, False))
-    assert "ahead in 2 of 2 unseen windows (+1.0 pts) · 1 non-overlapping" in summ
+    assert "ahead in 2 of 2 unseen windows: +1.0 pts before costs · 1 non-overlapping" in summ
     rec["out_of_sample"] = _unseen(_vs(5.0, 2.0), _vs(1.0, 3.5))
     summ = _html.unescape(S.card_summary_html(S.SCANS[0], 235, "measured", rec, False))
     assert "index fund in 1 of 2 windows (-2.5 to +3.0 pts) · 1 non-overlapping" in summ
@@ -1307,3 +1309,88 @@ def test_the_full_unseen_record_says_it_too():
     rec["out_of_sample"] = _unseen(None, None)
     full = _html.unescape(S.card_html(S.SCANS[0], 235, "measured", rec, selected=False, latest="03 Oct"))
     assert "the most trustworthy record · 1 non-overlapping" in full
+
+
+# ── The unseen record, ready for its first window (2026-10-15, the scan-records audit) ──────────────
+# Rehearsed on a real-shaped window before 25 Nov: an earlier recipe's windows must not count, a window still
+# running must not read as a result, and the fallback line (no index reading) must say after costs too —
+# the rehearsal read "ahead in 1 of 1 (+0.5 pts)" while after costs it was -0.5 with 45% beating.
+def _w(fp="fp", final=True, end="2026-11-28", ex=1.0, net=None):
+    d = dict(start="2026-10-31", end=end, days=28, n=120, median_excess_pp=ex, beat_pct=55, final=final)
+    if fp:
+        d["fingerprint"] = fp
+    if net is not None:
+        d["net"] = dict(min_cr=2.0, cost_pp=1.0, n=60, median_excess_pp=net, beat_pct=45)
+    return d
+
+
+def test_only_the_current_recipes_unseen_windows_are_read():
+    scan = S.SCANS[0]
+    fp = S.recipe_fingerprint(scan)
+    on_file = [_w(fp), _w("old"), _w(None)]
+    rec = {**_record(), "fingerprint": fp, "out_of_sample": list(on_file)}
+    state, got = S.record_state({"scans": {scan["key"]: rec}}, scan)
+    assert state == "measured" and got["out_of_sample"] == [_w(fp)]
+    assert got["out_of_sample_earlier"] == [_w("old"), _w(None)], "no stamp = unverifiable = not counted"
+    assert rec["out_of_sample"] == on_file, "the record on file is never edited"
+    _state, clean = S.record_state({"scans": {scan["key"]: {**rec, "out_of_sample": [_w(fp)]}}}, scan)
+    assert "out_of_sample_earlier" not in clean, "nothing to set aside, nothing added"
+
+
+def test_the_card_says_what_an_earlier_recipe_left_on_file():
+    earlier = [_w("old"), _w("old", end="2026-12-04", final=False)]
+    rec = {**_record(), "out_of_sample": [], "out_of_sample_earlier": earlier}
+    full = S.card_html(S.SCANS[0], 235, "measured", rec, selected=False, latest="03 Oct")
+    assert "2 unseen windows measured with an earlier recipe" in full and "not counted" in full
+    study = {**_study_record(), "out_of_sample": [], "out_of_sample_earlier": earlier[:1]}
+    full = S.card_html(_scan("compounder"), 320, "measured", study, selected=False, latest="03 Oct")
+    assert "1 unseen window measured with an earlier recipe" in full
+
+
+def test_a_running_window_reads_so_far_on_both_cards():
+    import html as _html
+    rec = _record()
+    rec["out_of_sample"] = [_w(final=True), _w(final=False, end="2026-12-04", ex=2.0)]
+    summ = _html.unescape(S.card_summary_html(S.SCANS[0], 235, "measured", rec, False))
+    full = _html.unescape(S.card_html(S.SCANS[0], 235, "measured", rec, selected=False, latest="03 Oct"))
+    assert "1 of them still running" in summ
+    assert "so far" in full and "re-measured each week" in full
+    rec["out_of_sample"] = [_w(final=False)]
+    summ = _html.unescape(S.card_summary_html(S.SCANS[0], 235, "measured", rec, False))
+    assert "still running, so far" in summ
+    rec["out_of_sample"] = [_w(final=True)]
+    summ = _html.unescape(S.card_summary_html(S.SCANS[0], 235, "measured", rec, False))
+    full = _html.unescape(S.card_html(S.SCANS[0], 235, "measured", rec, selected=False, latest="03 Oct"))
+    assert "running" not in summ and "so far" not in full, "a finished window is a result, said plainly"
+
+
+def test_a_so_far_label_keeps_the_bars_on_one_baseline():
+    # Bars stand on one line: a row with a window still running reserves the "so far" line under EVERY bar
+    # (blank under a finished one). Without it the running bar's column grew a line and stood higher — seen
+    # 2026-10-15 in the app at 1536px, its value and month 16px above its neighbour's. None running: no line.
+    import html as _html
+    col = '<div style="display:flex;flex-direction:column;'
+
+    def lines(ws):
+        return [chunk.count("<div") for chunk in S._bars(ws, S.COLORS, _html.escape, out_of_sample=True).split(col)[1:]]
+
+    mixed = lines([_w(final=True), _w(final=False, end="2026-12-04")])
+    assert len(mixed) == 2 and len(set(mixed)) == 1, mixed
+    finished = lines([_w(final=True), _w(final=True, end="2026-12-31")])
+    assert len(set(finished)) == 1 and finished[0] == mixed[0] - 1, "a finished row reserves no line"
+
+
+def test_the_unseen_line_says_before_and_after_costs():
+    import html as _html
+    rec = _record()
+    rec["out_of_sample"] = [_w(ex=0.5, net=-0.5)]
+    summ = _html.unescape(S.card_summary_html(S.SCANS[0], 235, "measured", rec, False))
+    assert "ahead in 1 of 1 unseen window: +0.5 pts before costs, -0.5 after costs" in summ
+
+
+def test_the_index_fund_line_says_still_running_too():
+    import html as _html
+    rec = _record()
+    rec["out_of_sample"] = [{**w, "final": False} for w in _unseen(_vs(5.0, 2.0))]
+    summ = _html.unescape(S.card_summary_html(S.SCANS[0], 235, "measured", rec, False))
+    assert "index fund in 1 of 1 window" in summ and "still running, so far" in summ

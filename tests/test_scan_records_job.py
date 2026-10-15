@@ -11,6 +11,7 @@ that the workflow is wired to do exactly this and nothing more.
 import json
 import os
 import sys
+from datetime import date
 from pathlib import Path
 
 import numpy as np
@@ -623,8 +624,9 @@ def test_the_job_never_remeasures_a_final_window(monkeypatch, on_file):
     toy = {"key": "toy", "emoji": "T", "name": "Toy", "mask": lambda d: d["flag"] == 1, "benchmark": "NSE:NIF500MO50"}
     monkeypatch.setattr(S, "SCANS", (toy,))
     monkeypatch.setattr(S, "recipe_fingerprint", lambda scan: "fp")
+    monkeypatch.setattr(J, "_today", lambda: date(2026, 12, 7))           # the archive is current on that day
     first = {"start": "2026-10-31", "end": "2026-11-28", "days": 28, "median_excess_pp": 42.0, "beat_pct": 61,
-             "n": 40, "final": True, "engine": "old"}                     # as measure_window writes, plus the stamp
+             "n": 40, "fingerprint": "fp", "final": True, "engine": "old"}   # as the job writes it
     monkeypatch.setattr(S, "load_records", lambda: {"version": S.RECORD_VERSION, "scans": {
         "toy": {"fingerprint": "fp", "windows": [], "out_of_sample": [first] if on_file else []}}})
     measured = []
@@ -666,6 +668,7 @@ def test_the_job_reads_the_indices_beside_each_copy_and_records_the_comparison(m
            "benchmark": "NSE:NIF500MO50"}
     monkeypatch.setattr(S, "SCANS", (toy,))
     monkeypatch.setattr(S, "recipe_fingerprint", lambda scan: "fp")
+    monkeypatch.setattr(J, "_today", lambda: date(2026, 12, 7))           # the archive is current on that day
     monkeypatch.setattr(S, "load_records", lambda: {"version": S.RECORD_VERSION,
                                                     "scans": {"toy": {"fingerprint": "fp", "windows": []}}})
     written = {}
@@ -679,3 +682,91 @@ def test_the_job_reads_the_indices_beside_each_copy_and_records_the_comparison(m
         assert w["vs_index"]["indices"]["NSE:NIF500MO50"] == pytest.approx(
             (lvl / 100.0 - 1.0) * 100 - S.FUND_FEE_PCT_YR * w["days"] / 365, abs=0.006)
         assert w["vs_index"]["portfolio_pp"] == pytest.approx(_MEAN - S.NET_COST_PP, abs=0.006)
+
+
+# ── 8. Every unseen window names the recipe it measured; a stalled archive is loud (2026-10-15) ────────
+# The audit found that a recipe change would have kept the old recipe's FINAL windows (keep_final, by design)
+# with nothing saying which recipe produced them, so a card would have counted two recipes as one record.
+# Each window now carries the recipe fingerprint it was measured with, "final" is final for THAT recipe, and
+# the cards read the current recipe's windows only (ui_scans.record_state). A new recipe's own unseen record
+# may only start after the windows it replaces — its designer has seen them. And an archive that stops taking
+# copies used to leave the job green every Monday while the record silently stopped growing.
+def _job_on_fake_archive(monkeypatch, records, today=date(2026, 12, 7), fp="fp", designed_on="2026-10-06"):
+    """main() on a fake archive (DATES) with one toy scan; returns (written, windows measured)."""
+    import ui.ui_movers as M
+    early, late = _liquid_frames()
+    stocks = {"2026-09-30": early, "2026-10-31": early, "2026-11-28": late, "2026-12-04": late}
+    monkeypatch.setattr(J, "load_market", lambda source, files, sid: (stocks[sid.removeprefix("id-")].copy(),
+                                                                       _bench({"NSE:NIF500MO50": 100.0})))
+    monkeypatch.setattr(J, "run_scoring_pipeline", lambda df: df)
+    monkeypatch.setattr(J, "engine_version", lambda: "new-engine")
+    monkeypatch.setattr(J, "_today", lambda: today)
+    monkeypatch.setattr(M, "load_index", lambda _id: pd.DataFrame(
+        {"vintage_date": DATES, "spreadsheet_id": [f"id-{d}" for d in DATES]}))
+    toy = {"key": "toy", "emoji": "T", "name": "Toy", "mask": lambda d: d["flag"] == 1,
+           "benchmark": "NSE:NIF500MO50", "designed_on": designed_on}
+    monkeypatch.setattr(S, "SCANS", (toy,))
+    monkeypatch.setattr(S, "recipe_fingerprint", lambda scan: fp)
+    monkeypatch.setattr(S, "load_records", lambda: records)
+    measured, written = [], {}
+    real = J.measure_window
+    monkeypatch.setattr(J, "measure_window", lambda *a, **k: measured.append((a[3], a[4])) or real(*a, **k))
+    monkeypatch.setattr(J, "write", lambda rec: written.update(rec))
+    monkeypatch.setenv("ARCHIVE_INDEX_SHEET_ID", "x" * 44)
+    J.main()
+    return written, measured
+
+
+def _records(oos, fp="fp"):
+    return {"version": S.RECORD_VERSION, "scans": {"toy": {"fingerprint": fp, "windows": [], "out_of_sample": oos}}}
+
+
+_OLD_FINAL = {"start": "2026-10-31", "end": "2026-11-28", "days": 28, "median_excess_pp": 5.0, "beat_pct": 60,
+              "n": 40, "fingerprint": "old", "final": True, "engine": "aaa"}
+
+
+def test_every_window_the_job_writes_names_the_recipe_it_measured(monkeypatch):
+    written, _ = _job_on_fake_archive(monkeypatch, _records([]))
+    oos = written["scans"]["toy"]["out_of_sample"]
+    assert oos and all(w["fingerprint"] == "fp" for w in oos), oos
+
+
+def test_a_final_window_is_final_for_its_own_recipe_only():
+    fresh = [{"start": "2026-10-31", "end": "2026-11-28", "median_excess_pp": 9.9, "fingerprint": "new"}]
+    out = J.keep_final([_OLD_FINAL], fresh, DATES, "bbb")
+    assert _OLD_FINAL in out, "the old recipe's evidence is never dropped or rewritten"
+    assert {**fresh[0], "final": True, "engine": "bbb"} in out, "the new recipe gets its own reading"
+
+
+def test_a_changed_recipe_must_be_dated_after_the_windows_it_replaces(monkeypatch):
+    """Its designer has seen those windows: a design date before their end would let the new recipe call
+    data it was fitted on 'unseen'. The job stops (GitHub emails the owner) until the date moves."""
+    # The design record was already re-measured for the new recipe (fp "new"); the old unseen window remains.
+    with pytest.raises(SystemExit, match="design date"):
+        _job_on_fake_archive(monkeypatch, _records([_OLD_FINAL], fp="new"), fp="new")
+
+
+def test_a_changed_recipe_dated_after_them_keeps_the_old_windows_and_waits_for_its_own(monkeypatch):
+    written, measured = _job_on_fake_archive(monkeypatch, _records([_OLD_FINAL], fp="new"), fp="new",
+                                             designed_on="2026-11-30")
+    assert measured == [], "no month-end copy after 30 Nov is finished yet, so nothing is unseen for the new recipe"
+    assert written["scans"]["toy"]["out_of_sample"] == [_OLD_FINAL], "the old recipe's window stays on file"
+
+
+def test_the_archive_is_current_up_to_ten_days_and_stalled_after():
+    assert J.archive_problem(["2026-11-28", "2026-12-04"], date(2026, 12, 14)) == "", "10 days old is current"
+    msg = J.archive_problem(["2026-11-28", "2026-12-04"], date(2026, 12, 15))
+    assert "2026-12-04" in msg and "11 days" in msg and "stopped" in msg
+    assert J.archive_problem([], date(2026, 12, 7)), "an index with no usable copy is a problem too"
+
+
+def test_the_job_stops_loudly_when_the_archive_stalled(monkeypatch):
+    with pytest.raises(SystemExit, match="stopped"):
+        _job_on_fake_archive(monkeypatch, _records([]), today=date(2026, 12, 20))
+
+
+def test_a_design_date_on_the_last_old_windows_end_is_enough(monkeypatch):
+    """The boundary: dated ON the end of the last old window, every window it can start is after it — unseen."""
+    written, measured = _job_on_fake_archive(monkeypatch, _records([_OLD_FINAL], fp="new"), fp="new",
+                                             designed_on="2026-11-28")
+    assert measured == [] and written["scans"]["toy"]["out_of_sample"] == [_OLD_FINAL]

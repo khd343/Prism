@@ -22,6 +22,12 @@ tools/scan_records.py; this job never touches them. If a recipe changed since th
 job stops with an error (GitHub emails the failure), because a new unseen record beside a stale
 design record would describe two different recipes.
 
+Since 2026-10-15 (the scan-records audit, before the first unseen window): every unseen window carries the
+recipe fingerprint it was measured with, a final window is final for ITS recipe, and the cards count the
+current recipe's windows only (ui_scans.record_state). A recipe changed after unseen windows were recorded
+must move its design date past them (check_recipe_dates), and an archive whose newest copy is older than
+MAX_ARCHIVE_AGE_DAYS fails the run (archive_problem) — before, it stayed green while the record stood still.
+
 The file is rewritten only when a measured value changed, so a quiet week makes no commit.
 """
 import json
@@ -41,6 +47,15 @@ from ui import ui_scans as S
 
 MIN_N = 30           # a window with fewer matches is not evidence and is not recorded
 _VOLATILE = ("generated", "engine_version")
+# The archive's current-month copy is re-taken every trading day, so its newest copy is a few days old at
+# most (3 on a Monday morning, more over a long holiday). Older than this, the archive has stopped taking
+# copies and the unseen record cannot grow — the job fails so GitHub emails the owner (2026-10-15 audit:
+# before this, a stalled archive left the job green every Monday while the record silently stopped).
+MAX_ARCHIVE_AGE_DAYS = 10
+
+
+def _today() -> date:
+    return date.today()
 
 
 # ── Pure parts (tested) ───────────────────────────────────────────────────────────────────────────
@@ -85,6 +100,19 @@ def baseline_date(dates):
     """The latest frozen month-end copy — what 🆕 compares against; None before one exists."""
     f = frozen(dates)
     return f[-1] if f else None
+
+
+def archive_problem(dates, today: date) -> str:
+    """Why the archive cannot extend the unseen record, in words for the failure email; '' when it can."""
+    if not dates:
+        return "The PRISM Archive Index lists no usable copy, so the unseen record cannot grow."
+    newest = max(dates)
+    age = (today - date.fromisoformat(newest)).days
+    if age > MAX_ARCHIVE_AGE_DAYS:
+        return (f"The PRISM Archive's newest copy is {newest}, {age} days old (the limit is "
+                f"{MAX_ARCHIVE_AGE_DAYS}): the archive has stopped taking copies, so the unseen record cannot "
+                f"grow. Check the script that saves the monthly copies.")
+    return ""
 
 
 def _closes(bench) -> pd.Series:
@@ -193,17 +221,23 @@ def measure_window(early: pd.DataFrame, late: pd.DataFrame, scan: dict, start: s
     return out
 
 
+def _window_key(w: dict) -> tuple:
+    """A window is its dates AND the recipe that measured it (2026-10-15): final is final per recipe."""
+    return w["start"], w["end"], w.get("fingerprint") or ""
+
+
 def keep_final(old: list, fresh: list, dates, engine: str = "") -> list:
     """The unseen record, final windows first-written (2026-10-12). A window whose END copy is a finished month is
     FINAL: recorded once, stamped with the engine that measured it, never re-measured and never dropped. Every
     copy is re-scored with TODAY's engine, and the recipe fingerprint guards the recipe, not the engine under it —
     so without this a later scoring change would silently rewrite evidence already recorded. A window still ending
     on the latest, unfinished copy is RUNNING: measured again each week, unstamped (like the top-level
-    engine_version, a stamp alone must not count as a change)."""
+    engine_version, a stamp alone must not count as a change). Final for its OWN recipe (2026-10-15): another
+    recipe's final window on the same dates is kept beside it, never mistaken for it."""
     done = set(frozen(dates))
-    out = {(w["start"], w["end"]): w for w in old if w.get("final")}
+    out = {_window_key(w): w for w in old if w.get("final")}
     for w in fresh:
-        key = (w["start"], w["end"])
+        key = _window_key(w)
         if key not in out:
             out[key] = {**w, "final": True, "engine": engine} if w["end"] in done else {**w, "final": False}
     return [out[k] for k in sorted(out)]
@@ -220,6 +254,19 @@ def check_fresh(existing: dict) -> None:
         if not rec or rec.get("fingerprint") != S.recipe_fingerprint(scan):
             raise SystemExit(f"{scan['key']}: the recipe changed since its design-period record was "
                              f"measured — run tools/scan_records.py locally first.")
+
+
+def check_recipe_dates(existing: dict, fingerprints: dict) -> None:
+    """A recipe chosen after unseen windows of an earlier recipe were recorded has SEEN them (2026-10-15): its
+    own unseen record may only start after the last of them. Until its design date is moved there, the job
+    stops — otherwise data the new recipe was fitted on would be recorded as unseen."""
+    for scan in S.SCANS:
+        rows = ((existing.get("scans") or {}).get(scan["key"]) or {}).get("out_of_sample") or []
+        seen = [w["end"] for w in rows if w.get("fingerprint") != fingerprints[scan["key"]]]
+        if seen and S.scan_designed_on(scan) < max(seen):
+            raise SystemExit(f"{scan['key']}: the recipe changed after unseen windows to {max(seen)} were recorded "
+                             f"— move its design date to {max(seen)} or later, so its own unseen record starts "
+                             f"on data it never saw.")
 
 
 def merge(existing: dict, updates: dict, top: dict):
@@ -285,15 +332,23 @@ def main() -> int:
     if not existing:
         raise SystemExit(f"{S.RECORDS_PATH.name} is missing or unreadable — run tools/scan_records.py first.")
     check_fresh(existing)
+    # The recipe each window is measured with (2026-10-15): stamped on every window, final per recipe.
+    fps = {s["key"]: S.recipe_fingerprint(s) for s in S.SCANS}
+    check_recipe_dates(existing, fps)
     idx = load_index(index_id)                                     # status 'ok' rows only
     ids = dict(zip(idx["vintage_date"], idx["spreadsheet_id"]))
     dates = sorted(ids)
+    problem = archive_problem(dates, _today())
+    if problem:
+        raise SystemExit(problem)
     # Each scan on its own clock (2026-10-07): its own design date and shortest window, so a 🌱 list
     # judged over 12 months is never recorded on a 1-month window.
     old = {s["key"]: ((existing.get("scans") or {}).get(s["key"]) or {}).get("out_of_sample") or [] for s in S.SCANS}
-    final = {k: {(w["start"], w["end"]) for w in rows if w.get("final")} for k, rows in old.items()}
-    # A FINAL window on file is never measured again (keep_final) — so its copies are not even downloaded for it.
-    windows = {s["key"]: [w for w in scan_windows(dates, s) if w not in final[s["key"]]] for s in S.SCANS}
+    final = {k: {_window_key(w) for w in rows if w.get("final")} for k, rows in old.items()}
+    # A FINAL window on file is never measured again for its recipe (keep_final) — so its copies are not even
+    # downloaded for it.
+    windows = {s["key"]: [w for w in scan_windows(dates, s) if (*w, fps[s["key"]]) not in final[s["key"]]]
+               for s in S.SCANS}
     base = baseline_date(dates)
     ev = engine_version()
     need = sorted({d for ws in windows.values() for w in ws for d in w} | ({base} if base else set()))
@@ -306,7 +361,7 @@ def main() -> int:
         print(f"  scored {d}: {len(frames[d])} stocks, {len(benches[d])} benchmark indices")
     updates = {}
     for scan in S.SCANS:
-        rows = [r for a, b in windows[scan["key"]]
+        rows = [{**r, "fingerprint": fps[scan["key"]]} for a, b in windows[scan["key"]]
                 if (r := measure_window(frames[a], frames[b], scan, a, b, benches[a], benches[b]))]
         rows = keep_final(old[scan["key"]], rows, dates, ev)
         updates[scan["key"]] = {"out_of_sample": rows}

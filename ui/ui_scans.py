@@ -523,7 +523,23 @@ def record_state(records: dict, scan: dict):
         current = recipe_fingerprint(scan)
     except Exception:          # SourceMismatch, or a file unreadable mid-deploy: never a crash
         return "unverified", rec
-    return ("measured" if rec.get("fingerprint") == current else "stale"), rec
+    if rec.get("fingerprint") != current:
+        return "stale", rec
+    return "measured", _current_recipe_only(rec, current)
+
+
+def _current_recipe_only(rec: dict, fingerprint: str) -> dict:
+    """The record as every reader counts it (2026-10-15): unseen windows measured with THIS recipe only. Each
+    window carries the fingerprint it was measured with, and a final window is kept forever, so after a
+    recipe change the file still holds the old recipe's windows — set aside under out_of_sample_earlier, never
+    counted beside the new recipe's. A window with no fingerprint cannot be verified, so it is not counted
+    either. The file itself is never edited; with nothing to set aside, the record comes back unchanged."""
+    ws = rec.get("out_of_sample") or []
+    now = [w for w in ws if w.get("fingerprint") == fingerprint]
+    if len(now) == len(ws):
+        return rec
+    return {**rec, "out_of_sample": now,
+            "out_of_sample_earlier": [w for w in ws if w.get("fingerprint") != fingerprint]}
 
 
 # ── The list ───────────────────────────────────────────────────────────────────────────────────────
@@ -859,19 +875,44 @@ def _overlap_note(ws, sep: str, end: str = "") -> str:
     return f"{sep}{k} non-overlapping{end}" if k < len(ws) else ""
 
 
-def _bars(ws, c, esc) -> str:
-    """One bar per window: height by size (12 points fills it), green above the median, red below."""
+def _bars(ws, c, esc, out_of_sample: bool = False) -> str:
+    """One bar per window: height by size (12 points fills it), green above the median, red below. An
+    unseen window still RUNNING (it ends on the latest copy, which changes until its month is over) reads
+    "so far" under its bar (2026-10-15), so a reading in progress never looks like a result. That line is kept
+    under every bar of such a row, blank under a finished one, so the bars still stand on one baseline."""
     out = ""
+    tagged = out_of_sample and any(not w.get("final") for w in ws)
     for w in ws:
         v = float(w["median_excess_pp"])
         h = 6 + round(28 * min(abs(v) / 12.0, 1.0))
         col = c["green"] if v > 0 else c["red"]
+        running = out_of_sample and not w.get("final")
+        tip = (f'{w["start"]} → {w["end"]}, {int(w["days"])} days, {int(w["n"])} stocks'
+               + (", still running" if running else ""))
         out += (f'<div style="display:flex;flex-direction:column;align-items:center;justify-content:flex-end;'
-                f'min-width:46px;" title="{esc(w["start"])} → {esc(w["end"])}, {int(w["days"])} days, '
-                f'{int(w["n"])} stocks">'
+                f'min-width:46px;" title="{esc(tip)}">'
                 f'<div style="width:14px;height:{h}px;background:{col};border-radius:3px;"></div>'
                 f'<div style="font-size:0.78rem;font-weight:800;color:{col};margin-top:3px;">{v:+.1f}</div>'
-                f'<div style="font-size:0.6rem;color:{c["text_muted"]};">{_month_span(w)}</div></div>')
+                f'<div style="font-size:0.6rem;color:{c["text_muted"]};">{_month_span(w)}</div>'
+                + (f'<div style="font-size:0.6rem;color:{c["gold"]};">{"so far" if running else "&nbsp;"}</div>'
+                   if tagged else "")
+                + '</div>')
+    return out
+
+
+def _unseen_notes(rec: dict, ws, c: dict, esc) -> str:
+    """Under the unseen record (2026-10-15): what "so far" means when a window is still running, and how many
+    windows an earlier recipe left on file, not counted here. Nothing when neither applies."""
+    muted = f'font-size:0.66rem;color:{c["text_muted"]};margin-top:2px;'
+    out = ""
+    if any(not w.get("final") for w in ws):
+        out += (f'<div style="{muted}">"So far": that window ends on the latest copy, so it is re-measured each '
+                f'week until its month is over, then written once and never again.</div>')
+    k = len(rec.get("out_of_sample_earlier") or [])
+    if k:
+        out += (f'<div style="{muted}">{k} unseen window{"s" if k != 1 else ""} measured with an earlier recipe '
+                f'{"are" if k != 1 else "is"} kept on file, not counted here: this recipe\'s record starts '
+                f'after it was chosen.</div>')
     return out
 
 
@@ -1076,7 +1117,7 @@ def _study_body(scan: dict, rec: dict, c: dict, esc) -> str:
                  f'OUT-OF-SAMPLE · SINCE IT WAS BUILT ({esc(built.upper())}) — WINDOWS IT NEVER SAW</div>'
                  f'<div style="font-size:0.74rem;color:{c["text_secondary"]};margin-top:3px;">'
                  f'{u_beat} of matches beat the market · before costs · the most trustworthy record{_overlap_note(unseen, " · ")}</div></div>'
-                 f'<div style="display:flex;gap:4px;align-items:flex-end;">{_bars(unseen, c, esc)}</div></div>'
+                 f'<div style="display:flex;gap:4px;align-items:flex-end;">{_bars(unseen, c, esc, out_of_sample=True)}</div></div>'
                  f'{_extras(unseen, c, esc)}{_vs_index(scan, unseen, c, esc)}{_hold_line(scan, unseen, c, esc)}')
     else:
         body += (f'<div style="border-top:1px solid {c["border"]};margin-top:8px;padding-top:7px;{muted}">'
@@ -1085,7 +1126,7 @@ def _study_body(scan: dict, rec: dict, c: dict, esc) -> str:
                     f'{date(2000, scan_start_month(scan), 1):%B}, after it was built ({built})'
                     if scan_start_month(scan) else f'on {span} windows that start after it was built ({built})')
                  + f'; the first is due about {_first_unseen_due(scan)}.</div>')
-    return body
+    return body + _unseen_notes(rec, unseen, c, esc)
 
 
 def _card_head(scan: dict, n_now: int, c: dict, esc) -> str:
@@ -1153,8 +1194,9 @@ def card_html(scan: dict, n_now: int, state: str, rec, selected: bool, latest: s
                      f'OUT-OF-SAMPLE · SINCE IT WAS BUILT ({esc(built.upper())}) — WINDOWS IT NEVER SAW</div>'
                      f'<div style="font-size:0.74rem;color:{c["text_secondary"]};margin-top:3px;">'
                      f'{u_beat} of matches beat the market · before costs · the most trustworthy record{_overlap_note(unseen, " · ")}</div></div>'
-                     f'<div style="display:flex;gap:4px;align-items:flex-end;">{_bars(unseen, c, esc)}</div></div>'
+                     f'<div style="display:flex;gap:4px;align-items:flex-end;">{_bars(unseen, c, esc, out_of_sample=True)}</div></div>'
                      f'{_extras(unseen, c, esc)}{_vs_index(scan, unseen, c, esc)}{_hold_line(scan, unseen, c, esc)}')
+        body += _unseen_notes(rec, unseen, c, esc)
     elif state == "unverified":
         body = (f'<div style="font-size:0.74rem;color:{c["text_muted"]};">The record could not be checked against '
                 f'the recipe just now — the app may be updating. Reload the page in a minute.</div>')
@@ -1171,6 +1213,15 @@ def _pts(vals) -> str:
     """'+2.9 to +10.3' (or one value): points above the market's median stock."""
     lo, hi = min(vals), max(vals)
     return f"{lo:+.1f}" if lo == hi else f"{lo:+.1f} to {hi:+.1f}"
+
+
+def _running_tail(ws) -> str:
+    """The summary's word on unseen windows still running (2026-10-15): ' · still running, so far' when every
+    counted window is, ' · K of them still running' when some are, nothing once all are finished."""
+    k = sum(not w.get("final") for w in ws)
+    if not k:
+        return ""
+    return " · still running, so far" if k == len(ws) else f" · {k} of them still running"
 
 
 # Every summary card is this tall, so the three "Show list" buttons line up: the tallest summary any
@@ -1194,10 +1245,18 @@ def card_summary_html(scan: dict, n_now: int, state: str, rec, selected: bool) -
     muted = f'font-size:0.66rem;color:{c["text_muted"]};margin-top:3px;line-height:1.35;'
     unseen = (rec or {}).get("out_of_sample") or []
     if unseen:
-        u_ahead = sum(float(w["median_excess_pp"]) > 0 for w in unseen)
-        oos = (f'Out-of-sample: ahead in {u_ahead} of {len(unseen)} unseen window'
-               f'{"s" if len(unseen) != 1 else ""} ({_pts([float(w["median_excess_pp"]) for w in unseen])} pts)'
-               f'{_overlap_note(unseen, " · ")}')
+        # Worded like the design-period line (2026-10-15): before costs, and after costs whenever the windows
+        # carry the net reading — the audit's rehearsal read "ahead (+0.5 pts)" while after costs it was -0.5.
+        gross = [float(w["median_excess_pp"]) for w in unseen]
+        nets = [float(w["net"]["median_excess_pp"]) for w in unseen
+                if (w.get("net") or {}).get("median_excess_pp") is not None]
+        after = ""
+        if nets:
+            after = f", {_pts(nets)} after costs" + ("" if len(nets) == len(unseen) else
+                                                    f" ({len(nets)} of {len(unseen)} windows)")
+        oos = (f'Out-of-sample: ahead in {sum(v > 0 for v in gross)} of {len(unseen)} unseen window'
+               f'{"s" if len(unseen) != 1 else ""}: {_pts(gross)} pts before costs{after}'
+               f'{_overlap_note(unseen, " · ")}{_running_tail(unseen)}')
     else:
         oos = f"Out-of-sample: pending · first test due about {_first_unseen_due(scan)}"
     # Once the unseen windows carry the index comparison (December plan rule 23), it IS the out-of-sample
@@ -1208,7 +1267,7 @@ def card_summary_html(scan: dict, n_now: int, state: str, rec, selected: bool) -
     if edges:
         oos = (f"Out-of-sample, after costs: ahead of the {BENCHMARK_INDICES.get(scan['benchmark'], scan['benchmark'])}"
                f" index fund in {sum(e > 0 for e in edges)} of {len(edges)} window{'s' if len(edges) != 1 else ''}"
-               f" ({_pts(edges)} pts){_overlap_note([w for w, _ in read], ' · ')}")
+               f" ({_pts(edges)} pts){_overlap_note([w for w, _ in read], ' · ')}{_running_tail([w for w, _ in read])}")
     if state == "measured" and rec and rec.get("study"):
         st_ = rec["study"]
         years = st_.get("years") or []

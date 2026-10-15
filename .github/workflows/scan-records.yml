@@ -1,7 +1,8 @@
 # 🎯 Scans — refresh the records from the PRISM Archive (ui/scan_records_job.py).
 # Weekly, plus a manual "Run workflow" button. Commits ui/scan_records.json ONLY when a measured value
 # changed; a failed run (missing secret, unreadable archive, a recipe changed since its design-period
-# record) fails visibly and GitHub emails the repository owner.
+# record, an archive whose newest copy is over 10 days old, a recipe changed after unseen windows were
+# recorded without moving its design date past them) fails visibly and GitHub emails the repository owner.
 name: Scan records
 
 on:
