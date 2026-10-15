@@ -870,7 +870,13 @@ def price_trend_inputs(df: pd.DataFrame) -> pd.DataFrame:
     vstop = vstop.mask(_vstop_implausible(vstop, close))
     out = pd.DataFrame(index=df.index)
     out["vol_ratio"] = np.where(vol20d.notna() & (vol20d > 0), vol / vol20d, np.nan)
-    out["vstop_fresh"] = np.where(chg.notna(), (chg <= VSTOP_FRESH_MAX_WEEKS).astype(int), 0)
+    # Fresh = the stop flipped UP within VSTOP_FRESH_MAX_WEEKS weekly bars. The vendor's count ("Trading Weeks
+    # passed after VSTOP 14W 2.5 changed") counts a flip either way, so the price must also be above the stop —
+    # StockScans' own Weekly/Monthly Trend Twist and Cyclone scans pair the count with Close >= VSTOP. Measured
+    # 2026-10-09: of 417 stocks flipped within 4 weeks, 334 (80%) were BELOW the stop and got the bonus. A
+    # missing or off-scale stop cannot show the direction, so it is not fresh (§5).
+    out["vstop_fresh"] = np.where(chg.notna() & vstop.notna(),
+                                  ((chg <= VSTOP_FRESH_MAX_WEEKS) & (close > vstop)).astype(int), 0)
     out["above_sma200"] = (close > sma200d).astype(int)
     out["vstop_green"] = np.where(vstop.notna(), (close > vstop).astype(int), 0)
     out["dist_to_vstop"] = np.where(vstop.notna() & (vstop > 0), ((close - vstop) / vstop) * 100, np.nan)

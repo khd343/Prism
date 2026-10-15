@@ -14,6 +14,12 @@ THE FIX. Fresh = flipped within config.VSTOP_FRESH_MAX_WEEKS = 4 weekly bars: th
 before it, the largest whole-week window that never exceeds the documented 30 days (4 x 7 = 28; 5 x 7 = 35).
 Live sheet of 2026-10-14: 14.8% of stocks. A missing count is no evidence of a flip, so it is not fresh.
 
+THE DIRECTION (same day, engine logic changed again). The count is "Trading Weeks passed after VSTOP 14W 2.5
+changed" — a flip EITHER way. Every StockScans scan that reads it pairs it with Close >= VSTOP (Weekly/Monthly
+Trend Twist, Cyclone), and on 9 Oct 334 of the 417 stocks flipped within 4 weeks were BELOW the stop: fresh
+breakdowns earning the trend bonus. Fresh is now a flip UP: within 4 weekly bars AND the close above the stop.
+So the frames below carry a close above the stop wherever only the count is under test.
+
 Run with: pytest tests/test_vstop_fresh_unit.py -v
 """
 
@@ -35,8 +41,16 @@ from scoring_engine import detect_catalysts_and_tsunami
 def test_fresh_means_flipped_within_four_weekly_bars():
     """1 = flipped this week, 4 = three weeks before that. A count of 5 can be 35 days old and 30 is seven
     months, so neither is fresh; a missing count proves nothing. Fails if the count is read as days again."""
-    out = compute_derived_signals(_frame(n=6, last_vstop_change=[1.0, 4.0, 5.0, 18.0, 30.0, np.nan]))
+    out = compute_derived_signals(_frame(n=6, last_vstop_change=[1.0, 4.0, 5.0, 18.0, 30.0, np.nan],
+                                         close_price=[110.0] * 6, vstop_value=[100.0] * 6))
     assert out["vstop_fresh"].tolist() == [1, 1, 0, 0, 0, 0]
+
+
+def test_a_fresh_flip_below_the_stop_is_not_fresh():
+    """A flip within 4 bars with the price under the stop is a fresh BREAKDOWN, not a fresh uptrend."""
+    out = compute_derived_signals(_frame(n=2, last_vstop_change=[1.0, 1.0], close_price=[110.0, 90.0],
+                                         vstop_value=[100.0, 100.0]))
+    assert out["vstop_fresh"].tolist() == [1, 0]
 
 
 def test_fresh_window_is_the_largest_whole_week_span_inside_30_days():
@@ -48,7 +62,8 @@ def test_fresh_window_is_the_largest_whole_week_span_inside_30_days():
 def test_tsunami_needs_a_flip_inside_the_corrected_window():
     """End to end, from the vendor count: an uptrend that turned green 4 weekly bars ago is a fresh breakout,
     one that turned 5 bars ago is not. Every other Tsunami condition is aligned on both rows."""
-    derived = compute_derived_signals(_frame(n=2, last_vstop_change=[4.0, 5.0]))
+    derived = compute_derived_signals(_frame(n=2, last_vstop_change=[4.0, 5.0], close_price=[110.0] * 2,
+                                             vstop_value=[100.0] * 2))
     frame = derived.assign(gate_pass=1, above_sma200=1, vstop_green=1, promoter_buying=1,
                            change_fii_lq=0.5, quality_score=80.0, crs_aligned=1, market_cap=3000.0)
     out = detect_catalysts_and_tsunami(frame)

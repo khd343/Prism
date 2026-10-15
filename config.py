@@ -378,7 +378,7 @@ TREND_SIGNALS = {
     # rather than eliminating them. Fundamental quality carries through corrections.
     "above_sma200":     0.20,   # Price > SMA 200D — trend direction (was hard gate)
     "vstop_green":      0.20,   # VSTOP 14W 2.5 = green (reduced: correlated with sma200)
-    "vstop_fresh":      0.15,   # flipped within VSTOP_FRESH_MAX_WEEKS weekly bars, ≤ 30 days (reduced)
+    "vstop_fresh":      0.15,   # flipped UP within VSTOP_FRESH_MAX_WEEKS weekly bars (price above the stop), ≤ 30 days (reduced)
     "adx_strong":       0.20,   # ADX 14W > 25 — trend strength (independent signal)
     "rsi_zone":         0.15,   # RSI 55-70 sweet spot
     "golden_cross":     0.10,   # recent golden cross — trend recovery signal

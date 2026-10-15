@@ -52,6 +52,21 @@ def test_an_off_scale_stop_counts_as_missing():
     assert out.loc[0, "vstop_green"] == 0 and np.isnan(out.loc[0, "dist_to_vstop"])
 
 
+def test_fresh_is_a_flip_up_within_four_weekly_bars():
+    """StockScans' own Weekly/Monthly Trend Twist and Cyclone scans pair the flip count with Close >= VSTOP; on
+    9 Oct 334 of the 417 stocks flipped within 4 weeks were BELOW the stop (fresh breakdowns)."""
+    rows = _raw(close_price=[110.0, 90.0, 110.0, 110.0], vstop_value=[100.0, 100.0, 100.0, 100.0],
+                last_vstop_change=[2.0, 2.0, 5.0, np.nan], volume=[1.0] * 4, vol_sma_20d=[1.0] * 4,
+                sma_200d=[1.0] * 4)
+    assert de.price_trend_inputs(rows)["vstop_fresh"].tolist() == [1, 0, 0, 0]
+
+
+def test_unverifiable_stop_is_not_fresh():
+    for stop in (np.nan, 7684.0):            # missing, and off-scale (paise) against a 130 close
+        out = de.price_trend_inputs(_raw(close_price=[130.0], vstop_value=[stop], last_vstop_change=[1.0]))
+        assert out.loc[0, "vstop_fresh"] == 0
+
+
 def test_the_five_are_assigned_once_and_only_from_price_trend_inputs():
     """A later `df["vstop_fresh"] = ...` elsewhere would change the list without changing the fingerprint."""
     seen = {k: [] for k in FIVE}
@@ -59,7 +74,8 @@ def test_the_five_are_assigned_once_and_only_from_price_trend_inputs():
         for name in sorted(os.listdir(os.path.join(ROOT, folder))):
             if not name.endswith(".py"):
                 continue
-            tree = ast.parse(open(os.path.join(ROOT, folder, name), encoding="utf-8").read())
+            with open(os.path.join(ROOT, folder, name), encoding="utf-8") as fh:
+                tree = ast.parse(fh.read())
             for node in ast.walk(tree):
                 if isinstance(node, ast.Assign):
                     for t in node.targets:
