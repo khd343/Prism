@@ -546,11 +546,11 @@ def render_ep_power_curve_module(stock: pd.Series):
     _wt_val = str(stock.get("wealth_tier", "") or "")
     _wt_warn = " ⚠" if int(stock.get("wealth_warn", 0) or 0) == 1 else ""
     _wt_ep, _wt_vel = stock.get("wealth_ep_pct"), stock.get("wealth_vel_pct")
-    if _wt_val in ("BUY★", "BUY"):
+    if _wt_val in ("CLIMBING★", "CLIMBING"):
         _wt_clr = COLORS["green"]
-    elif _wt_val in ("WATCH★", "WATCH"):
+    elif _wt_val in ("RECOVERING", "UNEVEN"):
         _wt_clr = COLORS["gold"]
-    elif _wt_val == "AVOID":
+    elif _wt_val == "STALLED":
         _wt_clr = COLORS["text_secondary"]
     else:
         _wt_val, _wt_clr = "N/A", COLORS["text_muted"]
@@ -4380,7 +4380,7 @@ def render_valuation_inversion_and_sizing_cockpit(stock: pd.Series):
     _egap_clr = COLORS["text_muted"] if not _egap_ok else (
         COLORS["green"] if _shown(_egap, 2) < 0 else COLORS["orange"])
 
-    # ── VCV display honesty (2026-08-28, audited on the live BUY★ cohort). Three states beyond
+    # ── VCV display honesty (2026-08-28, audited on the live CLIMBING★ cohort). Three states beyond
     # the number, each MIRRORING an engine value (never re-derived — the Fisher drift lesson):
     #   FULL PAYOUT  reinvestment_rate == 0 (DPR ≥ 100): the formula truthfully reads 0.00 —
     #                nothing retained to compound — but 11 live stocks with real above-hurdle

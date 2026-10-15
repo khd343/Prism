@@ -12,13 +12,13 @@ answer, since both read `filt`. The checkbox makes market-wide a CHOICE instead 
 MEASURED BEFORE BUILDING, because the obvious objection was statistical and it turned out to be
 wrong. I expected filtering to destroy these tabs — to rank the FILTER rather than the sectors.
 It does not: the between-sector spread in average composite HOLDS as filters tighten
-(SD 5.65 no-filter → 6.42 gate-passed → 5.88 BUY★+BUY → 6.53 BUY★). The ranking keeps its
+(SD 5.65 no-filter → 6.42 gate-passed → 5.88 CLIMBING★+CLIMBING → 6.53 CLIMBING★). The ranking keeps its
 information. What filtering really costs is SAMPLE, and that is what the guards below address:
 
     sidebar state    stocks   sectors with >=5   industries with >=5
     no filter         2,717          67                 155
     Gate passed         876          46                  57
-    BUY★ only           331          24                   9
+    CLIMBING★ only      331          24                   9
     Conviction <=2       20           1                   0
 
 THE FOUR INVARIANTS, each pinned below:
@@ -39,7 +39,7 @@ THE FOUR INVARIANTS, each pinned below:
      Hybrid", the composite formula line). One helper, `_mp_scope_cap()`, derives it.
 
   4. THE AGGREGATING TABS STATE THEIR SAMPLE. 📈 Sectors and 🏭 Industry average rather than list,
-     and an average over one stock is that stock wearing a group's name — filtering to BUY★ leaves
+     and an average over one stock is that stock wearing a group's name — filtering to CLIMBING★ leaves
      15 of 59 sectors whose "average" IS a single company (Ceramic Products, 68.2, n=1). 🏭
      Industry has NO min-stocks dial and 32% of its industries sit at <=2 stocks even unfiltered,
      so it needs the number most. Below 3 surviving groups the line becomes a warning that names

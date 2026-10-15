@@ -5,11 +5,18 @@ Contract for the engine verdict's vocabulary: 🟢 SOUND · 🟡 MIXED · 🔴 F
 
 RENAMED 2026-08-27 from BUY / WATCH / AVOID, for two reasons this file exists to keep true:
 
-  1. NO WORD IN TWO LAYERS. The wealth tier deliberately speaks action words (BUY★ / BUY /
-     WATCH★ / WATCH / AVOID / N/A — the user's "calculated verdict, my decision"). The engine
-     verdict speaking the SAME words meant "AVOID" carried two different meanings in adjacent
-     columns — the cf_triangle "Perfect — Buy Zone" defect class rebuilt at vocabulary level.
-     The engine now speaks CONDITION words only.
+  1. NO WORD IN TWO LAYERS. The wealth tier then spoke action words (BUY★ / BUY / WATCH★ /
+     WATCH / AVOID / N/A — the user's "calculated verdict, my decision"). The engine verdict
+     speaking the SAME words meant "AVOID" carried two different meanings in adjacent columns —
+     the cf_triangle "Perfect — Buy Zone" defect class rebuilt at vocabulary level. The engine
+     now speaks CONDITION words only.
+
+     And since 2026-10-15 the wealth tier speaks DIRECTION words (CLIMBING★ / CLIMBING /
+     RECOVERING / UNEVEN / STALLED / N/A): measured on the live sheet, its BUY sat on 518 stocks
+     — 85% of BUY★ FLAWED here — and its AVOID on businesses earning far above their cost of
+     equity. Neither layer issues an action word now; the rule below now spans every label column
+     on screen, not just these two (RISING was rejected for nesting inside the EP Power Curve's
+     "Not Rising", IMPROVING for being that curve's own label).
 
   2. HONESTY. With 18 affirmatives against 93% of the universe failing, the engine verdict was
      never a buy call — it is a qualification gate (quality + forensics + valuation + timing).
@@ -26,10 +33,10 @@ THE COLLISION AUDIT THAT CHOSE THESE WORDS (each alternative rejected for a conc
 THE THREE-LAYER ARCHITECTURE THIS PINS:
      Conviction Tier (1–5, Crown Jewel…)  how good, per the composite      — graded
      Verdict (SOUND/MIXED/FLAWED)         does it qualify, with the vetoes — gate
-     Wealth Tier (BUY★…N/A)               which direction                  — change
+     Wealth Tier (CLIMBING★…N/A)          which direction                  — change
 
-Old snapshots keep the recorded BUY/WATCH/AVOID strings; tools/validate.py maps them on load so
-longitudinal comparisons survive the rename.
+Old snapshots keep the recorded strings of both renames; tools/validate.py maps each column's own
+old words on load so longitudinal comparisons survive them.
 
 Run with: pytest tests/test_verdict_vocabulary.py -v
 """
@@ -46,11 +53,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from core.verdict_engine import compute_verdict
+from core.verdict_engine import WEALTH_NA, WEALTH_TIERS, compute_verdict
 
 ENGINE_WORDS = {"SOUND", "MIXED", "FLAWED"}
-WEALTH_WORDS = {"BUY★", "BUY", "WATCH★", "WATCH", "AVOID", "N/A"}
-OLD_WORDS = {"BUY", "WATCH", "AVOID"}
+WEALTH_WORDS = {*WEALTH_TIERS, WEALTH_NA}
+OLD_WORDS = {"BUY", "WATCH", "AVOID"}            # the verdict's own words until 2026-08-27
+ACTION_WORDS = {"BUY★", "BUY", "WATCH★", "WATCH", "AVOID", "SELL", "HOLD", "ACCUMULATE"}
 
 _BASE = {
     "conviction_tier": 1, "composite_score": 90.0, "forensic_score": 90.0,
@@ -131,6 +139,51 @@ def test_the_gate_stays_a_gate(live):
     share = live["verdict_direction"].value_counts(normalize=True)
     assert share.get("SOUND", 0) < 0.10, f"SOUND at {share.get('SOUND', 0):.1%} — no longer rare"
     assert share.get("FLAWED", 0) > 0.50, "FLAWED no longer dominates — the gate's shape changed"
+
+
+def test_neither_layer_speaks_an_action_word(live):
+    """2026-10-15: the last action words left the screen with the wealth tier's rename."""
+    for col in ("verdict_direction", "wealth_tier"):
+        got = set(live[col].dropna().astype(str))
+        assert not got & ACTION_WORDS, f"{col} speaks action words again: {sorted(got & ACTION_WORDS)}"
+    assert set(live["wealth_tier"].dropna().astype(str)) == WEALTH_WORDS, "a wealth word died on live data"
+
+
+def _label_columns(live):
+    """Every column that shows a LABEL — a short categorical string — plus sector and industry, whose
+    names sit beside the tier too (BUILDING was rejected for 'Building Materials')."""
+    cols = []
+    for c in live.columns:
+        if c == "wealth_tier" or live[c].dtype != object:
+            continue
+        s = live[c].dropna().astype(str)
+        if 0 < s.nunique() <= 80 and s.str.len().mean() <= 40 or c in ("sector", "industry"):
+            cols.append(c)
+    return cols
+
+
+def test_no_wealth_word_appears_in_another_layers_labels(live):
+    """NO WORD IN TWO LAYERS, across every label on screen and case-blind (RISING ⊂ "Not Rising" is
+    exactly what a substring match would catch, and why RISING lost). A wealth word inside another
+    label, or another label inside a wealth word, lets one filter or search cross layers."""
+    cols = _label_columns(live)
+    assert {"verdict_direction", "ep_power_curve", "moat_growth_quad", "buy_zone_label",
+            "weinstein_stage", "sector", "industry"} <= set(cols), f"the label scan lost a column: {cols}"
+    clashes = []
+    for c in cols:
+        for v in sorted(set(live[c].dropna().astype(str))):
+            for w in sorted(WEALTH_TIERS):
+                bare = w.rstrip("★").lower()
+                if bare in v.lower() or (len(v) >= 4 and v.lower() in bare):
+                    clashes.append(f"{w} ~ {c}={v!r}")
+    assert not clashes, "a wealth word collides with another layer's label:\n  " + "\n  ".join(clashes)
+
+
+def test_no_wealth_word_nests_inside_another_wealth_word_but_its_star():
+    """Within the ladder only CLIMBING ⊂ CLIMBING★ nests — by design, and every reader matches the tier
+    by equality (never a contains match), which tests/test_sector_filters.py pins for the share column."""
+    nested = sorted((a, b) for a in WEALTH_TIERS for b in WEALTH_TIERS if a != b and a in b)
+    assert nested == [("CLIMBING", "CLIMBING★")], nested
 
 
 def test_the_glossary_explains_all_three(live):

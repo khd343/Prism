@@ -115,6 +115,7 @@ from core import (fetch_and_clean_data, load_market, run_full_scoring, compute_f
                   apply_forensic_penalty, compute_verdict, run_scoring_pipeline)
 from ui.ui_market import market_box_html
 from core.data_engine import extract_spreadsheet_id
+from core.verdict_engine import WEALTH_NA, WEALTH_TIERS
 from ui import (render_moat_growth_matrix, render_fisher_module,
                 render_ep_power_curve_module, render_bruised_blue_chip_badge,
                 render_multitrillioncap_card, render_forensic_perimeter, render_guru_frameworks,
@@ -692,7 +693,7 @@ with tabs[0]:
 # Hoisted out of _render_market_pulse on 2026-10-06, unchanged but for the indent, so 🎯 Scans calls
 # the SAME cascade-safe row the QGLP / MOSL / Wealth / Movers lenses use: one dialect, one definition.
 # Called inside the Market Pulse fragment its widgets still belong to that fragment.
-_WT_ORDER = ["BUY★", "BUY", "WATCH★", "WATCH", "AVOID", "N/A"]
+_WT_ORDER = [*WEALTH_TIERS, WEALTH_NA]     # the wealth ladder, strongest first (core.verdict_engine)
 _MP_CAP_ORDER = ["Mega Cap", "Large Cap", "Mid Cap", "Small Cap", "Micro Cap", "Nano Cap"]
 _MP_CATALYSTS = {   # MUST mirror ui_discovery's _CATALYSTS — pinned by test_market_pulse_tabs
     "🔥 Capacity Explosion": "cat_capacity",
@@ -718,7 +719,7 @@ def _mp_ms(slot, label, options, key, help_text, counts, show=None):
     warning) and a stored pick the cascade has narrowed out is KEPT in the option list with its
     honest count of 0 (ui_discovery.keep_selected — ONE rule for both filter surfaces). It was
     PRUNED until 2026-09-02, which switched the filter off and WIDENED the result: Wealth
-    Tier=BUY★ + a sector holding no BUY★ showed the whole sector instead of 0. Keeping the
+    Tier=CLIMBING★ + a sector holding no CLIMBING★ showed the whole sector instead of 0. Keeping the
     value in the options is what stops a keyed widget raising; applying it is what keeps the
     answer honest.
 
@@ -789,7 +790,7 @@ def _mp_lens_row(frame, prefix, extra_keys=(), with_tier=True):
         _wt_n = _cf["wealth_tier"].astype(str).value_counts().to_dict() if _wt_opts else {}
         sel_wt = _mp_ms(slots[_i], "Wealth tier", _wt_opts, f"mp_{prefix}_wt",
                        "Cross-lens: this framework's passers x the wealth engine's tier. Pick "
-                       "several (e.g. BUY★ and BUY together). Counts reflect the sector "
+                       "several (e.g. CLIMBING★ and CLIMBING together). Counts reflect the sector "
                        "filter above.", _wt_n)
         if sel_wt:
             _cf = _cf[_cf["wealth_tier"].isin(sel_wt)]
@@ -1076,11 +1077,16 @@ _DS_W = {
     # 🏆 Core — Improvement and Momentum take their widths from Quality and Technical. Liquidity (2026-10-09)
     # took 65px from space no text used, measured in the grid's own font (13px Source Sans + 16px): its
     # header needs 62; Rank's widest value "2712" 42 (55 → 50, every view gains 5); Soundness's header 78
-    # (90 → 80); Wealth's widest "WATCH★" 66 (75 → 70); Market Cap's header 80 (85 → 80); and Sector
-    # 150 → 130 still shows the full sector name for 78% of stocks (79% at 150).
-    "verdict_direction": 80, "wealth_tier": 70, "sector": 130, "market_category": 80,
+    # (90 → 80); Market Cap's header 80 (85 → 80); and Sector 150 → 130.
+    # THE WEALTH RENAME (2026-10-15), re-measured on the live sheet in the grid's font today (400 14px
+    # "Source Sans", 8px padding a side): its widest word RECOVERING is 77px, so Wealth 70 → 93 (the old
+    # widest, WATCH★, needed exactly 70). The 23px came from the two Core-only columns with room to give:
+    # Sector 130 → 115 (the full name still shows for 69.7% of stocks, from 71.9% — no sector name falls
+    # between 115 and 117) and the Score bar 105 → 97 (its header needs 49). Momentum stays at 105, beside
+    # the Technical view's Breakout bar. tests/test_wealth_tier_display.py pins the 93.
+    "verdict_direction": 80, "wealth_tier": 93, "sector": 115, "market_category": 80,
     "traded_value_cr": 65,
-    "composite_score": 105, "gate_pass": 60,
+    "composite_score": 97, "gate_pass": 60,
     # 📊 Quality — its parts read as numbers beside the Quality bar
     "quality_score": 105, "moat_score": 60, "growth_score": 65, "improvement_score": 95,
     "cash_score": 55, "roce": 60, "roce_expansion": 95,
@@ -1571,17 +1577,17 @@ with tabs[3]:
 
         # ── 💹 Wealth-tier pill: the third layer of the grammar, on the reading surface ──
         # A LABELED PILL, never a competing banner — the band is Soundness's home. Unlocked by
-        # the vocabulary rename: "FLAWED · 💹 WATCH★" reads as two layers disagreeing openly
-        # (the feature), where the old "AVOID · BUY★" read as a contradiction (the cf_triangle
-        # defect). ⚠ rides with the tier per the wealth_warn contract — never blended.
+        # the vocabulary rename: "FLAWED · 💹 RECOVERING" reads as two layers disagreeing openly
+        # (the feature), where the pre-2026-08-27 "AVOID · BUY★" read as a contradiction (the
+        # cf_triangle defect). ⚠ rides with the tier per the wealth_warn contract — never blended.
         _wtier = str(stock.get("wealth_tier", "") or "")
         _wwarn = " ⚠" if int(stock.get("wealth_warn", 0) or 0) == 1 else ""
         _WT_PILL_CLR = {
-            "BUY★":   ("rgba(63,185,80,0.13)",   COLORS["green"], "rgba(63,185,80,0.4)"),
-            "BUY":    ("rgba(63,185,80,0.10)",   COLORS["green"], "rgba(63,185,80,0.3)"),
-            "WATCH★": ("rgba(228,179,65,0.15)",  COLORS["gold"],  "rgba(228,179,65,0.4)"),
-            "WATCH":  ("rgba(228,179,65,0.10)",  COLORS["gold"],  "rgba(228,179,65,0.3)"),
-            "AVOID":  ("rgba(110,118,129,0.12)", COLORS["text_secondary"], "rgba(110,118,129,0.35)"),
+            "CLIMBING★":  ("rgba(63,185,80,0.13)",   COLORS["green"], "rgba(63,185,80,0.4)"),
+            "CLIMBING":   ("rgba(63,185,80,0.10)",   COLORS["green"], "rgba(63,185,80,0.3)"),
+            "RECOVERING": ("rgba(228,179,65,0.15)",  COLORS["gold"],  "rgba(228,179,65,0.4)"),
+            "UNEVEN":     ("rgba(228,179,65,0.10)",  COLORS["gold"],  "rgba(228,179,65,0.3)"),
+            "STALLED":    ("rgba(110,118,129,0.12)", COLORS["text_secondary"], "rgba(110,118,129,0.35)"),
         }
         _wealth_pill = ""
         if _wtier in _WT_PILL_CLR:          # N/A and missing render nothing — no pill over no data
@@ -1919,10 +1925,10 @@ def _render_market_pulse():
 
     # THE TWO AGGREGATING TABS NEED ONE NUMBER THE OTHERS DO NOT. 📈 Sectors and 🏭 Industry do
     # not list stocks, they AVERAGE them, and an average over one stock is that stock wearing a
-    # group's name. Measured on the live universe: filtering to BUY★ leaves 15 of 59 sectors
+    # group's name. Measured on the live universe: filtering to CLIMBING★ leaves 15 of 59 sectors
     # whose "average" IS a single company (Ceramic Products, 68.2, n=1) — and the 🏭 tab has no
     # min-stocks dial at all, where 32% of industries sit at <=2 stocks even UNFILTERED, rising
-    # to 78% of survivors under BUY★. So the honesty number is printed rather than assumed:
+    # to 78% of survivors under CLIMBING★. So the honesty number is printed rather than assumed:
     # how many groups are shown, and how many of them rest on too few stocks to be a group.
     # Only when scoped — an unfiltered tab is unchanged, down to the byte.
     _MP_THIN_N     = 2      # an average over <=2 stocks is a stock, not a group average
@@ -2326,20 +2332,22 @@ def _render_market_pulse():
         # _WT_ORDER hoisted above the tabs (shared with the lens-filter row).
         _wt_counts = _mp_df["wealth_tier"].value_counts() if "wealth_tier" in _mp_df.columns else {}
         st.markdown(
-            f"<div class='sec-cap'>The <b>wealth-engine tier</b> — three clocks, nothing else: "
-            f"<b>EP%</b> (economic profit ÷ reserves = ROE − cost of equity, so a ₹200 Cr and a "
-            f"₹2,000 Cr business compare fairly) · <b>Vel%</b> (this year's change in that excess "
-            f"return) · <b>tau</b> (the 5-year margin spine). BUY★ = earning, improving, confirmed; "
-            f"WATCH★ = the confirmed turnaround (not earning yet, improving with a spine); AVOID = "
-            f"nothing improving — the LEVEL may be fine. {_mp_scope_cap()}</div>",
+            f"<div class='sec-cap'>The <b>wealth-engine tier</b> — which way a business's value "
+            f"creation is moving, from three clocks: <b>EP%</b> (economic profit ÷ reserves = ROE − "
+            f"cost of equity, so a ₹200 Cr and a ₹2,000 Cr business compare fairly) · <b>Vel%</b> "
+            f"(this year's change in that excess return) · <b>tau</b> (the 5-year margin spine). "
+            f"CLIMBING★ = earning above its cost of equity, improving, margins confirm; CLIMBING = the "
+            f"same with flat margins; RECOVERING = not earning it yet, improving, margins confirm; "
+            f"UNEVEN = the clocks disagree; STALLED = not improving this year — the LEVEL may still "
+            f"be high. {_mp_scope_cap()}</div>",
             unsafe_allow_html=True,
         )
         st.markdown(
             f"<div style='font-size:0.72rem;color:{COLORS['gold']};margin:-4px 0 10px 0;'>"
-            f"⚠️ <b>Price-blind and forensics-blind by design.</b> BUY means the wealth engine is "
-            f"buy-grade — not that the price is right (check Valuation) and not that the books are "
-            f"clean (the ⚠ marker and 🚩 count carry that; they never alter the tier, so the "
-            f"tension stays visible). A description to decide WITH, not a recommendation.</div>",
+            f"⚠️ <b>Price-blind and forensics-blind by design.</b> The tier describes the business, "
+            f"never the price (check Valuation and the trend) or the books (the ⚠ marker and 🚩 count "
+            f"ride beside it and never alter it, so the tension stays visible). A description to "
+            f"decide with, not a call to buy or sell.</div>",
             unsafe_allow_html=True,
         )
         if "wealth_tier" not in df.columns:
@@ -2353,8 +2361,8 @@ def _render_market_pulse():
                 + "</div>",
                 unsafe_allow_html=True,
             )
-            # MULTI-SELECT 2026-08-30 (user request): several tiers at once — "BUY★ and BUY" and
-            # "WATCH★ and WATCH" are the two readings this tab is actually used for, and neither
+            # MULTI-SELECT 2026-08-30 (user request): several tiers at once — "CLIMBING★ and CLIMBING"
+            # and "RECOVERING and UNEVEN" are the two readings this tab is actually used for, and neither
             # was expressible one tier at a time. Same shared _mp_ms helper as every other Market
             # Pulse filter, so the counts-on-options grammar is identical. The label is VISIBLE
             # here (it was collapsed for the selectbox): an empty multiselect shows only a generic
@@ -2362,8 +2370,8 @@ def _render_market_pulse():
             _wt_n = {str(k): int(v) for k, v in _wt_counts.items()} if len(_wt_counts) else {}
             _wt_pick = _mp_ms(st.container(), "Tier", [t for t in _WT_ORDER if _wt_n.get(t, 0)],
                               "mp_wealth_tier",
-                              "Filter to these tiers — pick several (BUY★ + BUY, or the two "
-                              "WATCH grades together); a stock in ANY of them qualifies. The "
+                              "Filter to these tiers — pick several (CLIMBING★ + CLIMBING, or "
+                              "RECOVERING + UNEVEN); a stock in ANY of them qualifies. The "
                               "table always sorts strongest tier first, then by Vel%.", _wt_n)
             _wl = _mp_df.copy()
             _wl["_wt_ord"] = _wl["wealth_tier"].map({t: i for i, t in enumerate(_WT_ORDER)})
@@ -2387,12 +2395,12 @@ def _render_market_pulse():
             st.dataframe(
                 _wl[_wt_cols].reset_index(drop=True),
                 column_config={
-                    "wealth_tier":       st.column_config.TextColumn("Tier", width="small"),
+                    "wealth_tier":       st.column_config.TextColumn("Tier", width=_DS_W["wealth_tier"]),
                     "name":              st.column_config.TextColumn("Stock", width="medium"),
                     "_warn_txt":         st.column_config.TextColumn("⚠", width="small", help="Forensic caution: 8+ red flags or a Schilit checker fail. Never changes the tier — it rides beside it."),
                     "wealth_ep_pct":     st.column_config.NumberColumn("EP%",  format="%+.1f", width="small", help="Excess return: ROE − cost of equity, in percentage points. The universe median is NEGATIVE — being above zero already beats the median listed company."),
                     "wealth_vel_pct":    st.column_config.NumberColumn("Vel%", format="%+.1f", width="small", help="This year's CHANGE in the excess return, in points of the reserves base. Direction beats level — the 28th WCS's own finding."),
-                    "moat_tau":          st.column_config.NumberColumn("Margin τ", format="%+.2f", width="small", help="5-year margin trend (rank correlation, −1…+1). ≥ +0.25 confirms; ≤ −0.25 caps the tier at WATCH."),
+                    "moat_tau":          st.column_config.NumberColumn("Margin τ", format="%+.2f", width="small", help="5-year margin trend (rank correlation, −1…+1). ≥ +0.25 confirms; ≤ −0.25 caps the tier at UNEVEN."),
                     "moat_score":        st.column_config.NumberColumn("Moat", format="%.0f", width="small"),
                     "growth_score":      st.column_config.NumberColumn("Growth", format="%.0f", width="small"),
                     "red_flag_count":    st.column_config.NumberColumn("🚩 Flags", format="%.0f", width="small"),
@@ -2467,14 +2475,13 @@ def _render_market_pulse():
             _cyc_sec = []
 
         # 3 -- Wealth tier (re-aggregating; counts = stocks, after cap AND cyclicality)
-        _WT_SEC = ["BUY★", "BUY", "WATCH★", "WATCH", "AVOID", "N/A"]
         if "wealth_tier" in _scf.columns:
             _wt_n = _scf["wealth_tier"].astype(str).value_counts().to_dict()
-            _wt_opts = [t for t in _WT_SEC if _wt_n.get(t, 0) > 0]
+            _wt_opts = [t for t in _WT_ORDER if _wt_n.get(t, 0) > 0]
             _wt_sec = _mp_ms(_c3, "Wealth tier", _wt_opts, "mp_sec_wealth",
-                             "Re-aggregates over the survivors. 'BUY★ and BUY, grouped by sector' "
-                             "shows where the improving-wealth names concentrate. Counts are STOCKS "
-                             "and reflect every filter to the left.", _wt_n)
+                             "Re-aggregates over the survivors. 'CLIMBING★ and CLIMBING, grouped by "
+                             "sector' shows where the improving-wealth names concentrate. Counts are "
+                             "STOCKS and reflect every filter to the left.", _wt_n)
             if _wt_sec:
                 _scf = _scf[_scf["wealth_tier"].isin(_wt_sec)]
         else:
@@ -2533,19 +2540,20 @@ def _render_market_pulse():
         if _cyc_sec and "cyclicality_tier" in _sec_src.columns:
             _sec_src = _sec_src[_sec_src["cyclicality_tier"].isin(_cyc_sec)]
         # 💹 TIER-SHARE BASE — captured AFTER the cap and cyclicality filters, BEFORE the wealth
-        # filter, so Defensive × BUY★ reads "BUY★ share among the sector's Defensive stocks". The share
-        # column answers "how much of this group's FULL roster is tier X?"; computed after the
+        # filter, so Defensive × CLIMBING★ reads "CLIMBING★ share among the sector's Defensive stocks".
+        # The share column answers "how much of this group's FULL roster is tier X?"; computed after the
         # wealth filter it would read 100% everywhere the moment a tier is selected (the filter
         # keeps only that tier — the trap the design review caught). Denominator = the roster
-        # under every OTHER filter. The tier shown follows the filter selection; All → BUY★,
-        # the top of the forward-validated monotonic ladder.
+        # under every OTHER filter. The tier shown follows the filter selection; All → CLIMBING★,
+        # the top of the ladder (whose order is not yet tested forward — December plan, rule 2).
         _sec_share_base = _sec_src
-        # The tier-share column now follows the SET of selected tiers (share of the roster in ANY
-        # of them); nothing selected keeps the BUY★ default - the top of the validated ladder.
-        _sec_share_tiers = list(_wt_sec) if _wt_sec else ["BUY★"]
+        # The tier-share column follows the SET of selected tiers (share of the roster in ANY of
+        # them); nothing selected keeps the top tier. One tier names the column; two or more name a
+        # count (2026-10-15: two of today's words already overfill a header — the tooltip and the
+        # caption above name the set).
+        _sec_share_tiers = list(_wt_sec) if _wt_sec else [_WT_ORDER[0]]
         _sec_share_tier = (_sec_share_tiers[0] if len(_sec_share_tiers) == 1
-                           else ("+".join(_sec_share_tiers) if len(_sec_share_tiers) <= 3
-                                 else f"{len(_sec_share_tiers)} tiers"))
+                           else f"{len(_sec_share_tiers)} tiers")
         if _wt_sec:
             _sec_src = _sec_src[_sec_src["wealth_tier"].isin(_wt_sec)]
         if _cap or _wt_sec or _cyc_sec:
@@ -2577,13 +2585,17 @@ def _render_market_pulse():
         # 👑 T1 REMOVED 2026-08-28 (user call, sparsity-backed): nonzero in 7 of 81 sectors (9%)
         # and 7 of 355 industries (2%) — the same 7 names live in Discovery's tier filter.
         # 💹 tier share — over _sec_share_base (the pre-wealth-filter roster; see above). Exact
-        # equality, never a contains match: "BUY" is a substring of "BUY★" (the QGLP⊂SQGLP class).
+        # equality, never a contains match: "CLIMBING" is a substring of "CLIMBING★" (the QGLP⊂SQGLP
+        # class).
         if "wealth_tier" in _sec_share_base.columns:
             _sec_stats["pct_tier"] = (
                 _sec_share_base.groupby("sector")["wealth_tier"]
                 .apply(lambda s: 100.0 * s.isin(_sec_share_tiers).mean())
                 .reindex(_sec_stats.index)
             )
+        # The whole market's rate for the same tier set — what a sector's share is read against.
+        _sec_share_rate = (100.0 * df["wealth_tier"].isin(_sec_share_tiers).mean()
+                           if "wealth_tier" in df.columns else float("nan"))
         # Sort by % Qualify (breadth), then Score — so the most-INVESTABLE sectors lead. Sorting by
         # Score alone would rank a 0%-qualify sector #1 (e.g. Financial Services scores high on
         # fundamentals but every stock fails a hard gate), which misleads at a glance.
@@ -2638,11 +2650,11 @@ def _render_market_pulse():
                                             "vs 19 universe-wide), and at n=7 a single stock moves this 14 points. "
                                             "Read it alongside Count."),
                     "pct_tier":      st.column_config.ProgressColumn(f"💹 {_sec_share_tier} %", min_value=0, max_value=100, format="%.0f%%", width=_MP_BAR_W,
-                                       help=f"Share of the sector's FULL roster in the {_sec_share_tier} wealth tier. The tier "
-                                            f"follows the Wealth-tier filter (All → BUY★, the top of the ladder); the "
+                                       help=f"Share of the sector's FULL roster in {' or '.join(_sec_share_tiers)}. The tier "
+                                            f"follows the Wealth-tier filter (All → {_WT_ORDER[0]}, the top of the ladder); the "
                                             f"denominator deliberately IGNORES that filter — computed after it, this column "
                                             f"would read 100% everywhere. Unverifiable (N/A) stocks stay in the denominator "
-                                            f"and dilute the share. Universe BUY★ base rate ≈ 12%. Price-blind and "
+                                            f"and dilute the share. Across the whole market: {_sec_share_rate:.0f}%. Price-blind and "
                                             f"forensics-blind, like the tier itself; read against Count."),
                     "avg_quality":   st.column_config.ProgressColumn("Quality",  min_value=0, max_value=100, format="%.0f", width=_MP_BAR_W),
                     "avg_improvement": st.column_config.ProgressColumn("Improvement", min_value=0, max_value=100, format="%.0f", width=_MP_BAR_W,
@@ -2796,10 +2808,9 @@ def _render_market_pulse():
             # 2 -- Wealth tier (re-aggregating; counts = stocks, after the cap narrowing)
             if "wealth_tier" in _icf.columns:
                 _ind_wt_n = _icf["wealth_tier"].astype(str).value_counts().to_dict()
-                _ind_wt_opts = [t for t in ["BUY★", "BUY", "WATCH★", "WATCH", "AVOID", "N/A"]
-                                if _ind_wt_n.get(t, 0) > 0]
+                _ind_wt_opts = [t for t in _WT_ORDER if _ind_wt_n.get(t, 0) > 0]
                 _ind_wt = _mp_ms(_i2, "Wealth tier", _ind_wt_opts, "mp_ind_wealth",
-                                 "Re-aggregates. 'BUY★ and BUY, grouped by industry' shows where the "
+                                 "Re-aggregates. 'CLIMBING★ and CLIMBING, grouped by industry' shows where the "
                                  "improving-wealth names actually concentrate — a far sharper answer "
                                  "than the same question asked of an 81-value sector. Counts are "
                                  "STOCKS and reflect the market-cap filter to the left.", _ind_wt_n)
@@ -2844,12 +2855,12 @@ def _render_market_pulse():
                 _ind_src = _ind_src[_ind_src["market_category"].isin(_ind_cap)]
             # 💹 TIER-SHARE BASE — same design as the Sectors tab: captured AFTER the cap filter,
             # BEFORE the wealth filter, so the share column keeps the FULL roster as denominator
-            # (computed after the filter it would read 100% everywhere). All → BUY★.
+            # (computed after the filter it would read 100% everywhere). All → the top tier; one tier
+            # names the column, two or more name a count (see the Sectors note).
             _ind_share_base = _ind_src
-            _ind_share_tiers = list(_ind_wt) if _ind_wt else ["BUY★"]
+            _ind_share_tiers = list(_ind_wt) if _ind_wt else [_WT_ORDER[0]]
             _ind_share_tier = (_ind_share_tiers[0] if len(_ind_share_tiers) == 1
-                               else ("+".join(_ind_share_tiers) if len(_ind_share_tiers) <= 3
-                                     else f"{len(_ind_share_tiers)} tiers"))
+                               else f"{len(_ind_share_tiers)} tiers")
             if _ind_wt:
                 _ind_src = _ind_src[_ind_src["wealth_tier"].isin(_ind_wt)]
 
@@ -2882,13 +2893,15 @@ def _render_market_pulse():
             # 🔭 The view measures, from the SAME filtered stocks (see the Sectors note).
             _ind_stats = _ind_stats.join(group_measures(_ind_src, "industry"))
             # 💹 tier share — over _ind_share_base (pre-wealth-filter roster; see above). Exact
-            # equality, never contains: "BUY" ⊂ "BUY★".
+            # equality, never contains: "CLIMBING" ⊂ "CLIMBING★".
             if "wealth_tier" in _ind_share_base.columns and not _ind_stats.empty:
                 _ind_stats["pct_tier"] = (
                     _ind_share_base.groupby("industry")["wealth_tier"]
                     .apply(lambda s: 100.0 * s.isin(_ind_share_tiers).mean())
                     .reindex(_ind_stats.index)
                 )
+            _ind_share_rate = (100.0 * df["wealth_tier"].isin(_ind_share_tiers).mean()
+                               if "wealth_tier" in df.columns else float("nan"))
             if _ind_stats.empty:
                 st.info("No stocks match these filters — widen the selection.")
             else:
@@ -3017,10 +3030,10 @@ def _render_market_pulse():
                                                  "filtered stocks. BLANK means incomparable, not zero: that sector holds "
                                                  "no other industry, so no peers exist."),
                         "pct_tier":       st.column_config.ProgressColumn(f"💹 {_ind_share_tier} %", min_value=0, max_value=100, format="%.0f%%", width=_MP_BAR_W,
-                                            help=f"Share of the industry's FULL roster in the {_ind_share_tier} wealth tier. "
-                                                 f"Follows the Wealth-tier filter (All → BUY★); the denominator deliberately "
+                                            help=f"Share of the industry's FULL roster in {' or '.join(_ind_share_tiers)}. "
+                                                 f"Follows the Wealth-tier filter (All → {_WT_ORDER[0]}); the denominator deliberately "
                                                  f"IGNORES that filter — computed after it, the column would read 100% "
-                                                 f"everywhere. N/A stocks dilute the share. Universe BUY★ base rate ≈ 12%. "
+                                                 f"everywhere. N/A stocks dilute the share. Across the whole market: {_ind_share_rate:.0f}%. "
                                                  f"Read against Count — even more so here than on Sectors (median industry "
                                                  f"holds 3 stocks)."),
                         "avg_quality":    st.column_config.ProgressColumn("Quality",   min_value=0, max_value=100, format="%.0f", width=_MP_BAR_W),

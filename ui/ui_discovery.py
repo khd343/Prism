@@ -13,6 +13,7 @@ import streamlit as st
 
 from config import COLORS, FRAMEWORK_CATEGORIES, STALE_RESULT_DAYS, TREND_TEMPLATE_MAX_BELOW_HIGH
 from core.data_engine import CONSOLIDATION_BASE_LABELS, VCP_DRYUP_SHARE, traded_value_cr
+from core.verdict_engine import WEALTH_NA, WEALTH_TIERS
 from ui.ui_liquidity import LIQUIDITY_STEPS, ORDER_SHARE, SURVEILLANCE_NOTE, order_guide, step_label, step_value
 
 
@@ -257,8 +258,8 @@ def keep_selected(options, stored) -> list:
     two selectboxes here; app.py's Market Pulse `_mp_ms` imports it): never silently drop what the
     user chose. A keyed Streamlit widget raises when its stored value is absent from `options`, and
     the first design answered that by PRUNING the stored selection to the live list — which
-    switched the filter OFF and showed MORE stocks, not zero. Measured 2026-09-02: Wealth Tier=BUY★
-    then Sector=Air Transport Service (a sector with no BUY★) returned the sector's 4 non-BUY★
+    switched the filter OFF and showed MORE stocks, not zero. Measured 2026-09-02: Wealth Tier=CLIMBING★
+    then Sector=Air Transport Service (a sector with no CLIMBING★) returned the sector's 4 non-CLIMBING★
     names where the honest answer is 0, the culprit banner never fired because the filter was
     never applied, and 106 of the cascade's ordered pairs could do it. Keeping the pick in the
     option list — after the live options, so canonical order is untouched — lets every count
@@ -540,17 +541,17 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
 
             # 4b2. Wealth Tier — the change-lens verdict (verdict_engine.wealth_tier): is the
             # business BECOMING more valuable? Orthogonal to Verdict above by construction (the
-            # engine's complete 18-stock BUY list splits across four wealth tiers) — so composing
-            # the two is the point: Verdict=AVOID + Wealth=WATCH★ is the confirmed-turnaround
-            # screen the engine cannot express alone. Price- and forensics-blind by design; pair
-            # with Max Red Flags below for the clean version.
-            _wt_opts = _ordered_present(_cf, "wealth_tier",
-                                        ["BUY★", "BUY", "WATCH★", "WATCH", "AVOID", "N/A"])
+            # engine's complete 18-stock BUY list of 2026-08-27 split across four wealth tiers) — so
+            # composing the two is the point: Soundness=FLAWED + Wealth=RECOVERING is the
+            # confirmed-turnaround screen the engine cannot express alone. Price- and forensics-blind
+            # by design; pair with Max Red Flags below for the clean version.
+            _wt_opts = _ordered_present(_cf, "wealth_tier", [*WEALTH_TIERS, WEALTH_NA])
             sel_wtier = _ms_cascade("Wealth Tier", _wt_opts, "sb_wealthtier", default=[],
-                                    help="The wealth-engine tier (EP% · Vel% · margin tau): is it becoming "
-                                         "more valuable? BUY★ = earning above cost of equity, improving, "
-                                         "margins confirming; WATCH★ = confirmed turnaround. Price-blind — "
-                                         "not a recommendation. Empty = all.",
+                                    help="The wealth-engine tier (EP% · Vel% · margin tau): which way is "
+                                         "the business's value creation moving? CLIMBING★ = earning above "
+                                         "cost of equity, improving, margins confirming; RECOVERING = not "
+                                         "earning it yet, improving with margins confirming. Price-blind — "
+                                         "a description, not a recommendation. Empty = all.",
                                     count_col="wealth_tier")
             if sel_wtier and "wealth_tier" in _cf.columns:
                 _cf = _narrow(_cf, _label_mask(_cf["wealth_tier"], sel_wtier), "Wealth Tier")

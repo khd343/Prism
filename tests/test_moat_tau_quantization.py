@@ -77,7 +77,7 @@ opm_latest_q costs -0.0251 (W1) and -0.0246 (W2) -- and W1 uses only columns nat
 snapshot, so that half needs no backfill and no fiscal-year assumption. docs/known-issues.md had
 this open as "test whether dropping opm_latest_q improves trajectory's predictive value"; the
 answer is no, and the question is closed.
-  * 568 wealth tiers (20.9%) were re-measured on the switch — BUY★ 336 → 331 (50 in / 46 out),
+  * 568 wealth tiers (20.9%) were re-measured on the switch — CLIMBING★ 336 → 331 (50 in / 46 out),
     N/A 369 → 441: the 154 stocks that LOST a tau are shallow-history firms (91.6% lack a 5-year
     PAT vs 17.3% of the universe; a third listed under two years ago) — a company without five
     years of margins gets no five-year margin trend. Unverifiable is not passed, nor condemned.

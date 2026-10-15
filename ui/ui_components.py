@@ -608,7 +608,7 @@ def render_pulse_band(df) -> None:
 # The glossary explains the TERM for a beginner; it NEVER judges the value (good/bad needs thresholds
 # = engine drift). A label with no entry simply gets no "?" — the completeness net.
 _RAW_GLOSSARY = {
-    "Wealth Tier": "The wealth-engine tier — is this business becoming more valuable? Three clocks: EP% (excess return above the cost of equity), Vel% (this year's change in it), and the 5-year margin tau. BUY★ = earning, improving, confirmed; WATCH★ = confirmed turnaround. Price-blind and forensics-blind (the ⚠ marks 8+ red flags or a Schilit fail and never alters the tier); a description, not a recommendation.",
+    "Wealth Tier": "The wealth-engine tier — which way is this business's value creation moving? Three clocks: EP% (excess return above the cost of equity), Vel% (this year's change in it), and the 5-year margin tau. CLIMBING★ = earning, improving, confirmed; RECOVERING = not earning yet, improving, confirmed; UNEVEN = the clocks disagree; STALLED = not improving. Price-blind and forensics-blind (the ⚠ marks 8+ red flags or a Schilit fail and never alters the tier); a description, not a recommendation.",
     "Wealth EP%": "Excess return: economic profit ÷ reserves × 100 = ROE minus the 12% cost of equity, exactly — both are built on the same equity base. Scale-free, so a ₹200 Cr and a ₹2,000 Cr business compare fairly. The universe median is NEGATIVE — above zero already beats the median listed company.",
     "Wealth Vel%": "This year's CHANGE in the excess return, in points of the reserves base. The 28th Wealth Creation study's finding is that DIRECTION beats level — a business climbing from a low base has historically outperformed a high earner sliding backwards.",
     # ── All-Data grid: curated residual orphans (coverage audit 2026-06-17) ──
@@ -985,12 +985,12 @@ def render_stock_card(row: pd.Series, show_scores: bool = True):
     ) if _vdir else ""
 
     # ── 💹 Wealth-tier chip beside the Soundness chip: the two verdicts at browse level.
-    # Filter-result coherence — if you filtered Wealth = WATCH★, the cards SHOW it. N/A and
+    # Filter-result coherence — if you filtered Wealth = RECOVERING, the cards SHOW it. N/A and
     # missing render nothing (no chip over no data); ⚠ rides with the tier, never blended.
     _wt = str(row.get("wealth_tier", "") or "")
-    _wt_c = {"BUY★": COLORS["green"], "BUY": COLORS["green"],
-             "WATCH★": COLORS["gold"], "WATCH": COLORS["gold"],
-             "AVOID": COLORS["text_muted"]}.get(_wt)
+    _wt_c = {"CLIMBING★": COLORS["green"], "CLIMBING": COLORS["green"],
+             "RECOVERING": COLORS["gold"], "UNEVEN": COLORS["gold"],
+             "STALLED": COLORS["text_muted"]}.get(_wt)
     _wt_w = " ⚠" if int(row.get("wealth_warn", 0) or 0) == 1 else ""
     _wealth_chip = (
         f'<div style="display:inline-block;font-size:0.78rem;font-weight:900;color:{_wt_c};'

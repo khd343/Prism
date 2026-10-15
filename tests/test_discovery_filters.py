@@ -370,7 +370,7 @@ def test_keep_selected_appends_dead_picks_last_and_never_duplicates():
     out of the live options is KEPT — appended after the live options, so the canonical order is
     untouched and Streamlit's value-not-in-options crash cannot occur — and it renders with its
     honest count of 0. The old rule PRUNED it, which switched the filter off and showed MORE
-    stocks: Wealth Tier=BUY★ then Sector=Air Transport Service returned the sector's 4 non-BUY★
+    stocks: Wealth Tier=CLIMBING★ then Sector=Air Transport Service returned the sector's 4 non-CLIMBING★
     names where the honest answer is 0 (measured 2026-09-02, 106 cascade pairs affected)."""
     assert keep_selected(["a", "b"], ["b", "z"]) == ["a", "b", "z"]
     assert keep_selected(["a", "b"], []) == ["a", "b"]
@@ -394,7 +394,7 @@ def _widening_app():
         "sector":           ["P", "Q"],
         "industry":         ["P-ind", "Q-ind"],
         "market_category":  ["Large Cap", "Nano Cap"],
-        "wealth_tier":      ["BUY★", "AVOID"],
+        "wealth_tier":      ["CLIMBING★", "STALLED"],
         "conviction_tier":  [1, 2],
         "piotroski_fscore": [5, 6],
         "red_flag_count":   [0, 1],
@@ -415,20 +415,20 @@ def _run(at):
 
 
 def test_upstream_pick_cannot_switch_off_a_downstream_multiselect():
-    """Wealth Tier=BUY★ (downstream) then Sector=Q, which holds no BUY★ (upstream). The honest
+    """Wealth Tier=CLIMBING★ (downstream) then Sector=Q, which holds no CLIMBING★ (upstream). The honest
     result is ZERO and the culprit is the tier filter — not the whole of sector Q with the tier
     quietly dropped. The stored selection must survive the run intact."""
     from streamlit.testing.v1 import AppTest
 
     at = AppTest.from_function(_widening_app)
-    at.session_state["sb_wealthtier"] = ["BUY★"]
+    at.session_state["sb_wealthtier"] = ["CLIMBING★"]
     r = _run(at)
     assert r["N"] == "1", f"tier filter alone should keep exactly A: {r}"
     at.session_state["sb_sector"] = "Q"
     r = _run(at)
     assert r["N"] == "0", f"the tier filter was silently dropped — the widening is back: {r}"
     assert r["CULPRIT"] == "Wealth Tier", f"the culprit must name the filter that emptied it: {r}"
-    assert r["WT"] == "['BUY★']", f"the user's pick was pruned from session state: {r}"
+    assert r["WT"] == "['CLIMBING★']", f"the user's pick was pruned from session state: {r}"
 
 
 def test_upstream_pick_cannot_switch_off_a_downstream_selectbox():
@@ -465,7 +465,7 @@ def test_capital_allocation_filter_is_registered_and_cascades():
     """💰 Capital Allocation — the OUTSIDERS axis (buybacks/dividends vs dilution), computed by the
     engine and shown in All Data but unscreenable until now. MEASURED on live data: 3 well-spread
     values (Returning 22% · Neutral 70% · Raising 8%) and ORTHOGONAL — max overlap with ANY existing
-    filter is 34% (vs 💰 Cash Machine). 'Returning capital AND BUY★' was previously inexpressible."""
+    filter is 34% (vs 💰 Cash Machine). 'Returning capital AND CLIMBING★' was previously inexpressible."""
     grp = next(l for l in _DISC.splitlines() if '_grp("🎯 Decision & Class"' in l)
     assert "sb_capalloc" in grp, "not registered in the 🎯 Decision & Class group badge"
     i = _DISC.rindex("_active_n(")
@@ -600,7 +600,7 @@ def _all_filters_app():
         # ── 🎯 Decision & Class
         "conviction_tier":   [1, 2, 1],
         "verdict_direction": lab("SOUND", "FLAWED"),
-        "wealth_tier":       lab("BUY★", "AVOID"),
+        "wealth_tier":       lab("CLIMBING★", "STALLED"),
         "corporate_class":   lab("🏆 GREAT", "💀 GRUESOME"),
         "capital_allocation_signal": lab("💰 Returning Capital", "⚠️ Raising Capital"),
         # ── 🛡️ Safety
@@ -649,7 +649,7 @@ _FILTER_CASES = [
     ("sb_capphase",    {"sb_capphase": ["🔥 Hot Capital (caution)"]}, ["B"]),
     ("sb_tier",        {"sb_tier": [1]},                             ["A", "C"]),
     ("sb_verdict",     {"sb_verdict": ["SOUND"]},                    ["A", "C"]),
-    ("sb_wealthtier",  {"sb_wealthtier": ["AVOID"]},                 ["B"]),
+    ("sb_wealthtier",  {"sb_wealthtier": ["STALLED"]},                 ["B"]),
     ("sb_corpclass",   {"sb_corpclass": ["🏆 GREAT"]},               ["A", "C"]),
     ("sb_capalloc",    {"sb_capalloc": ["💰 Returning Capital"]},    ["A", "C"]),
     ("sb_maxrf",       {"sb_maxrf": 2},                              ["A", "C"]),
@@ -1150,7 +1150,7 @@ def test_recover_labels_is_order_preserving_deduplicating_and_drops_only_the_unr
     ("sb_fw_include", ["QGLP  ·  99"]),
 ], ids=["sb_catalyst", "sb_fw_include"])
 def test_a_round_tripped_label_survives_being_narrowed_out_upstream(key, label):
-    """THE FULL-FRAME RULE, for format_func widgets. Wealth Tier = AVOID (upstream) keeps only row
+    """THE FULL-FRAME RULE, for format_func widgets. Wealth Tier = STALLED (upstream) keeps only row
     B, which has neither cat_capacity nor QGLP — so both values are narrowed OUT of the live
     options by the time their widget renders. The honest answer is 0 rows with the filter still
     applied. A recovery domain built from the narrowed frame (`_cf`) cannot recognise the label,
@@ -1158,7 +1158,7 @@ def test_a_round_tripped_label_survives_being_narrowed_out_upstream(key, label):
     The single-filter cases above cannot see this — nothing upstream narrows there."""
     from streamlit.testing.v1 import AppTest
     at = AppTest.from_function(_all_filters_app)
-    at.session_state["sb_wealthtier"] = ["AVOID"]
+    at.session_state["sb_wealthtier"] = ["STALLED"]
     at.session_state[key] = label
     at.run(timeout=30)
     assert not at.exception, f"{key} raised: {at.exception}"
@@ -1229,3 +1229,33 @@ def test_the_oracle_is_not_vacuous():
         len(frame[(frame["sector"] == "Steel") & (frame["industry"] == "Wires")]),
     }
     assert len(counts) >= 4, "the oracle cases collapse to %s — they cannot discriminate" % counts
+
+
+def _all_tiers_app():
+    import pandas as _pd
+
+    from ui.ui_discovery import render_discovery_sidebar
+
+    tiers = ["CLIMBING★", "CLIMBING", "RECOVERING", "UNEVEN", "STALLED", "N/A"]
+    render_discovery_sidebar(_pd.DataFrame({
+        "name": list("ABCDEF"), "sector": ["P"] * 6, "industry": ["P-ind"] * 6,
+        "market_category": ["Large Cap"] * 6, "wealth_tier": tiers, "conviction_tier": [1] * 6,
+        "piotroski_fscore": [5] * 6, "red_flag_count": [0, 1, 2, 0, 1, 2],   # a 0..0 slider cannot render
+        "quality_score": [10.0] * 6, "composite_score": [10.0] * 6,
+    }))
+
+
+def test_the_wealth_filter_offers_every_tier_in_ladder_order():
+    """The 2026-10-15 rename (a mutation survived without this): the sidebar reads the ladder from
+    core.verdict_engine.WEALTH_TIERS. A typed list still holding one retired word would drop that tier
+    from the filter with no error at all — every option the data holds must be offered, in ladder order."""
+    from streamlit.testing.v1 import AppTest
+
+    from core.verdict_engine import WEALTH_NA, WEALTH_TIERS
+
+    at = AppTest.from_function(_all_tiers_app)
+    at.run(timeout=30)
+    assert not at.exception, f"sidebar raised: {at.exception}"
+    ms = next(m for m in at.multiselect if m.label == "Wealth Tier")
+    shown = [str(o).split("·")[0].split("(")[0].strip() for o in ms.options]
+    assert shown == [*WEALTH_TIERS, WEALTH_NA], f"the Wealth Tier filter offers {shown}"

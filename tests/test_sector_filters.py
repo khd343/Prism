@@ -173,7 +173,7 @@ def test_wealth_tier_is_a_stock_filter_that_re_aggregates(live):
         f"sector-constant attribute it should be a ROW filter like capital phase, not a stock one"
     )
     base = _agg(live)
-    sliced = _agg(live[live["wealth_tier"] == "BUY★"])
+    sliced = _agg(live[live["wealth_tier"] == "CLIMBING★"])
     common = base.index.intersection(sliced.index)
     assert len(common) > 5, "not enough overlap to compare"
     moved = (base.loc[common, "pct_qualify"] - sliced.loc[common, "pct_qualify"]).abs() > 0.01
@@ -289,15 +289,15 @@ def test_tier_share_base_is_captured_before_the_wealth_filter(src):
 def test_the_100_percent_trap_is_real(live):
     """Self-verifying: the naive post-filter share IS 100% everywhere, and the pre-filter one
     genuinely varies — so the structural pin above defends a measured hazard, not a style."""
-    filt = live[live["wealth_tier"] == "AVOID"]
-    trap = filt.groupby("sector")["wealth_tier"].apply(lambda s: 100.0 * (s == "AVOID").mean())
+    filt = live[live["wealth_tier"] == "STALLED"]
+    trap = filt.groupby("sector")["wealth_tier"].apply(lambda s: 100.0 * (s == "STALLED").mean())
     assert (trap == 100.0).all(), "the trap probe went stale — post-filter share is no longer trivial"
-    full = live.groupby("sector")["wealth_tier"].apply(lambda s: 100.0 * (s == "AVOID").mean())
+    full = live.groupby("sector")["wealth_tier"].apply(lambda s: 100.0 * (s == "STALLED").mean())
     assert full.std() > 1.0, "the full-roster share no longer varies across sectors"
 
 
 def test_tier_share_is_exact_match_never_contains(src, live):
-    """'BUY' ⊂ 'BUY★' (the QGLP⊂SQGLP class). Structural: exact MEMBERSHIP in the app — `.isin`
+    """'CLIMBING' ⊂ 'CLIMBING★' (the QGLP⊂SQGLP class). Structural: exact MEMBERSHIP in the app — `.isin`
     over the selected tier set since the control went multi-select, which is still exact-match
     per value and still not a substring test. Live: the two matchers genuinely disagree, so the
     pin has teeth."""
@@ -310,19 +310,30 @@ def test_tier_share_is_exact_match_never_contains(src, live):
     seg = src[i:src.index(".reindex(_sec_stats.index)", src.index('_sec_stats["pct_tier"]', i))]
     assert "s.isin(_sec_share_tiers)" in seg, "the share is no longer an exact-membership match"
     assert ".str.contains" not in seg, "a contains-match crept into the tier share"
-    star = live.groupby("sector")["wealth_tier"].apply(lambda s: 100.0 * (s == "BUY★").mean())
+    star = live.groupby("sector")["wealth_tier"].apply(lambda s: 100.0 * (s == "CLIMBING★").mean())
     loose = live.groupby("sector")["wealth_tier"].apply(
-        lambda s: 100.0 * s.astype(str).str.contains("BUY", regex=False).mean())
-    assert (loose - star).max() > 1.0, "BUY and BUY★ no longer diverge — re-check before relaxing"
+        lambda s: 100.0 * s.astype(str).str.contains("CLIMBING", regex=False).mean())
+    assert (loose - star).max() > 1.0, "CLIMBING and CLIMBING★ no longer diverge — re-check before relaxing"
 
 
-def test_tier_share_defaults_to_buy_star_and_the_label_follows(src):
-    """Nothing selected → BUY★ (top of the forward-validated monotonic ladder); a selection renames
-    the column so its semantics are self-announcing. Multi-select 2026-08-30: the share follows the
-    SET, and the label degrades gracefully (one tier → its name, ≤3 → 'BUY★+BUY', more → a count)
-    because 'BUY★+BUY+WATCH★+WATCH %' would not fit a column header."""
-    assert '_sec_share_tiers = list(_wt_sec) if _wt_sec else ["BUY★"]' in src
+def test_tier_share_defaults_to_the_top_tier_and_the_label_follows(src):
+    """Nothing selected → the top of the ladder (CLIMBING★ — its order is not yet tested forward:
+    December plan, rule 2); a selection renames the column so its semantics are self-announcing.
+    Multi-select 2026-08-30: the share follows the SET, and the label degrades gracefully (one tier →
+    its name, more → a count): since the 2026-10-15 rename two words already overfill a header
+    ('CLIMBING★+CLIMBING' is 18 characters), so the tooltip and the caption above name the set."""
+    assert '_sec_share_tiers = list(_wt_sec) if _wt_sec else [_WT_ORDER[0]]' in src
     assert 'f"💹 {_sec_share_tier} %"' in src, "the column label no longer follows the filter"
+
+
+def test_tier_share_base_rate_is_measured_not_typed(src):
+    """The tooltip quoted 'Universe BUY★ base rate ≈ 12%' — typed once, true once (13.3% on the
+    14 Oct sheet), and the same 12% whichever tier the column showed. Both tabs now compute it from
+    the whole market, for the tier set the column actually shows."""
+    assert "≈ 12%" not in src, "a typed base rate is back"
+    for tab in ("_sec", "_ind"):
+        assert f'{tab}_share_rate = (100.0 * df["wealth_tier"].isin({tab}_share_tiers).mean()' in src
+        assert f"{{{tab}_share_rate:.0f}}%" in src, f"the {tab} tooltip no longer quotes the measured rate"
 
 
 def test_the_tier_share_label_never_outgrows_a_column_header(src):
@@ -331,9 +342,11 @@ def test_the_tier_share_label_never_outgrows_a_column_header(src):
     i = src.index("_sec_share_tiers = list(_wt_sec)")
     expr = src[i:src.index("if _wt_sec:", i)]
     ns = {}
-    for sel, want in [(["BUY★"], "BUY★"), (["BUY★", "BUY"], "BUY★+BUY"),
-                      (["BUY★", "BUY", "WATCH★", "WATCH"], "4 tiers"), ([], "BUY★")]:
+    for sel, want in [(["CLIMBING★"], "CLIMBING★"), (["RECOVERING"], "RECOVERING"),
+                      (["CLIMBING★", "CLIMBING"], "2 tiers"),
+                      (["CLIMBING★", "CLIMBING", "RECOVERING", "UNEVEN"], "4 tiers"), ([], "CLIMBING★")]:
         ns["_wt_sec"] = sel
+        ns["_WT_ORDER"] = ["CLIMBING★", "CLIMBING", "RECOVERING", "UNEVEN", "STALLED", "N/A"]
         exec(expr.replace("\n" + " " * 8, "\n"), {}, ns)
         assert ns["_sec_share_tier"] == want, f"{sel} labelled {ns['_sec_share_tier']!r}, want {want!r}"
         assert len(ns["_sec_share_tier"]) <= 12, "the header label got long enough to be clipped"
@@ -358,7 +371,7 @@ def test_cyclicality_really_does_vary_within_sectors(live):
 
 def test_cyclicality_filter_is_applied_before_the_share_base_and_the_groupby(src):
     """Ordering is the whole contract: cap → cyclicality → [💹 share base] → wealth → groupby.
-    Applied after the share base, Defensive × BUY★ would silently show the ALL-stock share."""
+    Applied after the share base, Defensive × CLIMBING★ would silently show the ALL-stock share."""
     i = src.index('_sec_src[_sec_src["cyclicality_tier"].isin(_cyc_sec)]')
     j = src.index("_sec_share_base = _sec_src")
     k = src.index('_sec_src = _sec_src[_sec_src["wealth_tier"].isin(_wt_sec)]')
@@ -435,7 +448,7 @@ def test_the_cascade_narrows_left_to_right(src):
     order the filters are actually APPLIED — cap → cyclicality → wealth → phase — because the
     application order is not free: the 💹 share base must be captured after cyclicality and before
     wealth (test_cyclicality_filter_is_applied_before_the_share_base_and_the_groupby). The first
-    build put wealth second on screen but narrowed neither by the other, so 'Defensive × BUY★'
+    build put wealth second on screen but narrowed neither by the other, so 'Defensive × CLIMBING★'
     could be offered as a live pair when the intersection was empty. Column order, cascade order
     and application order are now the same order.
     """

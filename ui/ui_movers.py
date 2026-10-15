@@ -25,14 +25,19 @@ import pandas as pd
 import streamlit as st
 
 from config import COLORS
+from core.verdict_engine import WEALTH_NA, WEALTH_TIERS
 from ui.ui_export import _to_csv_bytes
 
 JOIN_KEY = "company_id"
 # The wealth ladder, best first. N/A means "an input is missing — never condemned on absent
 # evidence"; it sits OUTSIDE the ladder so a move to or from it is reported as unverifiable,
 # never as an upgrade or a downgrade.
-WEALTH_LADDER = ["BUY★", "BUY", "WATCH★", "WATCH", "AVOID"]
-UNVERIFIABLE = "N/A"
+WEALTH_LADDER = list(WEALTH_TIERS)          # core.verdict_engine — one definition of the words
+UNVERIFIABLE = WEALTH_NA
+# A tier column's width in every Movers table: the widest word, RECOVERING, needs 93px in the grid's font
+# (77px of text + 8px padding a side, measured 2026-10-15). "small" (~75px) clipped it. The Deep Scanner's
+# Wealth column is the same 93 (app.py _DS_W) — tests/test_wealth_tier_display.py pins the two equal.
+TIER_COL_PX = 93
 SOUND_LADDER = ["SOUND", "MIXED", "FLAWED"]
 
 # Every column the diff reads. Only those present on BOTH sides are diffed; a column missing from
@@ -317,7 +322,9 @@ def compute_movers(prev: pd.DataFrame, cur: pd.DataFrame, days_between=None) -> 
     return out
 
 
-_REASON_ORDER = {"→": 0, "BUY★": 1, "gate": 2, "🌊": 3, "rank": 4, "flags": 5}   # by first token
+_TOP = WEALTH_LADDER[0]
+_INTO_TOP, _OUT_OF_TOP = f"→ {_TOP}", f"{_TOP} →"     # the ladder moves 'What matters' reports
+_REASON_ORDER = {"→": 0, _TOP: 1, "gate": 2, "🌊": 3, "rank": 4, "flags": 5}   # by first token
 
 
 def _signed(s: pd.Series) -> pd.Series:
@@ -326,8 +333,8 @@ def _signed(s: pd.Series) -> pd.Series:
     return pd.Series(np.where(v > 0, "+" + v.astype(str), "−" + (-v).astype(str)), index=s.index)
 
 
-GOOD_REASONS = ("→ BUY★", "gate ✓", "🌊 new", "rank +", "flags −")   # a move that improves the stock
-REASON_TOKENS = ("→ BUY★", "BUY★ →", "gate ✓", "gate ✗", "🌊 new", "rank", "flags")
+GOOD_REASONS = (_INTO_TOP, "gate ✓", "🌊 new", "rank +", "flags −")   # a move that improves the stock
+REASON_TOKENS = (_INTO_TOP, _OUT_OF_TOP, "gate ✓", "gate ✗", "🌊 new", "rank", "flags")
 
 
 def flag_threshold(res: dict, floor: int = 3, pct: float = 0.90, min_n: int = 50) -> int:
@@ -352,7 +359,7 @@ def flag_threshold(res: dict, floor: int = 3, pct: float = 0.90, min_n: int = 50
 def _tag_reasons(res: dict, top_rank: int, min_flags: int) -> pd.DataFrame:
     """One row per (stock, reason): company_id · why · tok · good. THE single place the material
     reasons are defined, so material() and reason_counts() can never disagree about what counts.
-    `tok` is the filter token: the whole reason for label moves ("→ BUY★", "gate ✓" …), the first
+    `tok` is the filter token: the whole reason for label moves ("→ CLIMBING★", "gate ✓" …), the first
     word for the numeric ones ("rank", "flags") so a chip covers every magnitude."""
     def tag(frame, why):
         return frame[[JOIN_KEY]].assign(why=why)
@@ -360,9 +367,9 @@ def _tag_reasons(res: dict, top_rank: int, min_flags: int) -> pd.DataFrame:
     up, dn, r, fl = res["wealth_up"], res["wealth_down"], res["rank"], res["flags"]
     parts = [tag(res["gate_new"], "gate ✓"), tag(res["gate_lost"], "gate ✗"), tag(res["tsunami_new"], "🌊 new")]
     if not up.empty:
-        parts.append(tag(up[up["wealth_tier"] == WEALTH_LADDER[0]], "→ BUY★"))
+        parts.append(tag(up[up["wealth_tier"] == _TOP], _INTO_TOP))
     if not dn.empty:
-        parts.append(tag(dn[dn["wealth_tier_prev"] == WEALTH_LADDER[0]], "BUY★ →"))
+        parts.append(tag(dn[dn["wealth_tier_prev"] == _TOP], _OUT_OF_TOP))
     if not r.empty and top_rank > 0:
         top = r.reindex(r["rank_delta"].abs().sort_values(ascending=False, kind="mergesort").index).head(top_rank)
         parts.append(top[[JOIN_KEY]].assign(why="rank " + _signed(top["rank_delta"])))
@@ -390,7 +397,7 @@ def reason_counts(res: dict, top_rank: int = 25, min_flags: int = 3) -> dict:
 
 def material(res: dict, top_rank: int = 25, min_flags: int = 3, cap=40, reasons=None) -> pd.DataFrame:
     """'What matters' — one row per stock with a MATERIAL move, reasons joined in a fixed order:
-    into / out of BUY★ (ladder moves only — an N/A transition is unverifiable, not a verdict),
+    into / out of CLIMBING★ (ladder moves only — an N/A transition is unverifiable, not a verdict),
     crossed the gate either way, a new Tsunami setup, the `top_rank` biggest |Δ rank|, and
     |Δ flags| ≥ `min_flags`. Sorted by number of reasons (desc), then rank; capped at `cap`
     (None = everything, for the download).
@@ -455,7 +462,7 @@ def restrict(res: dict, ids) -> dict:
 # the join key; market_category (constant noise repeated in every table — market cap is one click
 # away on the tear-sheet); gate_pass / tsunami_signal (raw 0/1, and the sections they belong to
 # are defined BY those transitions); and every NUMERIC `_prev` twin, because the delta beside the
-# current value already carries it. The LABEL `_prev` twins stay — "was AVOID, now BUY★" is the
+# current value already carries it. The LABEL `_prev` twins stay — "was STALLED, now CLIMBING★" is the
 # whole content of a ladder move.
 _HDR = {
     JOIN_KEY: None, "market_category": None, "gate_pass": None, "tsunami_signal": None,
@@ -494,6 +501,8 @@ def _table(df: pd.DataFrame, limit: int = 40, select: bool = False, cap_px: int 
         elif c in ("rank", "rank_delta", "steps", "tier_delta", "flag_delta",
                    "red_flag_count", "result_age_days", "conviction_tier"):
             cfg[c] = st.column_config.NumberColumn(label, format="%+d" if ("delta" in c or c == "steps") else "%d", width="small")
+        elif c in ("wealth_tier", "wealth_tier_prev"):
+            cfg[c] = st.column_config.TextColumn(label, width=TIER_COL_PX)
         else:
             cfg[c] = st.column_config.TextColumn(
                 label, width="large" if c == "why" else ("medium" if c == "name" else "small"))
@@ -615,7 +624,7 @@ def render_movers(res: dict, meta: dict):
     # The reason chips (app.py, meta["reasons"]) filter INSIDE material, before the cap.
     mat = material(res, reasons=meta.get("reasons"), cap=None)
     _section("⭐ What matters", len(mat),
-             f"into / out of BUY★ · crossed the gate · new Tsunami · top-25 rank jumps · |Δ flags| ≥ "
+             f"into / out of {_TOP} · crossed the gate · new Tsunami · top-25 rank jumps · |Δ flags| ≥ "
              f"{flag_threshold(res)} (this quarter's top decile, floor 3) — one row per stock. "
              f"↑ improving · ↓ deteriorating · ↕ mixed. Click a row to load it into the Tear-Sheet.",
              shown=min(len(mat), 40))
@@ -651,7 +660,7 @@ def render_movers(res: dict, meta: dict):
         f"🆕 Universe · {c['fresh'] + c['new'] + c['dropped']:,}",
     ])
     with _ev[0]:
-        _block("Upgrades", res["wealth_up"], "rungs climbed on BUY★ › BUY › WATCH★ › WATCH › AVOID")
+        _block("Upgrades", res["wealth_up"], "rungs up the ladder: " + " › ".join(WEALTH_LADDER))
         _block("Downgrades", res["wealth_down"])
         _block("Unverifiable", res["wealth_unverifiable"],
                "moved to or from N/A: an input went missing or came back — not a verdict")

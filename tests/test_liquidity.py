@@ -157,7 +157,7 @@ def _liquidity_app():
         "sector": ["P"] * 4,
         "industry": ["P-ind"] * 4,
         # the columns the sidebar always reads (the same set as test_discovery_filters' _widening_app)
-        "wealth_tier": ["BUY★"] * 4,
+        "wealth_tier": ["CLIMBING★"] * 4,
         "conviction_tier": [1, 1, 1, 1],
         "piotroski_fscore": [5, 5, 5, 5],
         "quality_score": [50.0] * 4,

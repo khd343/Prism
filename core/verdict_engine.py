@@ -31,8 +31,22 @@ import pandas as pd
 # (18 stocks) and its complete WATCH tier (126) — ~250 names across three dry-runs.
 WEALTH_VEL_MIN   = 0.5     # Vel% at/above this = excess return MATERIALLY improving (B)
 WEALTH_TAU_CONF  = 0.25    # tau at/above this = margin spine confirms (C)
-WEALTH_TAU_FADE  = -0.25   # tau at/below this = margins fading — caps the tier at WATCH
+WEALTH_TAU_FADE  = -0.25   # tau at/below this = margins fading — caps the tier at UNEVEN
 WEALTH_WARN_FLAGS = 8      # red flags at/above this raise the ⚠ marker (engine veto sits at 10)
+
+# The ladder's words, strongest first; "N/A" (an input is missing) sits off the ladder, never a tier.
+# RENAMED 2026-10-15 from BUY★ / BUY / WATCH★ / WATCH / AVOID, the user's call after the live sheet
+# showed what the action words said: BUY on 518 stocks (19% of the market), 85% of BUY★ FLAWED on
+# Soundness, AVOID on Colgate at EP% +71.7. The tier measures which WAY value creation is moving and
+# never sees the price, so it speaks DIRECTION words. Same rules, same thresholds, the same stocks in
+# every tier (tests/test_wealth_tier.py replays the old grammar through the map). Every word was checked
+# against every label on screen: RISING nests inside the EP Power Curve's "Not Rising", IMPROVING is
+# that curve's own label, TURNAROUND is ROE Turnaround's and Lynch's, BUILDING is in industry names.
+WEALTH_TIERS = ("CLIMBING★", "CLIMBING", "RECOVERING", "UNEVEN", "STALLED")
+WEALTH_NA = "N/A"
+# Old word → today's, for snapshots and exports written before the rename (tools/validate.py reads
+# them through it). One-to-one in ladder order — the tier sets are unchanged, only their names.
+WEALTH_TIER_RENAMED = dict(zip(("BUY★", "BUY", "WATCH★", "WATCH", "AVOID"), WEALTH_TIERS))
 
 
 def compute_verdict(df: pd.DataFrame) -> pd.DataFrame:
@@ -88,12 +102,13 @@ def compute_verdict(df: pd.DataFrame) -> pd.DataFrame:
 
     # ── Direction: base from post-penalty tier, then asymmetric caps ──
     # VOCABULARY RENAMED 2026-08-27: BUY/WATCH/AVOID → SOUND/MIXED/FLAWED. Two reasons:
-    # (1) COLLISION — the wealth tier (below) deliberately speaks action words (BUY★/BUY/WATCH★/
-    #     WATCH/AVOID), so the same words meant two different things in adjacent columns: the
+    # (1) COLLISION — the wealth tier (below) then spoke action words (BUY★/BUY/WATCH★/WATCH/
+    #     AVOID), so the same words meant two different things in adjacent columns: the
     #     cf_triangle "Perfect — Buy Zone" defect class, rebuilt at vocabulary level.
     # (2) HONESTY — with 18 BUYs against 93% AVOID this was never a buy call; it is a
     #     qualification gate (quality + forensics + valuation + timing), so it now speaks
-    #     CONDITION words. Action words live only in the wealth tier, by the user's design.
+    #     CONDITION words. (Since 2026-10-15 the wealth tier speaks DIRECTION words — see
+    #     WEALTH_TIERS — so no layer issues an action word.)
     # Alternatives audited and rejected: PASS/FAIL & QUALIFIED (conflate with gate_pass /
     # "% Qualify"), STRONG/WEAK (verdict_strength's and a tier label's words), NEUTRAL
     # (smart_money_flow + capital phase), UNSOUND (SOUND ⊂ UNSOUND substring nesting — the bug
@@ -240,18 +255,19 @@ def compute_verdict(df: pd.DataFrame) -> pd.DataFrame:
     #         it ranked Sarda's +₹251 Cr improvement above far larger PERCENTAGE improvers.)
     #     B  wealth_vel_pct >= WEALTH_VEL_MIN  excess return materially improving this year
     #     C  moat_tau       >= WEALTH_TAU_CONF the 5-year margin spine confirms it
-    #     fading: tau <= WEALTH_TAU_FADE caps everything at WATCH — improvement without a margin
+    #     fading: tau <= WEALTH_TAU_FADE caps everything at UNEVEN — improvement without a margin
     #             spine stays on probation (Varroc: Vel +7.5 but tau −0.83).
     #
-    #     BUY★  A·B·C   BUY  A·B(tau flat)   WATCH★  ¬A·B·C (the confirmed turnaround)
-    #     WATCH one clock only, or momentum broken   AVOID  nothing improving   N/A  unverifiable
+    #     CLIMBING★  A·B·C   CLIMBING  A·B(tau flat)   RECOVERING  ¬A·B·C (the confirmed turnaround)
+    #     UNEVEN  the clocks disagree   STALLED  nothing improving   N/A  unverifiable
+    #     (BUY★ / BUY / WATCH★ / WATCH / AVOID until 2026-10-15 — WEALTH_TIER_RENAMED.)
     #
-    # PRICE-BLIND BY DESIGN and the UI must say so: BUY here means the wealth engine is
-    # buy-grade, not that the price is. It is a compressed DESCRIPTION, never a recommendation —
-    # the decision stays with the user.
+    # PRICE-BLIND BY DESIGN and the UI must say so: CLIMBING★ describes the business — its value
+    # creation is rising and confirmed — never the price. A compressed DESCRIPTION, never a
+    # recommendation; the decision stays with the user.
     #
     # ⚠ (wealth_warn) IS DELIBERATELY NOT BLENDED INTO THE TIER. These three clocks cannot see
-    # forensics — measured: 16 of 26 BUY★ on one live watchlist carried 8+ red flags — so the
+    # forensics — measured: 16 of 26 CLIMBING★ on one live watchlist carried 8+ red flags — so the
     # risk marker rides beside the tier and never alters it. Blending would hide exactly the
     # tension the reader needs to see (the cf_triangle lesson).
     #
@@ -271,7 +287,8 @@ def compute_verdict(df: pd.DataFrame) -> pd.DataFrame:
     # 256pp off), and 7 stocks failed the Vel% bar on the shrink alone. Dividing by the SAME
     # base EP is built on makes wealth_ep_pct ≡ ROE − CoE exact by construction — pinned by
     # test_ep_pct_is_exactly_roe_minus_coe, which also catches any future drift between this
-    # divisor and data_engine's EP equity base. Migration measured: 8 tiers changed, none BUY/BUY★.
+    # divisor and data_engine's EP equity base. Migration measured: 8 tiers changed, none into or out
+    # of CLIMBING/CLIMBING★.
     _w_eq  = _col("reserves", np.nan).astype(float).to_numpy()
     _w_ep  = _col("economic_profit", np.nan).astype(float).to_numpy()
     _w_vel = _col("economic_profit_velocity", np.nan).astype(float).to_numpy()
@@ -290,7 +307,7 @@ def compute_verdict(df: pd.DataFrame) -> pd.DataFrame:
     df["wealth_vel_pct"] = _vel_pct
     # Condition ORDER is load-bearing: N/A first (unverifiable outranks everything), then the
     # fading cap (it overrides even A·B·C — C and FADE are mutually exclusive, but A·B·fading
-    # must land on WATCH/AVOID, not BUY), then the tiers from strongest down.
+    # must land on UNEVEN/STALLED, not CLIMBING), then the tiers from strongest down.
     df["wealth_tier"] = np.select(
         [~_known,
          _FADE & _B,
@@ -299,8 +316,8 @@ def compute_verdict(df: pd.DataFrame) -> pd.DataFrame:
          _A & _B,
          _B & _C,
          (_C & ~_B) | (_B & ~_A)],
-        ["N/A", "WATCH", "AVOID", "BUY★", "BUY", "WATCH★", "WATCH"],
-        default="AVOID",
+        [WEALTH_NA, "UNEVEN", "STALLED", "CLIMBING★", "CLIMBING", "RECOVERING", "UNEVEN"],
+        default="STALLED",
     )
     df["wealth_warn"] = ((rflags >= WEALTH_WARN_FLAGS) | schilit_fail).astype(int)
 

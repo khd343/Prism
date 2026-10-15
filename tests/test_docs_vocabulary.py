@@ -30,9 +30,11 @@ pytestmark = pytest.mark.skipif(
     not HANDBOOK.is_dir(), reason="docs/ is gitignored — private handover, not in a fresh clone"
 )
 
-# Words the verdict layer STOPPED using on 2026-08-27. They still exist, but they belong to the
-# wealth ladder now, so presenting them as the verdict means two layers share one vocabulary.
+# Words the verdict layer STOPPED using on 2026-08-27. The wealth ladder then spoke them, until its own
+# rename on 2026-10-15; no layer uses them now, so presenting them as current is drift either way.
 RETIRED_VERDICT = re.compile(r"BUY\s*/\s*WATCH\s*/\s*AVOID")
+# The wealth ladder's words until 2026-10-15 (now CLIMBING★ … STALLED). The starred two are unambiguous.
+RETIRED_WEALTH = re.compile(r"BUY★|WATCH★")
 # A line may name the old words if it is plainly marking them as history.
 HISTORICAL = re.compile(r"until 2026|were called|previously|renamed|old (?:words|strings)", re.I)
 
@@ -53,6 +55,15 @@ def test_retired_verdict_vocabulary_is_never_presented_as_current():
                  if RETIRED_VERDICT.search(line) and not HISTORICAL.search(line)]
     assert not offenders, (
         "the verdict reads SOUND/MIXED/FLAWED since 2026-08-27; these lines still teach the "
+        "old words as current:\n  " + "\n  ".join(offenders))
+
+
+def test_retired_wealth_vocabulary_is_never_presented_as_current():
+    offenders = [f"{f}:{n}  {line.strip()[:90]}"
+                 for f, n, line in _lines()
+                 if RETIRED_WEALTH.search(line) and not HISTORICAL.search(line)]
+    assert not offenders, (
+        "the wealth ladder reads CLIMBING★ … STALLED since 2026-10-15; these lines still teach the "
         "old words as current:\n  " + "\n  ".join(offenders))
 
 
@@ -80,5 +91,6 @@ def test_wealth_ladder_is_documented():
     text = _text()
     assert re.search(r"^##\s+Wealth Ladder\b", text, re.M), (
         "the wealth ladder has no section heading in the handbook")
-    for tier in ("BUY★", "WATCH★", "N/A"):
+    from core.verdict_engine import WEALTH_NA, WEALTH_TIERS
+    for tier in (*WEALTH_TIERS, WEALTH_NA):
         assert tier in text, f"wealth tier {tier!r} is undocumented"

@@ -150,7 +150,7 @@ def test_structural_metrics_render_as_cards_not_bare_text():
     assert html.count("border-radius:10px") >= 6
 
 
-# ── 4. VCV honesty states (2026-08-28: found walking the live BUY★ cohort) ──────────
+# ── 4. VCV honesty states (2026-08-28: found walking the live CLIMBING★ cohort) ──────────
 def _vcv_card(html):
     """The VCV card's own html: label → next card's label. The value's color style sits AFTER
     the label div, and the next card's value color sits after ITS label — so this window holds

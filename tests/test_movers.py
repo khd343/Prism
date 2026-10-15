@@ -47,22 +47,22 @@ def _v(*rows):
 
 
 PREV = _v(
-    ("A", "Alpha",   "WATCH★", "MIXED",  3, 400, 41.0, 0, 0, 3,  80),   # graduates to BUY★
-    ("B", "Beta",    "BUY",    "SOUND",  2, 120, 62.0, 1, 0, 2,  30),   # slides to AVOID, loses gate
-    ("C", "Gamma",   "N/A",    "FLAWED", 5, 900, 20.0, 0, 0, 9,  10),   # N/A -> BUY: unverifiable
-    ("D", "Delta",   "BUY★",   "SOUND",  1,   5, 88.0, 1, 1, 0,  40),   # unchanged
-    ("E", "Epsilon", "WATCH",  "MIXED",  4, 700, 35.0, 0, 0, 5, -20),   # dropped from universe
-    ("F", "Zeta",    "AVOID",  "FLAWED", 5, 950, 18.0, 0, 0, 7,  60),   # flags fall, result upcoming
-    ("G", "Eta",     "WATCH",  "MIXED",  4, 650, np.nan, 0, 0, 4, 90),  # NaN score prev side
+    ("A", "Alpha",   "RECOVERING", "MIXED",  3, 400, 41.0, 0, 0, 3,  80),   # graduates to CLIMBING★
+    ("B", "Beta",    "CLIMBING",   "SOUND",  2, 120, 62.0, 1, 0, 2,  30),   # slides to STALLED, loses gate
+    ("C", "Gamma",   "N/A",        "FLAWED", 5, 900, 20.0, 0, 0, 9,  10),   # N/A -> CLIMBING: unverifiable
+    ("D", "Delta",   "CLIMBING★",  "SOUND",  1,   5, 88.0, 1, 1, 0,  40),   # unchanged
+    ("E", "Epsilon", "UNEVEN",     "MIXED",  4, 700, 35.0, 0, 0, 5, -20),   # dropped from universe
+    ("F", "Zeta",    "STALLED",    "FLAWED", 5, 950, 18.0, 0, 0, 7,  60),   # flags fall, result upcoming
+    ("G", "Eta",     "UNEVEN",     "MIXED",  4, 650, np.nan, 0, 0, 4, 90),  # NaN score prev side
 )
 CUR = _v(
-    ("A", "Alpha",   "BUY★",   "SOUND",  1, 180, 70.0, 1, 1, 3,   5),   # up 2 rungs, gate new, tsunami new, fresh
-    ("B", "Beta",    "AVOID",  "FLAWED", 5, 800, 25.0, 0, 0, 7,  40),   # down 3 rungs, gate lost, flags +5
-    ("C", "Gamma",   "BUY",    "MIXED",  3, 300, 50.0, 0, 0, 9,  20),
-    ("D", "Delta",   "BUY★",   "SOUND",  1,   5, 88.0, 1, 1, 0,  50),   # unchanged (age just grew)
-    ("F", "Zeta",    "AVOID",  "FLAWED", 5, 940, 19.0, 0, 0, 4, -10),   # flags -3; age negative = not fresh
-    ("G", "Eta",     "WATCH",  "MIXED",  4, 640, 36.0, 0, 0, 4,  95),
-    ("H", "Theta",   "WATCH★", "MIXED",  3, 250, 55.0, 0, 0, 1,   3),   # new to universe
+    ("A", "Alpha",   "CLIMBING★",  "SOUND",  1, 180, 70.0, 1, 1, 3,   5),   # up 2 rungs, gate new, tsunami new, fresh
+    ("B", "Beta",    "STALLED",    "FLAWED", 5, 800, 25.0, 0, 0, 7,  40),   # down 3 rungs, gate lost, flags +5
+    ("C", "Gamma",   "CLIMBING",   "MIXED",  3, 300, 50.0, 0, 0, 9,  20),
+    ("D", "Delta",   "CLIMBING★",  "SOUND",  1,   5, 88.0, 1, 1, 0,  50),   # unchanged (age just grew)
+    ("F", "Zeta",    "STALLED",    "FLAWED", 5, 940, 19.0, 0, 0, 4, -10),   # flags -3; age negative = not fresh
+    ("G", "Eta",     "UNEVEN",     "MIXED",  4, 640, 36.0, 0, 0, 4,  95),
+    ("H", "Theta",   "RECOVERING", "MIXED",  3, 250, 55.0, 0, 0, 1,   3),   # new to universe
 )
 
 
@@ -74,13 +74,13 @@ def res():
 # ── 1. Ladder moves ──────────────────────────────────────────────────────────
 def test_wealth_upgrade_counts_rungs_and_downgrade_is_negative(res):
     up, dn = res["wealth_up"], res["wealth_down"]
-    assert list(up["name"]) == ["Alpha"] and int(up["steps"].iloc[0]) == 2      # WATCH★ -> BUY★
-    assert list(dn["name"]) == ["Beta"] and int(dn["steps"].iloc[0]) == -3      # BUY -> AVOID
+    assert list(up["name"]) == ["Alpha"] and int(up["steps"].iloc[0]) == 2      # RECOVERING -> CLIMBING★
+    assert list(dn["name"]) == ["Beta"] and int(dn["steps"].iloc[0]) == -3      # CLIMBING -> STALLED
     assert list(up.columns[-2:]) == ["wealth_tier", "steps"] or "steps" in up.columns
 
 
 def test_na_on_the_wealth_ladder_is_unverifiable_never_an_upgrade(res):
-    """Gamma went N/A -> BUY. An input came back; the engine did NOT judge it better."""
+    """Gamma went N/A -> CLIMBING. An input came back; the engine did NOT judge it better."""
     assert list(res["wealth_unverifiable"]["name"]) == ["Gamma"]
     assert "Gamma" not in set(res["wealth_up"]["name"]) | set(res["wealth_down"]["name"])
 
@@ -149,10 +149,10 @@ def test_a_scheduled_result_that_has_since_been_declared_is_fresh():
     vintage and carries a positive age now has reported in between — fresh. Found live: the
     June-29 copy held a scheduled date for most of the universe (Q1 results announced for
     July/August), and a plain `cur < prev` rule counted only 193 of ~2,000 as fresh."""
-    p = _v(("X", "X", "BUY", "SOUND", 2, 10, 50.0, 1, 0, 1, -15),   # scheduled in the previous vintage
-           ("Y", "Y", "BUY", "SOUND", 2, 11, 50.0, 1, 0, 1, -15))   # still scheduled now
-    c = _v(("X", "X", "BUY", "SOUND", 2, 10, 50.0, 1, 0, 1,  20),   # declared since
-           ("Y", "Y", "BUY", "SOUND", 2, 11, 50.0, 1, 0, 1,  -3))
+    p = _v(("X", "X", "CLIMBING", "SOUND", 2, 10, 50.0, 1, 0, 1, -15),   # scheduled in the previous vintage
+           ("Y", "Y", "CLIMBING", "SOUND", 2, 11, 50.0, 1, 0, 1, -15))   # still scheduled now
+    c = _v(("X", "X", "CLIMBING", "SOUND", 2, 10, 50.0, 1, 0, 1,  20),   # declared since
+           ("Y", "Y", "CLIMBING", "SOUND", 2, 11, 50.0, 1, 0, 1,  -3))
     assert list(compute_movers(p, c)["fresh"]["name"]) == ["X"]
 
 
@@ -162,10 +162,10 @@ def test_a_scheduled_result_that_has_since_been_declared_is_fresh():
     vintage and carries a positive age now has reported in between — fresh. Found live: the
     June-29 copy held a scheduled date for most of the universe (Q1 results announced for
     July/August), and a plain `cur < prev` rule counted only 193 of ~2,000 as fresh."""
-    p = _v(("X", "X", "BUY", "SOUND", 2, 10, 50.0, 1, 0, 1, -15),   # scheduled in the previous vintage
-           ("Y", "Y", "BUY", "SOUND", 2, 11, 50.0, 1, 0, 1, -15))   # still scheduled now
-    c = _v(("X", "X", "BUY", "SOUND", 2, 10, 50.0, 1, 0, 1,  20),   # declared since
-           ("Y", "Y", "BUY", "SOUND", 2, 11, 50.0, 1, 0, 1,  -3))
+    p = _v(("X", "X", "CLIMBING", "SOUND", 2, 10, 50.0, 1, 0, 1, -15),   # scheduled in the previous vintage
+           ("Y", "Y", "CLIMBING", "SOUND", 2, 11, 50.0, 1, 0, 1, -15))   # still scheduled now
+    c = _v(("X", "X", "CLIMBING", "SOUND", 2, 10, 50.0, 1, 0, 1,  20),   # declared since
+           ("Y", "Y", "CLIMBING", "SOUND", 2, 11, 50.0, 1, 0, 1,  -3))
     assert list(compute_movers(p, c)["fresh"]["name"]) == ["X"]
 
 
@@ -182,26 +182,26 @@ def test_churn_rates_are_the_share_of_comparable_stocks_that_changed(res):
 
 
 def test_churn_denominator_excludes_rows_missing_on_either_side():
-    p = _v(("X", "X", "BUY", "SOUND", 2, 10, 50.0, 1, 0, np.nan, 5),
-           ("Y", "Y", "BUY", "SOUND", 2, 11, 50.0, 1, 0, 2, 5))
-    c = _v(("X", "X", "BUY", "SOUND", 2, 10, 50.0, 1, 0, 4, 5),
-           ("Y", "Y", "BUY", "SOUND", 2, 11, 50.0, 1, 0, 5, 5))
+    p = _v(("X", "X", "CLIMBING", "SOUND", 2, 10, 50.0, 1, 0, np.nan, 5),
+           ("Y", "Y", "CLIMBING", "SOUND", 2, 11, 50.0, 1, 0, 2, 5))
+    c = _v(("X", "X", "CLIMBING", "SOUND", 2, 10, 50.0, 1, 0, 4, 5),
+           ("Y", "Y", "CLIMBING", "SOUND", 2, 11, 50.0, 1, 0, 5, 5))
     ch = compute_movers(p, c)["churn"]
     assert ch["red_flag_count"] == pytest.approx(1.0), "X has no previous count — only Y is comparable, and Y changed"
     assert ch["wealth_tier"] == 0.0
 
 
 def test_material_head_section_names_each_reason_once_and_caps(res):
-    """'What matters': into/out of BUY★ (ladder moves only), crossed the gate, new Tsunami, the
+    """'What matters': into/out of CLIMBING★ (ladder moves only), crossed the gate, new Tsunami, the
     top-N rank jumps, |Δ flags| ≥ min. One row per stock, reasons joined in a fixed order, sorted
     by how many reasons a stock has, then by rank."""
     from ui.ui_movers import material
     m = material(res, top_rank=2, min_flags=3)
     why = dict(zip(m["name"], m["why"]))
     # top_rank=2 -> Beta (−680) and Gamma (+600); Alpha's +220 is third and NOT a reason
-    assert why["Alpha"] == "→ BUY★ · gate ✓ · 🌊 new"
+    assert why["Alpha"] == "→ CLIMBING★ · gate ✓ · 🌊 new"
     assert why["Beta"] == "gate ✗ · rank −680 · flags +5"
-    assert why["Gamma"] == "rank +600", "Gamma: only a rank jump (N/A→BUY is unverifiable, not 'into BUY★')"
+    assert why["Gamma"] == "rank +600", "Gamma: only a rank jump (N/A→CLIMBING is unverifiable, not 'into CLIMBING★')"
     assert why["Zeta"] == "flags −3"
     assert "Delta" not in why and "Eta" not in why
     assert list(m["name"])[:2] == ["Alpha", "Beta"], "most reasons first, then by rank"
@@ -210,28 +210,28 @@ def test_material_head_section_names_each_reason_once_and_caps(res):
         assert col in m.columns
 
 
-def test_material_out_of_buy_star_is_a_ladder_move_not_unverifiable():
+def test_material_out_of_climbing_star_is_a_ladder_move_not_unverifiable():
     from ui.ui_movers import material
-    p = _v(("X", "X", "BUY★", "SOUND", 1, 10, 80.0, 1, 0, 1, 5),
-           ("Y", "Y", "BUY★", "SOUND", 1, 11, 80.0, 1, 0, 1, 5))
-    c = _v(("X", "X", "WATCH", "SOUND", 1, 10, 80.0, 1, 0, 1, 5),     # real downgrade
+    p = _v(("X", "X", "CLIMBING★", "SOUND", 1, 10, 80.0, 1, 0, 1, 5),
+           ("Y", "Y", "CLIMBING★", "SOUND", 1, 11, 80.0, 1, 0, 1, 5))
+    c = _v(("X", "X", "UNEVEN", "SOUND", 1, 10, 80.0, 1, 0, 1, 5),     # real downgrade
            ("Y", "Y", "N/A",   "SOUND", 1, 11, 80.0, 1, 0, 1, 5))     # input went missing
     m = material(compute_movers(p, c), top_rank=0, min_flags=99)
-    assert dict(zip(m["name"], m["why"])) == {"X": "BUY★ →"}
+    assert dict(zip(m["name"], m["why"])) == {"X": "CLIMBING★ →"}
 
 
-def test_material_into_buy_star_means_the_top_rung_not_any_upgrade():
-    """An upgrade that stops short of BUY★ (WATCH → WATCH★) is a wealth-tier move for the full
+def test_material_into_climbing_star_means_the_top_rung_not_any_upgrade():
+    """An upgrade that stops short of CLIMBING★ (UNEVEN → RECOVERING) is a wealth-tier move for the full
     section, but it is NOT 'what matters' — a mutation run found the head section firing
-    '→ BUY★' for every upgrade because the fixture's only upgrade happened to reach the top."""
+    '→ CLIMBING★' for every upgrade because the fixture's only upgrade happened to reach the top."""
     from ui.ui_movers import material
-    p = _v(("X", "X", "WATCH",  "MIXED", 3, 10, 50.0, 1, 0, 1, 5),
-           ("Y", "Y", "BUY",    "MIXED", 3, 11, 50.0, 1, 0, 1, 5))
-    c = _v(("X", "X", "WATCH★", "MIXED", 3, 10, 50.0, 1, 0, 1, 5),     # up one rung, not to the top
-           ("Y", "Y", "BUY★",   "MIXED", 3, 11, 50.0, 1, 0, 1, 5))     # into BUY★
+    p = _v(("X", "X", "UNEVEN",  "MIXED", 3, 10, 50.0, 1, 0, 1, 5),
+           ("Y", "Y", "CLIMBING",    "MIXED", 3, 11, 50.0, 1, 0, 1, 5))
+    c = _v(("X", "X", "RECOVERING", "MIXED", 3, 10, 50.0, 1, 0, 1, 5),     # up one rung, not to the top
+           ("Y", "Y", "CLIMBING★",   "MIXED", 3, 11, 50.0, 1, 0, 1, 5))     # into CLIMBING★
     res = compute_movers(p, c)
     assert set(res["wealth_up"]["name"]) == {"X", "Y"}
-    assert dict(zip(*[material(res, top_rank=0, min_flags=99)[k] for k in ("name", "why")])) == {"Y": "→ BUY★"}
+    assert dict(zip(*[material(res, top_rank=0, min_flags=99)[k] for k in ("name", "why")])) == {"Y": "→ CLIMBING★"}
 
 
 def test_fresh_with_the_vintage_gap_means_reported_since_the_previous_vintage():
@@ -240,22 +240,22 @@ def test_fresh_with_the_vintage_gap_means_reported_since_the_previous_vintage():
     landed in between when the two ages happen to be similar — live it counted 877 of ~2,000.
     Given the gap in days between the vintages, fresh = the result date is AFTER the previous
     vintage: 0 ≤ cur_age < gap. The previous side's age is irrelevant."""
-    p = _v(("A", "A", "BUY", "SOUND", 2, 1, 50.0, 1, 0, 1, 20),
-           ("B", "B", "BUY", "SOUND", 2, 2, 50.0, 1, 0, 1, 20),
-           ("C", "C", "BUY", "SOUND", 2, 3, 50.0, 1, 0, 1, 90),
-           ("D", "D", "BUY", "SOUND", 2, 4, 50.0, 1, 0, 1, -5))
-    c = _v(("A", "A", "BUY", "SOUND", 2, 1, 50.0, 1, 0, 1, 23),   # 23 < 66: reported since (age reset would MISS it)
-           ("B", "B", "BUY", "SOUND", 2, 2, 50.0, 1, 0, 1, 66),   # exactly the gap: on the previous vintage day, not since
-           ("C", "C", "BUY", "SOUND", 2, 3, 50.0, 1, 0, 1, 70),   # 70 > 66: before the previous vintage (age reset would WRONGLY count it)
-           ("D", "D", "BUY", "SOUND", 2, 4, 50.0, 1, 0, 1, -3))   # still scheduled
+    p = _v(("A", "A", "CLIMBING", "SOUND", 2, 1, 50.0, 1, 0, 1, 20),
+           ("B", "B", "CLIMBING", "SOUND", 2, 2, 50.0, 1, 0, 1, 20),
+           ("C", "C", "CLIMBING", "SOUND", 2, 3, 50.0, 1, 0, 1, 90),
+           ("D", "D", "CLIMBING", "SOUND", 2, 4, 50.0, 1, 0, 1, -5))
+    c = _v(("A", "A", "CLIMBING", "SOUND", 2, 1, 50.0, 1, 0, 1, 23),   # 23 < 66: reported since (age reset would MISS it)
+           ("B", "B", "CLIMBING", "SOUND", 2, 2, 50.0, 1, 0, 1, 66),   # exactly the gap: on the previous vintage day, not since
+           ("C", "C", "CLIMBING", "SOUND", 2, 3, 50.0, 1, 0, 1, 70),   # 70 > 66: before the previous vintage (age reset would WRONGLY count it)
+           ("D", "D", "CLIMBING", "SOUND", 2, 4, 50.0, 1, 0, 1, -3))   # still scheduled
     assert list(compute_movers(p, c, days_between=66)["fresh"]["name"]) == ["A"]
     # without the gap the age-reset rule is the only evidence available
     assert list(compute_movers(p, c)["fresh"]["name"]) == ["C"]
 
 
 def test_flag_transition_treats_nan_as_not_a_move():
-    p = _v(("X", "X", "BUY", "SOUND", 2, 10, 50.0, np.nan, np.nan, 1, 5))
-    c = _v(("X", "X", "BUY", "SOUND", 2, 10, 50.0, 1, 1, 1, 6))
+    p = _v(("X", "X", "CLIMBING", "SOUND", 2, 10, 50.0, np.nan, np.nan, 1, 5))
+    c = _v(("X", "X", "CLIMBING", "SOUND", 2, 10, 50.0, 1, 1, 1, 6))
     r = compute_movers(p, c)
     assert r["gate_new"].empty and r["tsunami_new"].empty, "NaN -> 1 is not evidence of a transition"
 
@@ -332,17 +332,17 @@ def test_restrict_filters_every_section_by_current_id_but_never_dropped(res):
 
 
 def test_material_direction_is_up_down_or_mixed(res):
-    """↑ every reason improves · ↓ every reason deteriorates · ↕ mixed. Alpha: → BUY★, gate ✓,
+    """↑ every reason improves · ↓ every reason deteriorates · ↕ mixed. Alpha: → CLIMBING★, gate ✓,
     🌊 new — all good. Beta: gate ✗, rank −680, flags +5 — all bad. Zeta: flags −3 — good."""
     from ui.ui_movers import material
     m = material(res, top_rank=2, min_flags=3)
     d = dict(zip(m["name"], m["direction"]))
     assert d["Alpha"] == "↑" and d["Beta"] == "↓" and d["Zeta"] == "↑" and d["Gamma"] == "↑"
     assert list(m.columns)[1] == "direction", "direction must be the first visible column"
-    mixed = _v(("M", "M", "WATCH★", "SOUND", 2, 10, 50.0, 1, 0, 1, 5))
-    mixed_c = _v(("M", "M", "BUY★", "SOUND", 2, 10, 50.0, 0, 0, 1, 5))    # into BUY★ but lost the gate
+    mixed = _v(("M", "M", "RECOVERING", "SOUND", 2, 10, 50.0, 1, 0, 1, 5))
+    mixed_c = _v(("M", "M", "CLIMBING★", "SOUND", 2, 10, 50.0, 0, 0, 1, 5))    # into CLIMBING★ but lost the gate
     mm = material(compute_movers(mixed, mixed_c), top_rank=0, min_flags=99)
-    assert list(mm["direction"]) == ["↕"] and mm["why"].iloc[0] == "→ BUY★ · gate ✗"
+    assert list(mm["direction"]) == ["↕"] and mm["why"].iloc[0] == "→ CLIMBING★ · gate ✗"
 
 
 def test_material_reason_filter_applies_before_the_cap_and_keeps_all_reasons(res):
@@ -355,7 +355,7 @@ def test_material_reason_filter_applies_before_the_cap_and_keeps_all_reasons(res
     flags = material(res, top_rank=2, min_flags=3, reasons=["flags"])
     assert set(flags["name"]) == {"Beta", "Zeta"}, "the numeric token must cover every magnitude and sign"
     assert material(res, top_rank=2, min_flags=3, reasons=["🌊 new"])["name"].tolist() == ["Alpha"]
-    assert material(res, top_rank=2, min_flags=3, reasons=["BUY★ →"]).empty
+    assert material(res, top_rank=2, min_flags=3, reasons=["CLIMBING★ →"]).empty
     # before-the-cap: cap=1 with a reason that only the LAST-ranked material stock has must still find it
     assert list(material(res, top_rank=2, min_flags=3, cap=1, reasons=["flags"])["name"]) == ["Beta"]
     assert len(material(res, top_rank=2, min_flags=3, cap=1)) == 1
@@ -367,8 +367,8 @@ def test_cap_none_returns_every_material_row_beyond_forty():
     cap=None from head(40) (a mutation run proved it), so this builds 60 gate-crossers: the table
     shows 40, the download must carry 60."""
     from ui.ui_movers import material
-    rows_p = [(f"S{i:02d}", f"Stock{i:02d}", "WATCH", "MIXED", 3, 100 + i, 40.0, 0, 0, 2, 30) for i in range(60)]
-    rows_c = [(f"S{i:02d}", f"Stock{i:02d}", "WATCH", "MIXED", 3, 100 + i, 40.0, 1, 0, 2, 30) for i in range(60)]
+    rows_p = [(f"S{i:02d}", f"Stock{i:02d}", "UNEVEN", "MIXED", 3, 100 + i, 40.0, 0, 0, 2, 30) for i in range(60)]
+    rows_c = [(f"S{i:02d}", f"Stock{i:02d}", "UNEVEN", "MIXED", 3, 100 + i, 40.0, 1, 0, 2, 30) for i in range(60)]
     res60 = compute_movers(_v(*rows_p), _v(*rows_c))
     assert len(material(res60, top_rank=0, min_flags=99)) == 40, "the default cap must still be 40"
     assert len(material(res60, top_rank=0, min_flags=99, cap=None)) == 60, "cap=None must return every row"
@@ -386,14 +386,14 @@ def test_flag_threshold_is_the_quarters_top_decile_floored_at_three():
     assert flag_threshold(compute_movers(PREV, CUR)) == 3
     # noisy quarter: 100 changed, deltas 1..10 with a long tail of 1s and 2s -> 90th pct = 5 -> 5
     deltas = [1] * 50 + [2] * 30 + [3] * 8 + [4] * 2 + [5] * 5 + [6] * 3 + [8] * 2
-    rows_p = [(f"S{i:03d}", f"Stock{i:03d}", "WATCH", "MIXED", 3, 100 + i, 40.0, 0, 0, 5, 30) for i in range(100)]
-    rows_c = [(f"S{i:03d}", f"Stock{i:03d}", "WATCH", "MIXED", 3, 100 + i, 40.0, 0, 0, 5 + d, 30) for i, d in enumerate(deltas)]
+    rows_p = [(f"S{i:03d}", f"Stock{i:03d}", "UNEVEN", "MIXED", 3, 100 + i, 40.0, 0, 0, 5, 30) for i in range(100)]
+    rows_c = [(f"S{i:03d}", f"Stock{i:03d}", "UNEVEN", "MIXED", 3, 100 + i, 40.0, 0, 0, 5 + d, 30) for i, d in enumerate(deltas)]
     noisy = compute_movers(_v(*rows_p), _v(*rows_c))
     assert flag_threshold(noisy) == 5
     m = material(noisy, top_rank=0)
     assert len(m) == 10 and m["why"].str.startswith("flags +").all(), "only |Δ| ≥ 5 (the tail) is material in a noisy quarter"
     # quiet quarter: 100 changed but every |Δ| is 1 or 2 -> percentile 2 < floor -> floor holds (3), nothing material
-    rows_q = [(f"S{i:03d}", f"Stock{i:03d}", "WATCH", "MIXED", 3, 100 + i, 40.0, 0, 0, 5 + (1 if i % 2 else 2), 30) for i in range(100)]
+    rows_q = [(f"S{i:03d}", f"Stock{i:03d}", "UNEVEN", "MIXED", 3, 100 + i, 40.0, 0, 0, 5 + (1 if i % 2 else 2), 30) for i in range(100)]
     quiet = compute_movers(_v(*rows_p), _v(*rows_q))
     assert flag_threshold(quiet) == 3 and material(quiet, top_rank=0).empty
     # the header states the effective value — never a hardcoded 3
@@ -407,7 +407,7 @@ def test_flag_threshold_is_the_quarters_top_decile_floored_at_three():
 def test_reason_counts_match_material_and_use_canonical_order(res):
     from ui.ui_movers import REASON_TOKENS, material, reason_counts
     rc = reason_counts(res, top_rank=2, min_flags=3)
-    assert rc == {"→ BUY★": 1, "gate ✓": 1, "gate ✗": 1, "🌊 new": 1, "rank": 2, "flags": 2}
+    assert rc == {"→ CLIMBING★": 1, "gate ✓": 1, "gate ✗": 1, "🌊 new": 1, "rank": 2, "flags": 2}
     assert list(rc) == [k for k in REASON_TOKENS if k in rc], "counts must follow the canonical token order"
     for tok, n in rc.items():
         assert len(material(res, top_rank=2, min_flags=3, reasons=[tok])) == n, f"{tok}: chip count ≠ filtered rows"
@@ -430,12 +430,17 @@ def test_star_table_is_uncapped_in_material_but_shown_capped_with_a_download():
 
 # ── 5. Ladders mirror the app ────────────────────────────────────────────────
 def test_wealth_ladder_matches_the_apps_wt_order_minus_unverifiable():
+    """One ladder, two surfaces. Since 2026-10-15 both READ core.verdict_engine's WEALTH_TIERS (the
+    rename touched six hand-typed copies), so the pin checks the derivation itself, not two lists."""
+    from core.verdict_engine import WEALTH_NA, WEALTH_TIERS
+    from ui.ui_movers import UNVERIFIABLE
     src = open(_APP, encoding="utf-8").read()
     node = next(n for n in ast.walk(ast.parse(src)) if isinstance(n, ast.Assign)
                 and any(getattr(t, "id", "") == "_WT_ORDER" for t in n.targets))
-    app_order = [e.value for e in node.value.elts]
-    assert app_order[:-1] == WEALTH_LADDER and app_order[-1] == "N/A", (
-        "the Movers ladder drifted from app.py's _WT_ORDER — one ladder, two surfaces")
+    assert ast.unparse(node.value) == "[*WEALTH_TIERS, WEALTH_NA]", (
+        "app.py's _WT_ORDER no longer reads the engine's ladder — one ladder, two surfaces")
+    assert WEALTH_LADDER == list(WEALTH_TIERS) and UNVERIFIABLE == WEALTH_NA == "N/A", (
+        "the Movers ladder drifted from the engine's — one ladder, two surfaces")
     assert SOUND_LADDER == ["SOUND", "MIXED", "FLAWED"]
 
 
@@ -570,10 +575,10 @@ def _movers_app():
     cols = ["company_id", "name", "sector", "market_category", "wealth_tier", "verdict_direction",
             "conviction_tier", "rank", "composite_score", "gate_pass", "tsunami_signal",
             "red_flag_count", "result_age_days"]
-    p = _pd.DataFrame([["A", "Alpha", "S", "Mid Cap", "WATCH★", "MIXED", 3, 400, 41.0, 0, 0, 3, 80],
-                       ["B", "Beta", "S", "Mid Cap", "BUY", "SOUND", 2, 120, 62.0, 1, 0, 2, 30]], columns=cols)
-    c = _pd.DataFrame([["A", "Alpha", "S", "Mid Cap", "BUY★", "SOUND", 1, 180, 70.0, 1, 1, 3, 5],
-                       ["B", "Beta", "S", "Mid Cap", "AVOID", "FLAWED", 5, 800, 25.0, 0, 0, 7, 40]], columns=cols)
+    p = _pd.DataFrame([["A", "Alpha", "S", "Mid Cap", "RECOVERING", "MIXED", 3, 400, 41.0, 0, 0, 3, 80],
+                       ["B", "Beta", "S", "Mid Cap", "CLIMBING", "SOUND", 2, 120, 62.0, 1, 0, 2, 30]], columns=cols)
+    c = _pd.DataFrame([["A", "Alpha", "S", "Mid Cap", "CLIMBING★", "SOUND", 1, 180, 70.0, 1, 1, 3, 5],
+                       ["B", "Beta", "S", "Mid Cap", "STALLED", "FLAWED", 5, 800, 25.0, 0, 0, 7, 40]], columns=cols)
     res = compute_movers(p, c)
     picked = render_movers(res, {"prev_vintage": "2026-09-24", "cur_vintage": "2026-12-29",
                                  "prev_label": "FY27Q1", "cur_label": "FY27Q2", "engine": "abc1234",
@@ -662,8 +667,8 @@ def test_truncation_is_stated_never_silent():
 def test_noise_columns_are_hidden_and_label_prev_twins_are_kept():
     """Identity, the thing that moved, the delta, where it stands. Market cap repeated in sixteen
     tables is noise; a raw 0/1 gate column is noise in sections defined BY that transition; a
-    numeric `_prev` twin is redundant beside its delta. The LABEL twins stay — 'was AVOID, now
-    BUY★' is the entire content of a ladder move."""
+    numeric `_prev` twin is redundant beside its delta. The LABEL twins stay — 'was STALLED, now
+    CLIMBING★' is the entire content of a ladder move."""
     from ui.ui_movers import _HDR
     for hidden in ("market_category", "gate_pass", "tsunami_signal", "rank_prev",
                    "composite_score_prev", "conviction_tier_prev", "red_flag_count_prev", JOIN_KEY):

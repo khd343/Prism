@@ -72,11 +72,11 @@ CONCEPT_REFERENCE = {
     ],
     # ── wealth_tier — core/verdict_engine.py (the change-lens verdict; price- and forensics-blind) ──
     "💹 Wealth Tier": [
-        ("BUY★", "All three wealth clocks agree: earning above the cost of equity (EP% > 0), that excess return materially improving this year (Vel% ≥ +0.5), and the 5-year margin trend confirming it (tau ≥ +0.25). Price-blind — says the wealth engine is buy-grade, NOT that the price is right."),
-        ("BUY", "Earning above the cost of equity and improving, but the 5-year margin trend is flat — the engine is running, its durability is unproven."),
-        ("WATCH★", "The confirmed turnaround: NOT yet earning above the cost of equity, but the excess return is climbing and margins confirm the turn. The engine's AVOID pile is where these live."),
-        ("WATCH", "One clock only — a margin spine without improvement, improvement without earnings, or a good business whose momentum just broke. Also caps anything whose margins are fading (tau ≤ −0.25)."),
-        ("AVOID", "Nothing improving. The LEVEL may be excellent — a stock can earn far above its cost of equity and still land here because every change clock points down (the engine's own BUY list contains such names)."),
+        ("CLIMBING★", "All three wealth clocks agree: earning above the cost of equity (EP% > 0), that excess return materially improving this year (Vel% ≥ +0.5), and the 5-year margin trend confirming it (tau ≥ +0.25). Describes the business, never the price: whether the price is right is Valuation's question. Called BUY★ until 2026-10-15."),
+        ("CLIMBING", "Earning above the cost of equity and improving, but the 5-year margin trend is flat — the engine is running, its durability is unproven. Called BUY until 2026-10-15."),
+        ("RECOVERING", "The confirmed turnaround: NOT yet earning above the cost of equity, but the excess return is improving and the 5-year margins confirm the turn. Soundness's FLAWED pile is where these live. Called WATCH★ until 2026-10-15."),
+        ("UNEVEN", "The clocks disagree: improving this year without earning the cost of equity, improving while the 5-year margins fade, or margins confirming without this year's improvement. Fading margins (tau ≤ −0.25) cap even a strong year here. Called WATCH until 2026-10-15."),
+        ("STALLED", "Not improving this year (most of these are falling) and no confirming margin trend. The LEVEL may be excellent — a business can earn far above its cost of equity and still land here because its excess return stopped rising. Called AVOID until 2026-10-15."),
         ("N/A", "An input the tier needs (the reserves equity base, economic profit, its velocity, or the margin tau) is missing or unusable — unverifiable is neither passed nor condemned, so no tier is assigned. The row still shows whatever numbers exist."),
     ],
     # ── cf_triangle — core/forensic_engine.py:1006 (signs of operating/investing/financing cash flow)
@@ -116,9 +116,9 @@ CONCEPT_REFERENCE = {
     ],
     # ── verdict_direction — core/verdict_engine.py:72 (conviction tier + forensic/governance vetoes)
     "⚖️ Soundness": [
-        ("SOUND", "The engine's affirmative gate — quality, clean books and a reasonable price all clear (tier 1–2, no forensic or governance veto). Renamed from BUY on 2026-08-27: with 18 passers against 93% of the universe failing, this was always a qualification gate, not a buy call — and the wealth tier now owns the action vocabulary. Condition words here, action words there, no word in both."),
-        ("MIXED", "The middle of the gate — promising but with a caveat: mid conviction, or a soft forensic/timing/governance downgrade from SOUND. Renamed from WATCH (the wealth tier owns WATCH/WATCH★ now)."),
-        ("FLAWED", "The gate found flaws — low conviction, OR a hard veto from severe forensic red flags / value-destroying capital allocation. Says nothing about direction: a FLAWED stock can be a confirmed turnaround on the wealth tier (WATCH★), and that pairing is exactly what the two lenses exist to surface. Renamed from AVOID."),
+        ("SOUND", "The engine's affirmative gate — quality, clean books and a reasonable price all clear (tier 1–2, no forensic or governance veto). Renamed from BUY on 2026-08-27: with 18 passers against 93% of the universe failing, this was always a qualification gate, not a buy call. Condition words here, direction words on the wealth tier, no word in both — and no action words on either."),
+        ("MIXED", "The middle of the gate — promising but with a caveat: mid conviction, or a soft forensic/timing/governance downgrade from SOUND. Renamed from WATCH on 2026-08-27."),
+        ("FLAWED", "The gate found flaws — low conviction, OR a hard veto from severe forensic red flags / value-destroying capital allocation. Says nothing about direction: a FLAWED stock can be a confirmed turnaround on the wealth tier (RECOVERING), and that pairing is exactly what the two lenses exist to surface. Renamed from AVOID."),
     ],
     # ── conviction_tier / tier_label — config.CONVICTION_TIERS (composite-score bands)
     "🏆 Conviction Tier": [

@@ -27,8 +27,8 @@ justified rather than slipped in. Neither Stage-3 removal reason applies to it �
                   does not
 
 💹 WEALTH ADDED 2026-08-27 (same session, later), and again this file forced the justification:
-    not dead      every one of its six tiers is populated on live data (BUY★ 12% · BUY 5% ·
-                  WATCH★ 9% · WATCH 32% · AVOID 34% · N/A 8%) — pinned by tests/test_wealth_tier.py
+    not dead      every one of its six tiers is populated on live data (CLIMBING★ 12% · CLIMBING 5% ·
+                  RECOVERING 9% · UNEVEN 32% · STALLED 34% · N/A 8%) — pinned by tests/test_wealth_tier.py
     not brittle   a pure READ of the wealth_* columns compute_verdict materializes; the tab holds
                   zero logic, so the tier a snapshot captures equals the tier displayed
     not redundant it answers the question no other surface does — "is it becoming more valuable?"
@@ -311,8 +311,8 @@ def test_lens_rows_wired_into_the_three_tabs():
 
 
 def test_the_wealth_tabs_own_tier_control_is_multi_select():
-    """The user's request, and the two readings it unblocks: "BUY★ and BUY" (the buy-grade half of
-    the ladder) and "WATCH★ and WATCH" (both turnaround grades). Neither was expressible one tier
+    """The user's request, and the two readings it unblocks: "CLIMBING★ and CLIMBING" (the climbing
+    half of the ladder) and "RECOVERING and UNEVEN" (the middle grades). Neither was expressible one tier
     at a time — the control was a selectbox."""
     import ast as _ast
     src = _app_src()
@@ -357,8 +357,8 @@ def test_lens_row_seeds_and_stale_guards_every_key():
     rule) appends any stored pick the cascade narrowed out to the option list BEFORE the widget
     instantiates — so Streamlit's value-not-in-options crash cannot occur AND the filter stays
     applied with an honest count of 0. Pruning did the opposite: it switched the filter off and
-    WIDENED the result (Wealth Tier=BUY★ + Sector=Air Transport Service showed the sector's 4
-    non-BUY★ names instead of 0). Seeding by assignment (not `del`) keeps the Steel fix intact."""
+    WIDENED the result (Wealth Tier=CLIMBING★ + Sector=Air Transport Service showed the sector's 4
+    non-CLIMBING★ names instead of 0). Seeding by assignment (not `del`) keeps the Steel fix intact."""
     src = _app_src()
     # the cascade mechanics live in the hoisted _mp_ms helper (shared by every Market Pulse row
     # since Phase 2 — one dialect, not three); the lens row is one of its callers.

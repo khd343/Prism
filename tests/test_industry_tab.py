@@ -515,7 +515,7 @@ def test_tier_share_base_is_captured_before_the_wealth_filter(block):
 
 def test_tier_share_is_exact_match_never_contains(block):
     """Exact MEMBERSHIP since the control went multi-select (2026-08-30): still one exact match per
-    selected tier, still never a substring test — "BUY" is a prefix of "BUY★"."""
+    selected tier, still never a substring test — "CLIMBING" is a prefix of "CLIMBING★"."""
     # ANCHORED STRUCTURALLY (2026-10-03): a fixed 2,600-character window broke when the 🚀
     # Improvement column added a line above the share computation. The window now ends where the
     # computation does — same subject, no dependence on what sits between. See the Sectors twin in
@@ -526,11 +526,14 @@ def test_tier_share_is_exact_match_never_contains(block):
     assert ".str.contains" not in seg, "a contains-match crept into the tier share"
 
 
-def test_tier_share_defaults_to_buy_star_and_the_label_follows(block):
-    """Nothing selected → BUY★; a selection renames the column. Multi-select: the share follows the
-    SET and the label degrades (one tier → its name, ≤3 → joined, more → a count) so it still fits
-    a column header — the same grammar as the Sectors tab, pinned behaviourally there."""
-    assert '_ind_share_tiers = list(_ind_wt) if _ind_wt else ["BUY★"]' in block
+def test_tier_share_defaults_to_the_top_tier_and_the_label_follows(block):
+    """Nothing selected → the top of the ladder (CLIMBING★); a selection renames the column.
+    Multi-select: the share follows the SET and the label degrades (one tier → its name, more → a
+    count) so it still fits a column header — the same grammar as the Sectors tab, pinned
+    behaviourally there."""
+    assert '_ind_share_tiers = list(_ind_wt) if _ind_wt else [_WT_ORDER[0]]' in block
+    i = block.index("_ind_share_tier = (")
+    assert 'else f"{len(_ind_share_tiers)} tiers")' in block[i:i + 200], "the Industry label no longer degrades like Sectors"
     assert 'f"💹 {_ind_share_tier} %"' in block, "the column label no longer follows the filter"
 
 
@@ -541,16 +544,16 @@ def test_tier_share_is_not_the_sort_key(block):
 
 
 def test_industry_tier_share_discriminates(live):
-    """Liveness: among industries with n≥5, the BUY★ share must genuinely spread (measured at
+    """Liveness: among industries with n≥5, the CLIMBING★ share must genuinely spread (measured at
     build: sector-level 0%→50% against a 12% base rate). A near-constant column is dead weight."""
     d = live.copy()
     d["industry"] = d["industry"].astype(str).str.strip()
     n = d.groupby("industry")["name"].count()
-    share = d.groupby("industry")["wealth_tier"].apply(lambda s: 100.0 * (s == "BUY★").mean())
+    share = d.groupby("industry")["wealth_tier"].apply(lambda s: 100.0 * (s == "CLIMBING★").mean())
     big = share[n >= 5]
     assert len(big) >= 30, f"only {len(big)} industries hold ≥5 stocks — threshold stale"
     assert big.max() - big.min() > 20.0, (
-        f"BUY★ share barely varies across industries ({big.min():.0f}–{big.max():.0f}%) — "
+        f"CLIMBING★ share barely varies across industries ({big.min():.0f}–{big.max():.0f}%) — "
         f"the column no longer discriminates; re-measure before keeping it"
     )
 
