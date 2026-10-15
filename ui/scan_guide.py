@@ -8,7 +8,8 @@ The user asked that the guide stay right whenever a scan changes or a new one is
 kinds of text:
 - FACTS the code already holds are written from it at render time and never typed twice: the one-line
   recipe, the table order, the comparison index, the record's numbers and timing (from the records file),
-  the costs, the Holding-20 reading, the order check, why a 🌱 stock left, the candidates being measured.
+  the costs, the Holding-20 reading, the order check, the revenue-led check, why a 🌱 stock left, the
+  candidates being measured.
   They are read as `S.<name>` at call time, so they follow the code (and a test can change them).
 - Each scan's EXPLANATION (GUIDES) is written by hand and stamped with the scan it was written for:
   guide_stamp() = its recipe fingerprint (the recipe and every score it reads) plus each setting the guide
@@ -480,6 +481,23 @@ def _order_check(scan: dict, rec, state: str) -> list:
     return [text]
 
 
+def _revenue_led_check(scan: dict, rec, state: str) -> list:
+    if scan["key"] not in S.REVENUE_LED_RULE["scans"]:
+        return []
+    rule = S.REVENUE_LED_RULE
+    gap = f"{rule['min_gap_pp']:g} point" + ("" if rule["min_gap_pp"] == 1 else "s")
+    text = (f"**Revenue-led check:** inside this list, do the matches that are also revenue-led (sales up more than "
+            f"10% and profit growing faster, the test 🌱 uses) beat the rest? It holds if they beat them by at least "
+            f"{gap} on the mean and on the middle stock in each of the first {rule['windows']} separate unseen "
+            f"windows with {rule['min_n']}+ stocks on each side. Registered on 15 Oct 2026, before any of those "
+            f"windows: evidence for Kite's next design, never a change to this list or to Kite.")
+    if state == "measured":
+        v = S.revenue_led_rule((rec or {}).get("out_of_sample") or [])
+        text += (f" So far {v['counted']} of {rule['windows']} windows are in." if v["state"] == "pending" else
+                 f" Decided: it {v['state']}.")
+    return [text]
+
+
 def scan_sections(scan: dict, rec=None, state: str = "unmeasured") -> list:
     """One scan's guide as (title, items) sections: its explanation (GUIDES) between the facts read from the
     code and from its record. `rec` / `state` are what ui_scans.record_state returns for it."""
@@ -493,7 +511,8 @@ def scan_sections(scan: dict, rec=None, state: str = "unmeasured") -> list:
         ("When a stock enters and leaves", list(g["enter_leave"]) + _exit_reasons(scan)),
         ("How the table is ordered", _order(scan)),
         ("Its record", _record(scan, rec, state) + _unseen(scan, rec, state)
-         + [f"**Compared with {_index(scan)}** — {g['benchmark_why']}"] + _order_check(scan, rec, state)),
+         + [f"**Compared with {_index(scan)}** — {g['benchmark_why']}"] + _order_check(scan, rec, state)
+         + _revenue_led_check(scan, rec, state)),
         *method,
         ("What it cannot see", list(g["limits"])
          + [f"The limits every scan shares — SME lots, surveillance, forecasts, data timing — are under "

@@ -171,6 +171,25 @@ def hold_reading(early: pd.DataFrame, ret: pd.Series, match: pd.Series) -> dict:
     return out
 
 
+def revenue_led_reading(early: pd.DataFrame, excess: pd.Series, match: pd.Series) -> dict:
+    """Inside the scan, its matches that are revenue-led against the rest (2026-10-15, ui_scans.REVENUE_LED_RULE).
+    ui_scans.revenue_led, the test 🌱 uses, read here and never re-typed, splits the window's own scored matches
+    (corporate actions and missing prices already out); excess is the window's own, over its market median. Each
+    side's size; once both sides have the rule's min_n, each side's mean and median excess and the two gaps
+    (revenue-led minus the rest), to two decimals because the check compares them with a fixed bar."""
+    led = S.revenue_led(early)
+    yes, no = match & led, match & ~led
+    out = dict(n_led=int(yes.sum()), n_rest=int(no.sum()))
+    if min(out["n_led"], out["n_rest"]) < S.REVENUE_LED_RULE["min_n"]:
+        return out
+    a, b = excess[yes], excess[no]
+    out.update(led_mean_pp=round(float(a.mean()), 2), rest_mean_pp=round(float(b.mean()), 2),
+               led_median_pp=round(float(a.median()), 2), rest_median_pp=round(float(b.median()), 2),
+               mean_gap_pp=round(float(a.mean() - b.mean()), 2),
+               median_gap_pp=round(float(a.median() - b.median()), 2))
+    return out
+
+
 def measure_window(early: pd.DataFrame, late: pd.DataFrame, scan: dict, start: str, end: str,
                    bench_early=None, bench_late=None):
     """The scan's record over one window. The recipe runs on the WHOLE early frame (as the tab runs it
@@ -186,7 +205,10 @@ def measure_window(early: pd.DataFrame, late: pd.DataFrame, scan: dict, start: s
     vs_index (2026-10-08, December plan rule 23), when the two copies' benchmark tables give at least
     one index reading: those same liquid matches as ONE equal-weight portfolio — the mean return, which
     is what a portfolio earns, less S.NET_COST_PP (portfolio_pp, only with MIN_N of them) — and every
-    index's return less the fund fee for the window (index_returns)."""
+    index's return less the fund fee for the window (index_returns).
+
+    revenue_led (2026-10-15), for the scans S.REVENUE_LED_RULE names: the matches split by revenue_led
+    (revenue_led_reading), the reading the revenue-led check decides on."""
     fr = forward_returns(early, late, "company_id")
     corp = early["company_id"].isin(set(fr.loc[fr["corp_action"], "company_id"]))
     m = fr[~fr["corp_action"]][["company_id", "fwd_return"]]
@@ -211,6 +233,8 @@ def measure_window(early: pd.DataFrame, late: pd.DataFrame, scan: dict, start: s
                dropped_corp_action=int((in_scan & corp).sum()),
                net=net)
     out["hold"] = hold_reading(early, ret, match)
+    if scan.get("key") in S.REVENUE_LED_RULE["scans"]:
+        out["revenue_led"] = revenue_led_reading(early, excess, match)
     indices = index_returns(bench_early, bench_late, _days(start, end))
     if indices:
         vs = dict(fee_pct_yr=S.FUND_FEE_PCT_YR, cost_pp=S.NET_COST_PP, min_cr=S.NET_MIN_CR, n=net["n"],

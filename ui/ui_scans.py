@@ -91,6 +91,18 @@ HOLD_SEED = 20261013
 # four windows about 1 time in 12 (8.6%); "3 of 4 above half" would pass 31% of the time. 🌱 lists by
 # Rank and is not checked (its 3-year study found momentum inside it flips year to year).
 ORDER_RULE = dict(scans=("playbook", "leaders"), windows=4, min_avg_pct=70.0, min_n=30)
+# The revenue-led check (registered 2026-10-15, before any unseen window has a result). Inside 🚀, do the matches
+# that are also revenue_led (the test 🌱 uses) beat the rest? A Kite-side plan proposed trading that in Kite's window
+# 2; the frozen go-rule needs the SAME design in two windows in a row, so the operator kept Kite as it is and chose to
+# measure the idea here instead. Every unseen window records both arms (scan_records_job.revenue_led_reading). It
+# HOLDS if, over the scan's first `windows` separate finished windows with both arms at least `min_n`, the
+# revenue-led matches beat the rest by at least `min_gap_pp` on the mean AND on the median in EVERY one; otherwise
+# "did not hold", decided once. Three monthly windows because the archive keeps month-end copies: 31 Oct -> 30 Nov
+# -> 31 Dec -> 31 Jan cover the months of Kite's windows 1 and 2. In-sample before registering (data to 12 Oct):
+# +2.0 / +0.3 / +6.0 points on the mean, so the middle window would already miss this bar. It decides nothing by
+# itself: nothing reaches the list, the feed or Kite; a hold makes it a candidate for Kite's next design, tested in
+# that design's own windows.
+REVENUE_LED_RULE = dict(scans=("playbook",), windows=3, min_gap_pp=1.0, min_n=30)
 RECORD_VERSION = 2
 # The day the recipes were chosen. Every window that STARTS on or after it is out of sample: data
 # nobody looked at while choosing. Windows before it are the design-period record (in sample).
@@ -830,6 +842,27 @@ def order_rule(ws) -> dict:
     return out
 
 
+def revenue_led_rule(ws) -> dict:
+    """REVENUE_LED_RULE applied to a scan's unseen windows: 'pending' until it has REVENUE_LED_RULE['windows']
+    separate finished windows whose revenue-led reading has both arms of at least min_n (a reading carries its
+    gaps only then; the same greedy choice as order_rule); then 'held' or 'did not hold' on those first windows
+    only, so a later window can never reopen it. counted = windows that count so far."""
+    rule = REVENUE_LED_RULE
+    usable = [w for w in ws if w.get("final") and "mean_gap_pp" in (w.get("revenue_led") or {})]
+    picked, last = [], ""
+    for w in sorted(usable, key=lambda w: (w["end"], w["start"])):
+        if w["start"] >= last and len(picked) < rule["windows"]:
+            picked.append(w)
+            last = w["end"]
+    out = dict(counted=len(picked), state="pending")
+    if len(picked) == rule["windows"]:
+        mean = [float(w["revenue_led"]["mean_gap_pp"]) for w in picked]
+        median = [float(w["revenue_led"]["median_gap_pp"]) for w in picked]
+        held = all(a >= rule["min_gap_pp"] and b >= rule["min_gap_pp"] for a, b in zip(mean, median))
+        out.update(state="held" if held else "did not hold", mean_gaps=mean, median_gaps=median)
+    return out
+
+
 def _hold_line(scan: dict, ws, c: dict, esc) -> str:
     """Under the unseen record: per window, HOLD_K matches a Rs 1 lakh account can hold, picked at random
     — the typical result after costs and its 10th-90th range — and where momentum's and Rank's top HOLD_K
@@ -867,6 +900,35 @@ def _hold_line(scan: dict, ws, c: dict, esc) -> str:
             f'matches with one share at most ₹{float(h0["max_price"]):,.0f} (what ₹1 lakh across {k} can hold, '
             f'whatever they trade a day), {int(h0["draws"]):,} random picks each window with a fixed seed, a '
             f'{float(h0["cost_pp"]):.1f}pp round trip.{esc(note)}</div>')
+
+
+def _points(x: float) -> str:
+    return f"{x:g} point" + ("" if x == 1 else "s")
+
+
+def _revenue_led_line(scan: dict, ws, c: dict, esc) -> str:
+    """Under the unseen record of a scan REVENUE_LED_RULE checks: per window, its matches that are revenue-led
+    against the rest — the gap in their mean and median excess, and each side's size — then where the check
+    stands. Empty for other scans and until a window carries the reading."""
+    if scan.get("key") not in REVENUE_LED_RULE["scans"]:
+        return ""
+    rows = [w["revenue_led"] for w in ws if "n_led" in (w.get("revenue_led") or {})]
+    if not rows:
+        return ""
+    rule = REVENUE_LED_RULE
+    gaps = lambda key: " / ".join("–" if key not in r else f"{float(r[key]):+.1f}" for r in rows)
+    sizes = " / ".join(f'{int(r["n_led"])} vs {int(r["n_rest"])}' for r in rows)
+    v = revenue_led_rule(ws)
+    state = (f'Revenue-led check: {v["counted"]} of {rule["windows"]} separate windows in' if v["state"] == "pending"
+             else f'Revenue-led check after {rule["windows"]} separate windows: {v["state"]}')
+    return (f'<div style="font-size:0.7rem;color:{c["text_secondary"]};margin-top:5px;">Revenue-led vs the rest of '
+            f'the list: {esc(gaps("mean_gap_pp"))} points on the mean, {esc(gaps("median_gap_pp"))} on the middle '
+            f'stock ({esc(sizes)} stocks) · {esc(state)}</div>'
+            f'<div style="font-size:0.66rem;color:{c["text_muted"]};margin-top:2px;">Revenue-led = sales up more than '
+            f'10% and profit growing faster, the test 🌱 uses. The check holds if the revenue-led matches beat the '
+            f'rest by at least {esc(_points(rule["min_gap_pp"]))} on the mean and on the middle stock in each of the '
+            f'first {rule["windows"]} separate windows with {rule["min_n"]}+ stocks on each side. Registered on 15 Oct '
+            f'2026, before any of these windows; it changes nothing in the list or in Kite.</div>')
 
 
 def _overlap_note(ws, sep: str, end: str = "") -> str:
@@ -1118,7 +1180,8 @@ def _study_body(scan: dict, rec: dict, c: dict, esc) -> str:
                  f'<div style="font-size:0.74rem;color:{c["text_secondary"]};margin-top:3px;">'
                  f'{u_beat} of matches beat the market · before costs · the most trustworthy record{_overlap_note(unseen, " · ")}</div></div>'
                  f'<div style="display:flex;gap:4px;align-items:flex-end;">{_bars(unseen, c, esc, out_of_sample=True)}</div></div>'
-                 f'{_extras(unseen, c, esc)}{_vs_index(scan, unseen, c, esc)}{_hold_line(scan, unseen, c, esc)}')
+                 f'{_extras(unseen, c, esc)}{_vs_index(scan, unseen, c, esc)}{_hold_line(scan, unseen, c, esc)}'
+                 f'{_revenue_led_line(scan, unseen, c, esc)}')
     else:
         body += (f'<div style="border-top:1px solid {c["border"]};margin-top:8px;padding-top:7px;{muted}">'
                  f'<b style="color:{c["text_secondary"]};">Out-of-sample: pending</b> — this list is judged '
@@ -1195,7 +1258,8 @@ def card_html(scan: dict, n_now: int, state: str, rec, selected: bool, latest: s
                      f'<div style="font-size:0.74rem;color:{c["text_secondary"]};margin-top:3px;">'
                      f'{u_beat} of matches beat the market · before costs · the most trustworthy record{_overlap_note(unseen, " · ")}</div></div>'
                      f'<div style="display:flex;gap:4px;align-items:flex-end;">{_bars(unseen, c, esc, out_of_sample=True)}</div></div>'
-                     f'{_extras(unseen, c, esc)}{_vs_index(scan, unseen, c, esc)}{_hold_line(scan, unseen, c, esc)}')
+                     f'{_extras(unseen, c, esc)}{_vs_index(scan, unseen, c, esc)}{_hold_line(scan, unseen, c, esc)}'
+                     f'{_revenue_led_line(scan, unseen, c, esc)}')
         body += _unseen_notes(rec, unseen, c, esc)
     elif state == "unverified":
         body = (f'<div style="font-size:0.74rem;color:{c["text_muted"]};">The record could not be checked against '
