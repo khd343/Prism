@@ -495,7 +495,8 @@ def test_the_commit_message_reaches_git_through_the_environment():
 def test_the_feeds_code_is_pinned_for_the_frozen_window():
     """Kite's frozen Playbook test (12 Oct - 20 Nov 2026): a commit to main must not reach the list, as 2a87ac4 did.
     The code checkout is ONE named commit (FEED_CODE_SHA, which the manifest records), in this history, carrying
-    both feed fixes of 13 Oct. Moving it is a deliberate edit of the workflow and of this test's history."""
+    both feed fixes of 13 Oct and the review fixes of 14 Oct (I1 only the expected session live, I4 the recipe's
+    own inputs; moved 2026-10-15). Moving it is a deliberate edit of the workflow and of this test's history."""
     y = _wf()
     pins = re.findall(r"^\s+FEED_CODE_SHA:\s*(\S+)\s*$", y, re.M)
     assert len(pins) == 1 and re.fullmatch(r"[0-9a-f]{40}", pins[0]), pins
@@ -507,6 +508,7 @@ def test_the_feeds_code_is_pinned_for_the_frozen_window():
     assert git("merge-base", "--is-ancestor", pins[0], "HEAD").returncode == 0, "the pin is not in this history"
     code = git("show", f"{pins[0]}:ui/playbook_feed_job.py").stdout
     assert "FEED_GATE_INDICES" in code and "_in_market_hours" in code, "the pin predates the 13 Oct feed fixes"
+    assert "check_recipe_inputs" in code and "_not_renamed" in code, "the pin predates the 14 Oct review fixes"
 
 
 # ── 12. A stale copy is not a session (2026-10-12) ────────────────────────────────────────────────
