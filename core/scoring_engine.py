@@ -1722,12 +1722,14 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     # Individual year revenue growth checks (years 2-5 back).
     # Book: "revenue growth of 10% every year for ten consecutive years" (Ch.2, p.48).
     # Prism provides Revenue 2-5YB → we verify years 2-5 individually; years 6-10 via CAGR.
-    # fillna(5): missing year data doesn't penalize — treated as meeting the threshold.
+    # A year that cannot be measured does NOT pass (CLAUDE.md §5, "Unverifiable is not passed"; 2026-10-15):
+    # it used to be filled with 5, exactly the floor. NaN >= 5 is False. No live pass depended on it that day
+    # (9 Coffee Can, 61 Unusual Billionaires, which reads _cc_each_year too); tests/test_coffee_can_unverifiable_years.py.
     # Floor relaxed from 10% → 5% to absorb the COVID-19 pandemic anomaly year.
-    _cc_y2 = df.get("rev_gr_y2", _cc_nan).fillna(5)
-    _cc_y3 = df.get("rev_gr_y3", _cc_nan).fillna(5)
-    _cc_y4 = df.get("rev_gr_y4", _cc_nan).fillna(5)
-    _cc_y5 = df.get("rev_gr_y5", _cc_nan).fillna(5)
+    _cc_y2 = df.get("rev_gr_y2", _cc_nan)
+    _cc_y3 = df.get("rev_gr_y3", _cc_nan)
+    _cc_y4 = df.get("rev_gr_y4", _cc_nan)
+    _cc_y5 = df.get("rev_gr_y5", _cc_nan)
     _cc_each_year = (
         (_cc_y2 >= 5) & (_cc_y3 >= 5) & (_cc_y4 >= 5) & (_cc_y5 >= 5)
     )
