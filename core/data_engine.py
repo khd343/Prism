@@ -849,6 +849,34 @@ def traded_value_cr(df: pd.DataFrame) -> pd.Series:
     return _num("vol_sma_20d") * _num("close_price") / 1e7
 
 
+def _vstop_implausible(vstop: pd.Series, close: pd.Series) -> pd.Series:
+    """True where a PRESENT stop is off the price's scale (more than 50x or under 2% of the close): the vendor
+    publishes some stops in paise (MOTHERSON: 7684 against a 130 close). A missing stop is never implausible.
+    Denominator guard: a zero close becomes NaN, so the ratio is NaN, never infinite (§5)."""
+    ratio = vstop / close.replace(0, np.nan)
+    return vstop.notna() & ((ratio > 50) | (ratio < 0.02))
+
+
+def price_trend_inputs(df: pd.DataFrame) -> pd.DataFrame:
+    """The derived price inputs the 🚀 Playbook and the Momentum score read, from the vendor's raw columns. ONE
+    function, so the 🚀 recipe fingerprint follows them (ui/ui_scans.py SCANS `inputs`): on 2026-10-15 a fix to
+    vstop_fresh changed the list while the fingerprint stayed the same. compute_derived_signals assigns these five
+    columns from here and nowhere else (tests/test_price_trend_inputs.py). The scale guard runs here on a copy, so
+    the result is the same before or after compute_derived_signals nulls the off-scale stops in place."""
+    n = lambda c: df.get(c, pd.Series(np.nan, index=df.index))
+    vol, vol20d, close, sma200d = n("volume"), n("vol_sma_20d"), n("close_price"), n("sma_200d")
+    chg = n("last_vstop_change")
+    vstop = n("vstop_value")
+    vstop = vstop.mask(_vstop_implausible(vstop, close))
+    out = pd.DataFrame(index=df.index)
+    out["vol_ratio"] = np.where(vol20d.notna() & (vol20d > 0), vol / vol20d, np.nan)
+    out["vstop_fresh"] = np.where(chg.notna(), (chg <= VSTOP_FRESH_MAX_WEEKS).astype(int), 0)
+    out["above_sma200"] = (close > sma200d).astype(int)
+    out["vstop_green"] = np.where(vstop.notna(), (close > vstop).astype(int), 0)
+    out["dist_to_vstop"] = np.where(vstop.notna() & (vstop > 0), ((close - vstop) / vstop) * 100, np.nan)
+    return out
+
+
 def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     """Compute all 36+ derived signals. Pure vectorized Pandas."""
     print("\n🧮 Computing derived signals...")
@@ -1669,22 +1697,17 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     ).astype(int)
 
     # ── TECHNICAL DERIVED ──
+    # The derived price inputs the 🚀 Playbook and Momentum read come from ONE function the 🚀 fingerprint
+    # follows (price_trend_inputs, 2026-10-15); each is assigned below at its old place, from _pti only.
+    _pti = price_trend_inputs(df)
     _vol      = df.get("volume",     pd.Series(np.nan, index=df.index))
-    _vol20d   = df.get("vol_sma_20d", pd.Series(np.nan, index=df.index))
     _vol50d   = df.get("vol_sma_50d", pd.Series(np.nan, index=df.index))
     _close_t  = df.get("close_price", pd.Series(np.nan, index=df.index))
     _crs50d   = df.get("crs_50d",    pd.Series(0.0, index=df.index))
     _crs26w   = df.get("crs_26w",    pd.Series(0.0, index=df.index))
     _crs52w   = df.get("crs_52w",    pd.Series(0.0, index=df.index))
-    _sma200d  = df.get("sma_200d",   pd.Series(np.nan, index=df.index))
-    _vstop_t  = df.get("vstop_value", pd.Series(np.nan, index=df.index))
-    _vstop_chg = df.get("last_vstop_change", pd.Series(np.nan, index=df.index))
     _ret_n500_3m = df.get("ret_vs_n500_3m", pd.Series(0.0, index=df.index))
-    df["vol_ratio"] = np.where(
-        _vol20d.notna() & (_vol20d > 0),
-        _vol / _vol20d,
-        np.nan
-    )
+    df["vol_ratio"] = _pti["vol_ratio"]
     # Minervini breakout confirmation: volume vs the 50-day baseline (book uses 50D, not 20D).
     # A pivot breakout requires volume ≥ ~1.4× the 50D average. Distinct from vol_ratio (20D).
     df["vol_ratio_50d"] = np.where(
@@ -1723,24 +1746,19 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # VSTOP scale guard: nullify implausible VSTOP values (>50× or <2% of close price).
     # Upstream data sources sometimes publish VSTOP in paise for certain stocks (e.g. MOTHERSON: VSTOP=7684 vs price=130).
     if "vstop_value" in df.columns and "close_price" in df.columns:
-        # Denominator guard: .replace(0, np.nan) maps a zero close to NaN, so the ratio propagates
-        # NaN instead of dividing by zero/∞ (§5 satisfied via replace; close is never negative).
-        vstop_ratio = df["vstop_value"] / df["close_price"].replace(0, np.nan)
         # Only a PRESENT vstop can be a scale mismatch — a genuinely missing (NaN) vstop must
         # not be fillna(0)'d into a phantom "0× ratio" and counted/announced as nullified.
-        implausible_vstop = df["vstop_value"].notna() & ((vstop_ratio > 50) | (vstop_ratio < 0.02))
+        implausible_vstop = _vstop_implausible(df["vstop_value"], df["close_price"])
         df.loc[implausible_vstop, "vstop_value"] = np.nan
         implausible_count = int(implausible_vstop.sum())
         if implausible_count > 0:
             print(f"  ⚠️  VSTOP scale mismatch nullified for {implausible_count} stocks")
-    # Re-fetch after in-place guard so local vars reflect any nullifications above.
-    _vstop_t = df.get("vstop_value", pd.Series(np.nan, index=df.index))
 
     # Fresh = the stop flipped within VSTOP_FRESH_MAX_WEEKS weekly bars (≤ 30 days). Until 2026-10-15 this read
     # `<= 30` as days on a count of WEEKS ("within seven months", 75% of stocks); config.py has the measurement.
-    df["vstop_fresh"] = np.where(_vstop_chg.notna(), (_vstop_chg <= VSTOP_FRESH_MAX_WEEKS).astype(int), 0)
-    df["above_sma200"] = (_close_t > _sma200d).astype(int)
-    df["vstop_green"] = np.where(_vstop_t.notna(), (_close_t > _vstop_t).astype(int), 0)
+    df["vstop_fresh"] = _pti["vstop_fresh"]
+    df["above_sma200"] = _pti["above_sma200"]
+    df["vstop_green"] = _pti["vstop_green"]
 
     # ── VQS & SMART MONEY FLOW (WAVE DETECTION INTEGRATION) ──
     vqs_liquidity = np.where(df["vol_ratio"] >= 3.0, 50,
@@ -1781,11 +1799,7 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
 
     # ── ALPHA VECTOR: ACTIONABILITY / BUY ZONE ──
     # Tells the user WHEN to buy based on risk-reward distance to Volatility Stop.
-    df["dist_to_vstop"] = np.where(
-        _vstop_t.notna() & (_vstop_t > 0),
-        ((_close_t - _vstop_t) / _vstop_t) * 100,
-        np.nan
-    )
+    df["dist_to_vstop"] = _pti["dist_to_vstop"]
     # Below-stop branch FIRST (Marks audit fix 2026-06-12): dist_to_vstop is NEGATIVE
     # when price trades below the stop, and the old `<= 5` branch labeled those broken
     # trends "Perfect Entry (Low Risk)" — the most dangerous technical state wearing the

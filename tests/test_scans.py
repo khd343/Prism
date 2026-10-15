@@ -181,8 +181,11 @@ def test_the_playbook_fingerprint_reaches_the_scores_it_reads():
                   "fn core.scoring_engine._compute_rs_score", "fn core.scoring_engine._compute_improvement_score",
                   "fn core.scoring_engine._pct_rank", "value MOMENTUM_WEIGHTS", "value BREAKOUT_SIGNALS"):
         assert piece in d, f"the Playbook record does not follow {piece}"
-    assert not any(k.startswith("fn core.data_engine") for k in d), (
-        "compute_derived_signals (dist_to_vstop) is deliberately not followed — see SCANS")
+    # The derived price inputs ARE followed, through ONE narrow function (2026-10-15: the V-Stop unit fix
+    # changed the list with the fingerprint unchanged); the broad compute_derived_signals still is not.
+    engine = sorted(k for k in d if k.startswith("fn core.data_engine"))
+    assert engine == ["fn core.data_engine._vstop_implausible", "fn core.data_engine.price_trend_inputs"], (
+        "only price_trend_inputs (and its scale guard) is followed in data_engine — see SCANS")
 
 
 def test_a_changed_score_weight_or_helper_stales_the_playbook_record(monkeypatch):
