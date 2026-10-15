@@ -925,9 +925,15 @@ def _compute_trend_score(df: pd.DataFrame) -> pd.Series:
         rsi_score = _zone_score(df["rsi_14d"], RSI_ZONES)
         score += rsi_score.fillna(50) * TREND_SIGNALS["rsi_zone"]
 
-    # Golden cross recency (lower days = better) — trend recovery signal
+    # Golden cross recency (lower days = better) — trend recovery signal. A blank is no golden cross IN FORCE
+    # (StockScans: "trading days since EMA 50D crossed above EMA 200D"; 76% of blanks have the 50D below the
+    # 200D), so with both averages present it ranks lowest — not the neutral 50 a missing value gets. Without
+    # them the history is too short to tell (a new listing) and it stays neutral (2026-10-15).
     if "golden_cross_days" in df.columns:
-        gc_rank = _pct_rank(df["golden_cross_days"], ascending=False).fillna(50)
+        gc = df["golden_cross_days"]
+        nan = pd.Series(np.nan, index=df.index)
+        history = df.get("sma_50d", nan).notna() & df.get("sma_200d", nan).notna()
+        gc_rank = _pct_rank(gc, ascending=False).where(gc.notna() | ~history, 0.0).fillna(50)
         score += gc_rank * TREND_SIGNALS["golden_cross"]
 
     return _safe_clip(score)
