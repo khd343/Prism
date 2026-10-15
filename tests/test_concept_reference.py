@@ -84,6 +84,8 @@ def _universe():
     u |= {t["label"] for t in CONVICTION_TIERS}
     from core.cyclicality_map import TIER_LABELS
     u |= set(TIER_LABELS.values())
+    from core.data_engine import CONSOLIDATION_BASE_LABELS     # np.select reads them from the constant
+    u |= set(CONSOLIDATION_BASE_LABELS)
     sc = (_ROOT / "core" / "scoring_engine.py").read_text(encoding="utf-8")
     u |= set(re.findall(r'return "(BULL|BEAR|SIDEWAYS)"', sc))   # market regime tags (Market Pulse)
     # Genuine display LABELS only — drop: format/template strings; and NARRATIVE sentences (the verdict

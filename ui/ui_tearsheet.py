@@ -25,6 +25,8 @@ from ui.ui_liquidity import trade_line
 # reads the engine's own table. A local copy would drift the moment a sector norm is retuned —
 # which is exactly how the ">75d / >120d" string below got stranded (see the handler's comment).
 from core.forensic_engine import _SECTOR_DSO_THRESHOLDS, _DEFAULT_DSO_THRESHOLD
+# Same rule for the ⏳ Consolidation Base card and the SEPA panel's V box: the engine's lines and labels.
+from core.data_engine import CONSOLIDATION_BASE_LABELS, VCP_DRYUP_SHARE, VCP_SETUP_MAX_BELOW_HIGH
 
 
 # ─── Display Utilities ──────────────────────────────────────────────────────
@@ -63,6 +65,18 @@ def _shown(value, dp: int = 0) -> float:
     is decoding. Ask what the threshold MEANS before reaching for this.
     """
     return round(float(value), dp)
+
+
+def _same_side(raw: float, rule) -> str:
+    """`raw` printed with the fewest decimals (0-2) that leave `rule` as true or false as it is for the
+    raw value — the "real economic line" case in _shown's docstring, where precision is added rather
+    than the value moved. The ⏳ Consolidation Base card's lines are the engine's own: a 69.7% volume
+    ratio is a dry-up (below 70%), so it never prints as "70%"; 25.3% below the high missed the 25%
+    line, so it never prints as "25%"."""
+    for dp in (0, 1, 2):
+        if bool(rule(round(raw, dp))) == bool(rule(raw)):
+            return f"{raw:.{dp}f}"
+    return f"{raw:.3f}"
 
 
 def _parse_frameworks(fw_str, exclude: set = None) -> list:
@@ -3152,7 +3166,7 @@ def render_sepa_radar(stock: pd.Series):
       R — RS Aligned:      sepa_rs_confirmed (all 3 CRS timeframes positive — Criterion 8)
       E — Earnings Fuel:   sepa_earnings_fuel (EPS ≥25% + Rev ≥20% + ROE ≥17%)
       I — Institutional:   sepa_institutional (FII or DII stake increasing QoQ)
-      V — VCP Volume:      sepa_vcp_dryup (BONUS — 10D vol < 50D vol; never a hard gate)
+      V — VCP Volume:      sepa_vcp_dryup (BONUS — 10D vol below 70% of 50D; never a hard gate)
     """
     st.markdown("<div class='sec-head'>⚡ Mark Minervini — SEPA Momentum Radar</div>",
                 unsafe_allow_html=True)
@@ -3229,15 +3243,20 @@ def render_sepa_radar(stock: pd.Series):
             f"</div>"
         )
 
-    # Pillar V — VCP Volume (SCORE BONUS): never shown as a red fail.
-    # Active (1) → green ⭐ Setup Active. Not yet (0) → amber ⏳ Forming watch signal.
+    # Pillar V — VCP Volume (SCORE BONUS): never shown as a red fail. It scores the plain 10-day dry-up
+    # at any stage; the cockpit's ⏳ Consolidation Base card tells a setup from a quiet decline.
+    # Dried up (1) → green ⭐. Not (0) → amber ⏳, with a missing volume average named, never read as "no".
+    # The line is the engine's (VCP_DRYUP_SHARE): this box said "10D < 50D" long after it moved to 70%.
     _vcp_on  = int(_g(stock, "sepa_vcp_dryup", 0)) == 1
     clr_v    = "#3fb950" if _vcp_on else "#e3b341"   # green active / amber forming (NOT red)
     bg_v     = "18" if _vcp_on else "12"
     ico_v    = "⭐" if _vcp_on else "⏳"
-    sub_v    = ("Setup Active: 10D avg volume < 50D avg — supply exhaustion in base"
+    sub_v    = (f"Volume dried up: 10-day average below {VCP_DRYUP_SHARE:.0%} of the 50-day"
                 if _vcp_on else
-                "Forming — add to watchlist (VCP not yet contracting; bonus, not required)")
+                "Volume averages not reported (a bonus, not required)"
+                if pd.isna(stock.get("vcp_volume_ratio")) else
+                f"No dry-up: 10-day average at or above {VCP_DRYUP_SHARE:.0%} of the 50-day "
+                f"(a bonus, not required)")
     _sp_grid += (
         f"<div style='background:{clr_v}{bg_v};border:1px dashed {clr_v}55;"
         f"border-radius:8px;padding:10px;text-align:center;min-width:110px;flex:1;'>"
@@ -4284,7 +4303,33 @@ def render_valuation_inversion_and_sizing_cockpit(stock: pd.Series):
     _egap_raw = stock.get("expectations_gap")
     _vcv_ok, _egap_ok = pd.notna(_vcv_raw), pd.notna(_egap_raw)
     _vcv, _egap = (float(_vcv_raw) if _vcv_ok else 0.0), (float(_egap_raw) if _egap_ok else 0.0)
-    _vcp_on = int(_g(stock, "sepa_vcp_dryup", 0)) == 1
+
+    # ⏳ CONSOLIDATION BASE (2026-10-15): the engine's label, never re-derived here, so the card always
+    # agrees with the sidebar filter that offers the same states. It used to read "VCP Firing" for every
+    # 10-day volume dry-up (1,218 stocks on the 14 Oct data, 377 of them Stage 4 declines) and "Active"
+    # for no dry-up. The
+    # sub-line states the facts the label was decided on, each printed on its own side of the line.
+    _cb = stock.get("consolidation_base")
+    _cb = _cb if isinstance(_cb, str) else ""
+    _cb_ratio = stock.get("vcp_volume_ratio")
+    _cb_facts = []
+    if pd.notna(_cb_ratio):
+        _cb_pct = _same_side(float(_cb_ratio) * 100, lambda v: v < VCP_DRYUP_SHARE * 100)
+        _cb_facts.append(f"10-day volume at {_cb_pct}% of the 50-day")
+    if _cb in CONSOLIDATION_BASE_LABELS[:2]:            # a dry-up: the facts that make it ⭐ or 💤
+        _cb_stage = re.search(r"Stage \d", str(stock.get("weinstein_stage") or ""))
+        _cb_facts.append(_cb_stage.group(0) if _cb_stage else "stage unknown")
+        _cb_d52 = stock.get("dist_52wh")
+        if pd.notna(_cb_d52):
+            _cb_far = _same_side(float(_cb_d52), lambda v: v <= VCP_SETUP_MAX_BELOW_HIGH)
+            _cb_facts.append("at its 52-week high" if float(_cb_far) <= 0
+                             else f"{_cb_far}% below its 52-week high")
+        _cb_stop = stock.get("dist_to_vstop")
+        if pd.notna(_cb_stop) and float(_cb_stop) < 0:
+            _cb_facts.append("below its stop")
+    _cb_sub = " · ".join(_cb_facts) if _cb else "volume averages not reported"
+    _cb_clr = (COLORS["gold"] if _cb == CONSOLIDATION_BASE_LABELS[0]
+               else COLORS["text_primary"] if _cb else COLORS["text_muted"])
 
     # Polarity per the engine's own definition (data_engine ~L3308): "Positive gap = priced for
     # more than it can deliver (expectations risk); negative = pessimism / margin of safety."
@@ -4342,13 +4387,14 @@ def render_valuation_inversion_and_sizing_cockpit(stock: pd.Series):
                 "minus the growth the business can SUSTAIN (g★, the lower of RoE×reinvestment "
                 "and SSGR). Positive = expectations risk; negative = pessimism you can buy.") +
         _cockpit_card(
-            "⏳ Consolidation Base", "VCP Firing" if _vcp_on else "Active",
-            ("10D volume < 50D — supply exhaustion verified"
-             if _vcp_on else "Volume tracking historical norms"),
-            COLORS["gold"] if _vcp_on else COLORS["text_primary"], COLORS["text_muted"],
-            tip="Minervini's Volatility Contraction Pattern: volume drying up inside a "
-                "consolidation means sellers are exhausted — the setup that precedes a "
-                "pocket-pivot breakout.")
+            "⏳ Consolidation Base", _cb or "N/A", _cb_sub, _cb_clr, COLORS["text_muted"],
+            tip=(f"Minervini's Volatility Contraction Pattern, as far as one day's data can see it. "
+                 f"⭐ VCP Setup: the 10-day average volume below {VCP_DRYUP_SHARE:.0%} of the 50-day "
+                 f"(supply drying up) in a 📈 Stage 2 stock within {VCP_SETUP_MAX_BELOW_HIGH}% of its "
+                 f"52-week high and not below its stop. 💤 Drying Up: the same dry-up anywhere else — "
+                 f"quiet alone is not a base. ⚪ Normal Volume: no dry-up. The narrowing price swings "
+                 f"that complete a VCP need a chart. The sidebar's ⏳ Consolidation Base filter offers "
+                 f"these same labels."))
     )
     st.markdown(
         f'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;">{_struct}</div>',

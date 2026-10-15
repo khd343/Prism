@@ -691,6 +691,17 @@ def _collapse_dual_listings(df: pd.DataFrame) -> pd.DataFrame:
     return df.loc[~drop_mask].copy()
 
 
+# ── ⏳ Consolidation Base (2026-10-15) — the lines and the labels every surface reads ────────────────
+# The Tear-Sheet card, the sidebar filter, the SEPA panel and the Reference tab all state these numbers.
+# The card's small print said "10D < 50D" for months after the engine moved to 70%; reading the
+# constants keeps the words and the rule one thing (tests/test_consolidation_base.py).
+VCP_DRYUP_SHARE = 0.70          # volume "dries up": the 10-day average below 70% of the 50-day
+VCP_SETUP_MAX_BELOW_HIGH = 25   # % below the 52-week high: Minervini's Trend Template criterion 7
+# The states compute_derived_signals writes to `consolidation_base`, in reading order ("" = the volume
+# averages are missing, the sidebar's ❔ Unknown). ui_reference_data.py explains each one.
+CONSOLIDATION_BASE_LABELS = ("⭐ VCP Setup", "💤 Drying Up", "⚪ Normal Volume")
+
+
 def weinstein_stage(close: pd.Series, sma_30w: pd.Series, sma_200d: pd.Series) -> np.ndarray:
     """Weinstein's stage from the price against its 30-week average, and that average against the
     200-day (the stacking stands in for the MA slope, which the data does not carry). ONE rule for the
@@ -1692,8 +1703,15 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
     # contraction — supply actually exhausted in the base, not daily noise.
     df["vcp_volume_dryup"] = np.where(
         _v10d_vcp.notna() & _v50d_vcp.notna() & (_v50d_vcp > 0),
-        (_v10d_vcp < _v50d_vcp * 0.70).astype(int),
+        (_v10d_vcp < _v50d_vcp * VCP_DRYUP_SHARE).astype(int),
         0
+    )
+    # The ratio itself, for display (the ⏳ Consolidation Base card, the SEPA panel): NaN wherever the
+    # dry-up cannot be judged — the same known-set as above, which keeps reading a hole as 0 for SEPA.
+    df["vcp_volume_ratio"] = np.where(
+        _v10d_vcp.notna() & _v50d_vcp.notna() & (_v50d_vcp > 0),
+        _v10d_vcp / _v50d_vcp,
+        np.nan
     )
     df["daily_value"] = _vol * _close_t  # in raw ₹
     df["daily_value_cr"] = df["daily_value"] / 1e7  # in ₹ Crores
@@ -2890,6 +2908,30 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         [df["trend_extended"] == 1, df["trend_breakout"] == 1,
          df["trend_pullback"] == 1, df["trend_bounce"] == 1],
         ["⚠️ Extended", "🚀 Breakout", "↩️ Pullback", "⚠️ Bounce"],
+        default="",
+    )
+
+    # ── ⏳ Consolidation Base (DISPLAY-ONLY, 2026-10-15) — the sidebar filter and the Tear-Sheet card ──
+    # The card used to call EVERY vcp_volume_dryup a "Consolidation Base" ("VCP Firing"). Measured
+    # 2026-10-15 on the live sheet (14 Oct data, 2,695 stocks): 1,218 fired (45%), 42-50% of every
+    # stage alike — 377 of them Stage 4 declines.
+    # Minervini's VCP is a base in a Stage 2 uptrend near its highs, on volume that "dries up
+    # dramatically" (Trade Like a Stock Market Wizard). One day's data can check three of those legs, so
+    # the label uses only rules PRISM already applies — no new number:
+    #   ⭐ VCP Setup      the dry-up + 📈 Stage 2 + within 25% of the 52-week high (Trend Template criterion
+    #                     7, fw_sepa's gate) + not below the Volatility Stop (the Buy Zone's trend-broken
+    #                     line: a broken trend never wears the good label — the Marks rule)
+    #   💤 Drying Up      the same dry-up anywhere else; ⭐ + 💤 = vcp_volume_dryup exactly
+    #   ⚪ Normal Volume   no dry-up
+    #   ""               the volume averages are missing (❔ Unknown in the sidebar) — never "normal"
+    # A missing stage, high or stop leaves a dry-up 💤: unverifiable is not passed. The narrowing price
+    # swings that complete a VCP need a chart; nothing here sees them. Never scored (tested).
+    _cb_dry = df["vcp_volume_dryup"] == 1
+    _cb_setup = (_cb_dry & _t_up & (_t_d52 <= VCP_SETUP_MAX_BELOW_HIGH)
+                 & (df.get("dist_to_vstop", pd.Series(np.nan, index=df.index)) >= 0))
+    df["consolidation_base"] = np.select(
+        [_cb_setup, _cb_dry, df["vcp_volume_ratio"].notna()],
+        list(CONSOLIDATION_BASE_LABELS),
         default="",
     )
 

@@ -198,6 +198,12 @@ CONCEPT_REFERENCE = {
         ("⚠️ Bounce", "Low-confidence counter-trend: a Stage-4 rally back up to the falling 30-week MA — Weinstein's 'don't chase' zone."),
         ("⚠️ Extended", "Low-confidence caution: stretched far above the 30-week MA and overbought (RSI > 70) — termination risk."),
     ],
+    # ── consolidation_base — core/data_engine.py (Minervini's VCP, as far as one day's data can see it)
+    "⏳ Consolidation Base": [
+        ("⭐ VCP Setup", "A consolidation base as far as one day's data can check Minervini's VCP: volume has dried up — the 10-day average below 70% of the 50-day — in a Stage 2 uptrend within 25% of its 52-week high and not below its stop. The narrowing price swings need a chart."),
+        ("💤 Drying Up", "The same 10-day volume dry-up outside that setup — a stock not in Stage 2 (or with no stage yet), one more than 25% below its 52-week high, or one below its stop. Quiet alone is not a consolidation base."),
+        ("⚪ Normal Volume", "No dry-up, so no consolidation base by this measure: the 10-day average volume is at least 70% of the 50-day average."),
+    ],
     # ── d48_breakout_readiness — core/data_engine.py:2280 (distance to 52w/13w high)
     "🎯 Breakout Readiness": [
         ("🎯 IMMINENT", "Within 10% of the 52-week high AND within 5% of the 13-week high — a breakout looks imminent."),

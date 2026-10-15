@@ -12,7 +12,8 @@ import pandas as pd
 import streamlit as st
 
 from config import COLORS, FRAMEWORK_CATEGORIES, STALE_RESULT_DAYS
-from core.data_engine import traded_value_cr
+from core.data_engine import (CONSOLIDATION_BASE_LABELS, VCP_DRYUP_SHARE, VCP_SETUP_MAX_BELOW_HIGH,
+                              traded_value_cr)
 from ui.ui_liquidity import LIQUIDITY_STEPS, ORDER_SHARE, SURVEILLANCE_NOTE, order_guide, step_label, step_value
 
 
@@ -28,7 +29,8 @@ _CHIP_META = [
     ("sb_fwfam", "FW Family", "ms"),
     ("sb_fw_exclude", "Exclude FW", "ms"), ("sb_fw_include", "Include FW", "ms"), ("sb_fw_combine", "Combine FW", "ms"),
     ("sb_moat", "Moat", "ms"), ("sb_peg_zone", "PEG Zone", "ms"), ("sb_buy_zone", "Buy Zone", "ms"),
-    ("sb_weinstein", "Weinstein", "ms"), ("sb_lynchcat", "Lynch", "ms"), ("sb_mef", "Moat Endurance", "ms"),
+    ("sb_weinstein", "Weinstein", "ms"), ("sb_consolbase", "Consolidation Base", "ms"),
+    ("sb_lynchcat", "Lynch", "ms"), ("sb_mef", "Moat Endurance", "ms"),
     ("sb_cftri", "Cash-Flow Tri", "ms"), ("sb_smartflow", "Smart Money", "ms"),
     ("sb_catalyst", "Catalyst", "ms_count"), ("sb_sellalert", "Sell Alert", "ms_count"),
     ("sb_eppc", "EP Curve", "ms"), ("sb_epbox", "Earnings Box", "ms"), ("sb_mbsetup", "Multibagger", "ms_count"),
@@ -861,7 +863,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                 _cf = _narrow(_cf, _cf["negative_wc_flag"].fillna(0) == 1, "Float-Funded")
             st.caption(f"→ {len(_cf):,} remaining")
 
-        with _grp("📈 Trend · Style · Flow", "sb_weinstein", "sb_lynchcat", "sb_mef",
+        with _grp("📈 Trend · Style · Flow", "sb_weinstein", "sb_consolbase", "sb_lynchcat", "sb_mef",
                   "sb_cftri", "sb_smartflow", expanded=False):
             # 8b. Weinstein Stage — the 30-week-trend stage (Stage 2 = uptrend buy, Stage 4 = avoid)
             _wein_opts = _ordered_present(_cf, "weinstein_stage", _WEIN_ORDER)
@@ -870,6 +872,22 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
                                    count_col="weinstein_stage")
             if sel_wein and "weinstein_stage" in _cf.columns:
                 _cf = _narrow(_cf, _label_mask(_cf["weinstein_stage"], sel_wein), "Weinstein")
+
+            # 8b'. ⏳ Consolidation Base (2026-10-15, the user's ask) — the Tear-Sheet card's label, right
+            # under the stage it reads, so its live counts follow a Stage pick. ⭐ + 💤 together are every
+            # 10-day volume dry-up (the card's old "VCP Firing"); a missing volume average is ❔ Unknown.
+            _cb_opts = _ordered_present(_cf, "consolidation_base", CONSOLIDATION_BASE_LABELS)
+            sel_cb = _ms_cascade(
+                "⏳ Consolidation Base", _cb_opts, "sb_consolbase", default=[],
+                help=(f"The Tear-Sheet's ⏳ Consolidation Base card. ⭐ VCP Setup: the 10-day average "
+                      f"volume below {VCP_DRYUP_SHARE:.0%} of the 50-day, in a 📈 Stage 2 stock within "
+                      f"{VCP_SETUP_MAX_BELOW_HIGH}% of its 52-week high and not below its stop. 💤 Drying "
+                      f"Up: the same dry-up anywhere else. ⚪ Normal Volume: no dry-up. Pick ⭐ and 💤 "
+                      f"together for every dry-up. The narrowing price swings of a true VCP need a chart. "
+                      f"Empty = all stocks."),
+                count_col="consolidation_base")
+            if sel_cb and "consolidation_base" in _cf.columns:
+                _cf = _narrow(_cf, _label_mask(_cf["consolidation_base"], sel_cb), "Consolidation Base")
 
             # 8c. Lynch Type — Peter Lynch's stock archetype
             _lynch_opts = _ordered_present(_cf, "lynch_category",
@@ -1094,7 +1112,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
         "sb_maxrf", "sb_piotier", "sb_cashmach", "sb_mincov", "sb_hidestale",
         "sb_fwfam", "sb_fw_exclude", "sb_fw_include", "sb_fw_combine", "sb_moat", "sb_peg_zone", "sb_buy_zone",
         "sb_floatfunded",
-        "sb_weinstein", "sb_lynchcat", "sb_mef", "sb_cftri", "sb_smartflow",
+        "sb_weinstein", "sb_consolbase", "sb_lynchcat", "sb_mef", "sb_cftri", "sb_smartflow",
         "sb_catalyst", "sb_sellalert", "sb_eppc", "sb_epbox", "sb_mbsetup",
         "sb_gate", "sb_minq", "sb_minscore",
     )

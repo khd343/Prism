@@ -618,6 +618,7 @@ def _all_filters_app():
         "negative_wc_flag":  flag(),
         # ── 📈 Trend · Style · Flow
         "weinstein_stage":   lab("📈 Stage 2 Advancing", "📉 Stage 4 Declining"),
+        "consolidation_base": lab("⭐ VCP Setup", "💤 Drying Up"),
         "lynch_category":    lab("Fast Grower", "Declining"),
         "mef_label":         lab("🟢 Expanding", "🔴 Degrading"),
         "cf_triangle":       lab("✅ Self-Funding", "🚨 Debt Trap — Avoid"),
@@ -665,6 +666,7 @@ _FILTER_CASES = [
     ("sb_buy_zone",    {"sb_buy_zone": ["🟢 Perfect Entry (Low Risk)"]}, ["A", "C"]),
     ("sb_floatfunded", {"sb_floatfunded": True},                     ["A"]),
     ("sb_weinstein",   {"sb_weinstein": ["📈 Stage 2 Advancing"]},   ["A", "C"]),
+    ("sb_consolbase",  {"sb_consolbase": ["💤 Drying Up"]},          ["B"]),
     ("sb_lynchcat",    {"sb_lynchcat": ["Declining"]},               ["B"]),
     ("sb_mef",         {"sb_mef": ["🟢 Expanding"]},                 ["A", "C"]),
     ("sb_cftri",       {"sb_cftri": ["🚨 Debt Trap — Avoid"]},       ["B"]),
