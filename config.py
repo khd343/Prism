@@ -389,10 +389,21 @@ BREAKOUT_SIGNALS = {
     "52wh_distance":    0.30,   # % below 52WH — #1 backtested alpha signal (+0.55%/wk)
     "52wh_days":        0.20,   # days since 52WH was set — recency of momentum peak (new)
     "13wh_distance":    0.20,   # quarterly high proximity — near-term breakout
-    "breakout_window":  0.20,   # binary breakout flag
+    "breakout_window":  0.20,   # a 40+ day base broken near the 52-week high (breakout_flag)
     "ath_distance":     0.10,   # all-time high proximity (reduced: ATH can be years old)
 }
 # Weights sum: 0.30+0.20+0.20+0.20+0.10 = 1.00 ✅
+# The breakout flag (2026-10-15). StockScans' "Breakout Window" = "Number of days since the last close was greater than
+# or equal to today's close" (its own column dictionary): never below 15 (the vendor's floor) and blank when no
+# earlier close was that high (every blank stock's 52-week high is its all-time high: 18 Sep and 9 Oct). The flag
+# read it as `> 0` — true for 92-96% of stocks and false for those blanks. A breakout is now StockScans' own two scans
+# joined (Long Term: window >= 200 and within 10% of the 52-week high; Short Term: window 40-200 and within 10% of the
+# 26-week high), with three deliberate differences: no Market Cap >= 1,000 Cr filter (size is Kite's cap rule; it
+# would remove 40 of the 121 buyable breakouts on 9 Oct), a blank counts as the longest window, and the 52-week high
+# stands in for the 26-week one, which the saved sheets before 15 Oct lack — within 10% of the 52-week high is the
+# only case that PROVES within 10% of the 26-week high (§5). Fires on 181 of 2,712 stocks (6.7%) on 9 Oct.
+BREAKOUT_MIN_WINDOW_DAYS = 40
+BREAKOUT_MAX_HIGH_GAP_PCT = 10.0
 
 SECTOR_SIGNALS = {
     "ret_vs_industry_1y":  0.55,

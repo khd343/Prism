@@ -15,7 +15,7 @@ import numpy as np
 from typing import Dict, List, Tuple
 from config import (
     HARD_GATES, QUALITY_WEIGHTS, MOMENTUM_WEIGHTS, COMPOSITE_WEIGHTS,
-    RS_SIGNALS, TREND_SIGNALS, BREAKOUT_SIGNALS,
+    RS_SIGNALS, TREND_SIGNALS, BREAKOUT_SIGNALS, BREAKOUT_MIN_WINDOW_DAYS, BREAKOUT_MAX_HIGH_GAP_PCT,
     SECTOR_SIGNALS, GOVERNANCE_BONUS, CONVICTION_TIERS, RSI_ZONES, HIGH_AGE_ZONES,
     MCAP_TIERS, GOVERNANCE_RISK_MULTIPLIERS,
     VALUATION_SIGNALS, PEG_ZONES, PAYBACK_ZONES, MEAN_REVERSION, BAID_SELL_TRIGGERS,
@@ -933,6 +933,17 @@ def _compute_trend_score(df: pd.DataFrame) -> pd.Series:
     return _safe_clip(score)
 
 
+def breakout_flag(df: pd.DataFrame) -> pd.Series:
+    """True where a stock breaks out of a base: StockScans' Breakout Window (days since the last close at or above
+    today's) of at least BREAKOUT_MIN_WINDOW_DAYS, or blank (no earlier close that high), AND the close within
+    BREAKOUT_MAX_HIGH_GAP_PCT of the 52-week high. config.py has the definition and its measurement. A missing
+    52-week distance is unverifiable, so it never passes."""
+    nan = pd.Series(np.nan, index=df.index)
+    window = pd.to_numeric(df.get("breakout_window", nan), errors="coerce")
+    gap = pd.to_numeric(df.get("dist_52wh", nan), errors="coerce")
+    return (((window >= BREAKOUT_MIN_WINDOW_DAYS) | window.isna()) & (gap <= BREAKOUT_MAX_HIGH_GAP_PCT)).astype(bool)
+
+
 def _compute_breakout_score(df: pd.DataFrame) -> pd.Series:
     """Breakout proximity: nearness to highs and breakout windows."""
     score = pd.Series(0.0, index=df.index)
@@ -952,10 +963,9 @@ def _compute_breakout_score(df: pd.DataFrame) -> pd.Series:
     if "dist_13wh" in df.columns:
         score += _pct_rank(df["dist_13wh"], ascending=False).fillna(50) * BREAKOUT_SIGNALS["13wh_distance"]
 
-    # Breakout window (binary)
+    # Breakout (binary): a 40+ day base broken near the 52-week high (breakout_flag, 2026-10-15)
     if "breakout_window" in df.columns:
-        bw = df["breakout_window"].notna() & (df["breakout_window"] > 0)
-        score += bw.astype(float) * 100 * BREAKOUT_SIGNALS["breakout_window"]
+        score += breakout_flag(df).astype(float) * 100 * BREAKOUT_SIGNALS["breakout_window"]
 
     # ATH distance (lower = better)
     if "dist_ath" in df.columns:
