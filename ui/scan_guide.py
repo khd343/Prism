@@ -57,11 +57,11 @@ def study_stamp(study: dict) -> str:
 # ── The explanations, one per scan ─────────────────────────────────────────────────────────────────────
 # Item grammar (every section): a string is a paragraph, "- " starts a bullet, **words** are bold.
 # "Still in the list" figures: membership = scan["mask"] on the saved snapshots, prepared exactly as
-# tools/scan_records.py prepares them (improvement_score rebuilt), pairs on the same universe only (the
+# tools/scan_records.py prepares them (re-scored with J.rescore_snapshot), pairs on the same universe only (the
 # vendor grew it from ~2,110 to ~2,715 stocks between 22 Aug and 19 Sep 2026, which moves every rank).
 GUIDES = {
     "playbook": dict(
-        written_for="44b1f1fe7352f4c6",
+        written_for="7377560e6a399178",
         short="strong price trends backed by a fresh strong quarter",
         idea=[
             "Stocks the market is already rewarding — strong, rising prices close to a breakout — whose "
@@ -76,14 +76,17 @@ GUIDES = {
             "third of all stocks on it.",
             "- **Breakout in the top third.** The Breakout score measures how near the price is to new highs: "
             "its distance from the 52-week high (30% of the score) and from the 13-week high (20%), how "
-            "recently the 52-week high was made (20%, best within a month), whether it sits in a breakout "
-            "window (20%), and its distance from the all-time high (10%). Again, the best third of the market.",
+            "recently the 52-week high was made (20%, best within a month), whether it is breaking out of a "
+            "base — its breakout window (20%): its highest close in at least 40 days, or ever, within 10% of "
+            "its 52-week high — and its distance from the all-time high (10%). Again, the best third of the "
+            "market.",
             "- **A 🔥 Strong Quarter.** The latest reported quarter against the same quarter last year: "
             "revenue up more than 15%, profit up more than 20%, and the EBITDA margin wider. A company that "
             "made a loss a year earlier cannot be judged, so it does not pass.",
             "- **Improvement in the top half.** PRISM's Improvement score asks whether the business got better "
             "over the last full year — profit growth, revenue growth and the change in operating margin, each "
-            "against the year before. The stock must rank in the better half of the market.",
+            "against the year before. The stock must rank in the better half of the market; a stock with no "
+            "measurable leg does not pass.",
             "- **The price at or above its stop.** The stop is the data vendor's 14-week Volatility Stop "
             "(VSTOP 14W 2.5): a line that trails the price about 2.5 times the stock's average weekly range "
             "below it. A close below it means the uptrend has broken.",
@@ -93,9 +96,10 @@ GUIDES = {
         # The ways out were MEASURED 2026-10-14 (the user's question "when does a stock get out?"): for every
         # stock in the list on the earlier snapshot and not on the later one, which conditions had failed on
         # the later date — same method and frames as the "still in the list" figures above; both pairs on
-        # one universe. 19 Sep → 3 Oct: 51 of 286 left (no new results). 17 Jun → 22 Aug: 81 of 154 left
-        # (June-quarter results and the annual roll). Distance above the stop: the 3 Oct snapshot's 273
-        # stocks, median 17.5% (a fall of 1 − 1/1.175 ≈ 15% to cross), 10th percentile 7.1%.
+        # one universe. Re-measured 2026-10-15 with the corrected breakout and fresh-stop inputs (the snapshots
+        # re-scored by J.rescore_snapshot): 19 Sep → 3 Oct: 39 of 300 left (no new results). 17 Jun → 22 Aug:
+        # 82 of 158 left (June-quarter results and the annual roll). Distance above the stop: the 3 Oct
+        # snapshot's 282 stocks, median 17.5% (a fall of 1 − 1/1.175 ≈ 15% to cross), 10th percentile 7.1%.
         enter_leave=[
             "PRISM rebuilds this list from scratch every time its data refreshes — normally once each trading "
             "day, after the close. A stock is in it only while all five conditions hold that day, and it drops "
@@ -108,17 +112,17 @@ GUIDES = {
             ("table", ("Way out", "What moves it", "Quiet weeks", "Results season"), [
                 ("**Breakout** left the top third",
                  "The price slipped back from its highs, or its 52-week high got old. It is a rank, so a flat "
-                 "price can lose it as other stocks make fresher highs.", "75%", "53%"),
+                 "price can lose it as other stocks make fresher highs.", "67%", "51%"),
                 ("**Momentum** left the top third",
-                 "Other stocks ran harder, its trend weakened, or its sector cooled.", "47%", "44%"),
+                 "Other stocks ran harder, its trend weakened, or its sector cooled.", "56%", "50%"),
                 ("**A new quarter** was not strong",
-                 "Only when a new quarterly result reaches the data.", "0%", "65%"),
+                 "Only when a new quarterly result reaches the data.", "0%", "67%"),
                 ("**Improvement** left the top half",
-                 "Annual figures, so mostly when the data rolls to a new year.", "0%", "41%"),
+                 "Annual figures, so mostly when the data rolls to a new year.", "0%", "40%"),
                 ("**The price** closed below its stop",
-                 "A fall through the 14-week volatility stop.", "20%", "27%"),
+                 "A fall through the 14-week volatility stop.", "21%", "28%"),
             ]),
-            "Many stocks fail two or more conditions at once — 51 of the 81 that left from 17 Jun to 22 Aug — so "
+            "Many stocks fail two or more conditions at once — 53 of the 82 that left from 17 Jun to 22 Aug — so "
             "a column adds up to more than 100%.",
             "**The stop is the last line, not the first.** On 3 Oct 2026 the list's median stock sat 17.5% above "
             "its stop, so its price had to fall about 15% to cross it; only 1 in 10 was within a 7% fall. A "
@@ -128,8 +132,8 @@ GUIDES = {
             "its end — roughly mid-July to mid-August, mid-October to mid-November and mid-January to "
             "mid-February — and the full year by the end of May. Each new quarter is judged again the day it "
             "reaches the data.",
-            "So a breakout that fails does not sit in the list for months: 82% of the list was still in it two "
-            "weeks later (19 Sep → 3 Oct 2026) and 47% about two months later (17 Jun → 22 Aug 2026).",
+            "So a breakout that fails does not sit in the list for months: 87% of the list was still in it two "
+            "weeks later (19 Sep → 3 Oct 2026) and 48% about two months later (17 Jun → 22 Aug 2026).",
         ],
         benchmark_why="a momentum index drawn from the whole market, the closest index fund to what this "
                       "list does.",
@@ -150,6 +154,9 @@ GUIDES = {
             "only if stocks with it beat stocks without it by at least 1 point in every window — and decides "
             "PRISM's default scoring mode, which changes what Rank means, not this list. The order check keeps "
             "reading until it decides.",
+            "On 15 Oct 2026 two of its inputs were corrected to mean what they say — the breakout window and "
+            "the fresh-stop flag had read the data vendor's columns wrongly — and its record and the figures "
+            "above were re-measured.",
         ],
     ),
     "leaders": dict(

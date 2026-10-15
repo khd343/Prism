@@ -58,6 +58,8 @@ def _universe(n=12):
         "weinstein_stage": "📈 Stage 2 Advancing",
         "vol_sma_20d": 200_000.0, "close_price": 500.0,   # ₹10 Cr a day
         "rf_wc_double_squeeze": 0, "rf_receivables_bloat": 0, "rf_negative_fcf": 0,
+        # The Improvement legs' inputs (2026-10-15: the recipe needs Improvement EVIDENCE, not only a score)
+        "pat": 12.0, "pat_1yb": 10.0, "revenue": 110.0, "revenue_1yb": 100.0, "opm": 15.0, "opm_1yb": 14.0,
     })
     return df
 
@@ -93,6 +95,15 @@ def test_the_improvement_leg_is_the_top_half_not_the_top_third():
     df["improvement_score"] = np.where(df.index == df.index[-1], 6.0, df["improvement_score"])
     # 6 of 0..11 ranks 7th of 12 (pct 0.58): top half, not top third
     assert S.playbook_shortlist(df).iloc[-1]
+
+
+def test_no_improvement_evidence_never_passes():
+    """§5: a stock with no measurable leg gets the neutral 50, which ranks just above the median (0.507 on
+    13 Oct: 47 stocks) — it must not pass "Improvement in the top half" on that fill."""
+    df = _universe()
+    last = df.index[-1]
+    df.loc[last, ["pat", "pat_1yb", "revenue", "revenue_1yb", "opm", "opm_1yb"]] = np.nan
+    assert not S.playbook_shortlist(df).any()
 
 
 # ── 2. Leading sectors: the Sectors tab's own breadth, sectors of 5+ stocks ───────────────────────
@@ -181,8 +192,11 @@ def test_the_playbook_fingerprint_reaches_the_scores_it_reads():
                   "fn core.scoring_engine._compute_rs_score", "fn core.scoring_engine._compute_improvement_score",
                   "fn core.scoring_engine._pct_rank", "value MOMENTUM_WEIGHTS", "value BREAKOUT_SIGNALS"):
         assert piece in d, f"the Playbook record does not follow {piece}"
-    assert not any(k.startswith("fn core.data_engine") for k in d), (
-        "compute_derived_signals (dist_to_vstop) is deliberately not followed — see SCANS")
+    # The derived price inputs ARE followed, through ONE narrow function (2026-10-15: the V-Stop unit fix
+    # changed the list with the fingerprint unchanged); the broad compute_derived_signals still is not.
+    engine = sorted(k for k in d if k.startswith("fn core.data_engine"))
+    assert engine == ["fn core.data_engine._vstop_implausible", "fn core.data_engine.price_trend_inputs"], (
+        "only price_trend_inputs (and its scale guard) is followed in data_engine — see SCANS")
 
 
 def test_a_changed_score_weight_or_helper_stales_the_playbook_record(monkeypatch):

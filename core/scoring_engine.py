@@ -15,7 +15,7 @@ import numpy as np
 from typing import Dict, List, Tuple
 from config import (
     HARD_GATES, QUALITY_WEIGHTS, MOMENTUM_WEIGHTS, COMPOSITE_WEIGHTS,
-    RS_SIGNALS, TREND_SIGNALS, BREAKOUT_SIGNALS,
+    RS_SIGNALS, TREND_SIGNALS, BREAKOUT_SIGNALS, BREAKOUT_MIN_WINDOW_DAYS, BREAKOUT_MAX_HIGH_GAP_PCT,
     SECTOR_SIGNALS, GOVERNANCE_BONUS, CONVICTION_TIERS, RSI_ZONES, HIGH_AGE_ZONES,
     MCAP_TIERS, GOVERNANCE_RISK_MULTIPLIERS,
     VALUATION_SIGNALS, PEG_ZONES, PAYBACK_ZONES, MEAN_REVERSION, BAID_SELL_TRIGGERS,
@@ -525,6 +525,26 @@ def _compute_valuation_score(df: pd.DataFrame) -> pd.Series:
     return _safe_clip(score)
 
 
+def _improvement_legs(df: pd.DataFrame) -> tuple:
+    """The three Improvement legs (profit growth, revenue growth, margin change), each NaN where it has no
+    evidence — the ONLY place the facet reads its six columns (see _compute_improvement_score)."""
+    _nan = pd.Series(np.nan, index=df.index, dtype=float)
+
+    def _growth(now_col, prev_col):
+        now, prev = df.get(now_col, _nan), df.get(prev_col, _nan)
+        ok = (now > 0) & (prev > 0)
+        return pd.Series(np.where(ok, now.where(ok) / prev.where(ok) - 1.0, np.nan), index=df.index)
+
+    return (_growth("pat", "pat_1yb"), _growth("revenue", "revenue_1yb"),
+            df.get("opm", _nan) - df.get("opm_1yb", _nan))
+
+
+def improvement_evidence(df: pd.DataFrame) -> pd.Series:
+    """True where at least one Improvement leg can be measured — a recipe may only pass a stock on its score
+    when the score rests on evidence (§5; the neutral fill ranks above the median, 2026-10-15)."""
+    return pd.concat(_improvement_legs(df), axis=1).notna().any(axis=1)
+
+
 def _compute_improvement_score(df: pd.DataFrame) -> pd.Series:
     """Improvement facet (0-100): is the business getting BETTER over the LAST YEAR? Added 2026-10-03.
 
@@ -538,17 +558,7 @@ def _compute_improvement_score(df: pd.DataFrame) -> pd.Series:
     archived vintages re-score correctly. LAST-YEAR, not 2-year, on measurement: recency beat span for
     every measure tested. NPM / EBITDA / GPM / ROCE are deliberately absent (redundant, untestable, or
     on a mismatched year). Evidence + exclusions: tests/test_improvement_facet.py."""
-    _nan = pd.Series(np.nan, index=df.index, dtype=float)
-
-    def _growth(now_col, prev_col):
-        now, prev = df.get(now_col, _nan), df.get(prev_col, _nan)
-        ok = (now > 0) & (prev > 0)
-        return pd.Series(np.where(ok, now.where(ok) / prev.where(ok) - 1.0, np.nan), index=df.index)
-
-    profit_growth = _growth("pat", "pat_1yb")
-    revenue_growth = _growth("revenue", "revenue_1yb")
-    margin_change = df.get("opm", _nan) - df.get("opm_1yb", _nan)
-    ranks = pd.concat([_pct_rank(profit_growth), _pct_rank(revenue_growth), _pct_rank(margin_change)], axis=1)
+    ranks = pd.concat([_pct_rank(leg) for leg in _improvement_legs(df)], axis=1)
     return _safe_clip(ranks.mean(axis=1, skipna=True).fillna(50.0))
 
 
@@ -925,12 +935,29 @@ def _compute_trend_score(df: pd.DataFrame) -> pd.Series:
         rsi_score = _zone_score(df["rsi_14d"], RSI_ZONES)
         score += rsi_score.fillna(50) * TREND_SIGNALS["rsi_zone"]
 
-    # Golden cross recency (lower days = better) — trend recovery signal
+    # Golden cross recency (lower days = better) — trend recovery signal. A blank is no golden cross IN FORCE
+    # (StockScans: "trading days since EMA 50D crossed above EMA 200D"; 76% of blanks have the 50D below the
+    # 200D), so with both averages present it ranks lowest — not the neutral 50 a missing value gets. Without
+    # them the history is too short to tell (a new listing) and it stays neutral (2026-10-15).
     if "golden_cross_days" in df.columns:
-        gc_rank = _pct_rank(df["golden_cross_days"], ascending=False).fillna(50)
+        gc = df["golden_cross_days"]
+        nan = pd.Series(np.nan, index=df.index)
+        history = df.get("sma_50d", nan).notna() & df.get("sma_200d", nan).notna()
+        gc_rank = _pct_rank(gc, ascending=False).where(gc.notna() | ~history, 0.0).fillna(50)
         score += gc_rank * TREND_SIGNALS["golden_cross"]
 
     return _safe_clip(score)
+
+
+def breakout_flag(df: pd.DataFrame) -> pd.Series:
+    """True where a stock breaks out of a base: StockScans' Breakout Window (days since the last close at or above
+    today's) of at least BREAKOUT_MIN_WINDOW_DAYS, or blank (no earlier close that high), AND the close within
+    BREAKOUT_MAX_HIGH_GAP_PCT of the 52-week high. config.py has the definition and its measurement. A missing
+    52-week distance is unverifiable, so it never passes."""
+    nan = pd.Series(np.nan, index=df.index)
+    window = pd.to_numeric(df.get("breakout_window", nan), errors="coerce")
+    gap = pd.to_numeric(df.get("dist_52wh", nan), errors="coerce")
+    return (((window >= BREAKOUT_MIN_WINDOW_DAYS) | window.isna()) & (gap <= BREAKOUT_MAX_HIGH_GAP_PCT)).astype(bool)
 
 
 def _compute_breakout_score(df: pd.DataFrame) -> pd.Series:
@@ -952,10 +979,9 @@ def _compute_breakout_score(df: pd.DataFrame) -> pd.Series:
     if "dist_13wh" in df.columns:
         score += _pct_rank(df["dist_13wh"], ascending=False).fillna(50) * BREAKOUT_SIGNALS["13wh_distance"]
 
-    # Breakout window (binary)
+    # Breakout (binary): a 40+ day base broken near the 52-week high (breakout_flag, 2026-10-15)
     if "breakout_window" in df.columns:
-        bw = df["breakout_window"].notna() & (df["breakout_window"] > 0)
-        score += bw.astype(float) * 100 * BREAKOUT_SIGNALS["breakout_window"]
+        score += breakout_flag(df).astype(float) * 100 * BREAKOUT_SIGNALS["breakout_window"]
 
     # ATH distance (lower = better)
     if "dist_ath" in df.columns:
