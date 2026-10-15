@@ -30,6 +30,8 @@ MAX_ARCHIVE_AGE_DAYS fails the run (archive_problem) — before, it stayed green
 
 The file is rewritten only when a measured value changed, so a quiet week makes no commit.
 """
+import contextlib
+import io
 import json
 import os
 import re
@@ -42,8 +44,29 @@ import pandas as pd
 
 from config import BENCHMARK_INDICES
 from core import load_market, run_scoring_pipeline
+from core.data_engine import price_trend_inputs
 from core.forward_returns import MIN_HORIZON_DAYS, forward_returns
+from core.scoring_engine import _compute_improvement_score, compute_momentum_score
 from ui import ui_scans as S
+
+_IMPROVEMENT_INPUTS = ("pat", "pat_1yb", "revenue", "revenue_1yb", "opm", "opm_1yb")
+
+
+def rescore_snapshot(frame: pd.DataFrame) -> pd.DataFrame:
+    """A saved snapshot re-scored with the CURRENT engine on everything the scans read (2026-10-15): the derived price
+    inputs, Momentum with its sub-scores (Breakout among them) and Improvement. A stored score is whichever definition
+    was live that day, so without this a fixed engine would be stamped with its new fingerprint and measured old.
+    tools/scan_records.py prepares the design-period snapshots with it; the unseen windows re-score whole copies."""
+    with contextlib.redirect_stdout(io.StringIO()):          # compute_momentum_score prints a summary line
+        df = frame.copy()
+        for col, values in price_trend_inputs(df).items():
+            df[col] = values
+        df = compute_momentum_score(df)
+        if set(_IMPROVEMENT_INPUTS) <= set(df.columns):
+            df["improvement_score"] = _compute_improvement_score(
+                df[list(_IMPROVEMENT_INPUTS)].apply(pd.to_numeric, errors="coerce"))
+    return df
+
 
 MIN_N = 30           # a window with fewer matches is not evidence and is not recorded
 _VOLATILE = ("generated", "engine_version")

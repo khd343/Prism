@@ -57,7 +57,7 @@ def study_stamp(study: dict) -> str:
 # ── The explanations, one per scan ─────────────────────────────────────────────────────────────────────
 # Item grammar (every section): a string is a paragraph, "- " starts a bullet, **words** are bold.
 # "Still in the list" figures: membership = scan["mask"] on the saved snapshots, prepared exactly as
-# tools/scan_records.py prepares them (improvement_score rebuilt), pairs on the same universe only (the
+# tools/scan_records.py prepares them (re-scored with J.rescore_snapshot), pairs on the same universe only (the
 # vendor grew it from ~2,110 to ~2,715 stocks between 22 Aug and 19 Sep 2026, which moves every rank).
 GUIDES = {
     "playbook": dict(

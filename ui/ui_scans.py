@@ -126,8 +126,9 @@ def playbook_shortlist(df: pd.DataFrame) -> pd.Series:
     """Momentum and Breakout in the market's top third, a 🔥 Strong Quarter (the engine's own
     definition; a quarter that cannot be judged is not strong), Improvement in the top half, and the
     price at or above its stop. A stock with no measurable Improvement leg never passes on the neutral
-    fill (2026-10-15). In-sample record (2026-10-06, ui/scan_records.json): +7.1 / +10.3 /
-    +3.3 / +2.9pp against the market median, 61-70% of matches beating it."""
+    fill (2026-10-15). In-sample record (re-measured 2026-10-15 with the corrected inputs,
+    ui/scan_records.json): +7.1 / +10.7 / +3.3 / +3.1pp against the market median, 62-70% of matches
+    beating it."""
     return ((_pct(df, "momentum_score") >= 2 / 3)
             & (_pct(df, "breakout_score") >= 2 / 3)
             & (strong_quarter(df) == 1)

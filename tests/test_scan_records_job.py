@@ -770,3 +770,20 @@ def test_a_design_date_on_the_last_old_windows_end_is_enough(monkeypatch):
     written, measured = _job_on_fake_archive(monkeypatch, _records([_OLD_FINAL], fp="new"), fp="new",
                                              designed_on="2026-11-28")
     assert measured == [] and written["scans"]["toy"]["out_of_sample"] == [_OLD_FINAL]
+
+
+# ── 7. The design-period record re-scores snapshots with today's engine (2026-10-15) ─────────────────
+def test_a_snapshot_is_rescored_with_the_current_engine():
+    """A stored score is whichever definition was live that day; the design-period record must use today's
+    engine on the snapshot's raw columns, or a fixed engine is stamped with its fingerprint but measured old."""
+    from core.data_engine import price_trend_inputs
+    from core.scoring_engine import compute_momentum_score
+    raw = pd.DataFrame({"close_price": [110.0], "vstop_value": [100.0], "last_vstop_change": [1.0],
+                        "sma_200d": [100.0], "volume": [10.0], "vol_sma_20d": [10.0],
+                        "breakout_window": [np.nan], "dist_52wh": [2.0],
+                        "vstop_fresh": [0], "momentum_score": [0.0], "breakout_score": [0.0]})
+    out = J.rescore_snapshot(raw)
+    want = compute_momentum_score(raw.assign(**price_trend_inputs(raw)))
+    assert out["vstop_fresh"].iloc[0] == 1
+    assert out["momentum_score"].iloc[0] == want["momentum_score"].iloc[0] > 0
+    assert out["breakout_score"].iloc[0] == want["breakout_score"].iloc[0] > 0
