@@ -186,7 +186,7 @@ def test_the_ways_out_render_and_are_searchable():
     # wide around "75%". A label column stays on one line; an all-number column is as narrow as its numbers.
     first_cell = re.search(r"<td style=\"([^\"]*)\">", section).group(1)
     assert "white-space:nowrap" in first_cell, "the way-out label stays on one line"
-    share = re.search(r"<td style=\"([^\"]*)\">75%</td>", section).group(1)
+    share = re.search(r"<td style=\"([^\"]*)\">\d+%</td>", section).group(1)     # any share cell (re-measured)
     assert "width:1%" in share and "text-align:right" in share and "white-space:nowrap" in share
     text_cell = re.search(r"<td style=\"([^\"]*)\">The price slipped back", section).group(1)
     assert "nowrap" not in text_cell and "width:1%" not in text_cell, "a text column wraps and takes the rest"
