@@ -8,10 +8,11 @@ rank-IC on the stocks that were buyable AT THE START of the window (the engine's
 the ₹1 Cr step the app's Liquidity controls use) — fixed now, before December's data exists.
 
 Momentum + Breakout, first registered here as a price-only candidate, became the FIFTH Analysis Mode
-the same day (selectable, not the default; tests/test_momentum_breakout_mode.py), so the harness now
-measures it as a mode, rebuilt in exactly the engine's form like every mode (the 2026-09-19 lesson: a
-bare blend flatters every candidate). The momentum-only and breakout-only candidates were dropped: the
-user asked for the two blends only, and Quality + Breakout trailed the default.
+the same day (selectable, and the default since 2026-10-15; tests/test_momentum_breakout_mode.py), so
+the harness now measures it as a mode, rebuilt in exactly the engine's form like every mode (the
+2026-09-19 lesson: a bare blend flatters every candidate). The momentum-only and breakout-only
+candidates were dropped: the user asked for the two blends only, and Quality + Breakout trailed
+equal thirds, the default then.
 
 Run with: pytest tests/test_validate_buyable.py -v
 """
