@@ -59,6 +59,8 @@ def _scored(n=30, members=10):
         "rev_pyq": 100.0, "rev_lq": np.where(m, 130.0, 101.0),
         "pat_pyq": 10.0, "pat_lq": np.where(m, 15.0, 10.0),
         "ebitda_pyq": 15.0, "ebitda_lq": np.where(m, 26.0, 15.0),
+        # The Improvement legs' inputs (2026-10-15: the 🚀 recipe needs Improvement EVIDENCE, not only a score)
+        "pat": 12.0, "pat_1yb": 10.0, "revenue": 110.0, "revenue_1yb": 100.0, "opm": 15.0, "opm_1yb": 14.0,
     })
 
 
