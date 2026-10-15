@@ -525,6 +525,26 @@ def _compute_valuation_score(df: pd.DataFrame) -> pd.Series:
     return _safe_clip(score)
 
 
+def _improvement_legs(df: pd.DataFrame) -> tuple:
+    """The three Improvement legs (profit growth, revenue growth, margin change), each NaN where it has no
+    evidence — the ONLY place the facet reads its six columns (see _compute_improvement_score)."""
+    _nan = pd.Series(np.nan, index=df.index, dtype=float)
+
+    def _growth(now_col, prev_col):
+        now, prev = df.get(now_col, _nan), df.get(prev_col, _nan)
+        ok = (now > 0) & (prev > 0)
+        return pd.Series(np.where(ok, now.where(ok) / prev.where(ok) - 1.0, np.nan), index=df.index)
+
+    return (_growth("pat", "pat_1yb"), _growth("revenue", "revenue_1yb"),
+            df.get("opm", _nan) - df.get("opm_1yb", _nan))
+
+
+def improvement_evidence(df: pd.DataFrame) -> pd.Series:
+    """True where at least one Improvement leg can be measured — a recipe may only pass a stock on its score
+    when the score rests on evidence (§5; the neutral fill ranks above the median, 2026-10-15)."""
+    return pd.concat(_improvement_legs(df), axis=1).notna().any(axis=1)
+
+
 def _compute_improvement_score(df: pd.DataFrame) -> pd.Series:
     """Improvement facet (0-100): is the business getting BETTER over the LAST YEAR? Added 2026-10-03.
 
@@ -538,17 +558,7 @@ def _compute_improvement_score(df: pd.DataFrame) -> pd.Series:
     archived vintages re-score correctly. LAST-YEAR, not 2-year, on measurement: recency beat span for
     every measure tested. NPM / EBITDA / GPM / ROCE are deliberately absent (redundant, untestable, or
     on a mismatched year). Evidence + exclusions: tests/test_improvement_facet.py."""
-    _nan = pd.Series(np.nan, index=df.index, dtype=float)
-
-    def _growth(now_col, prev_col):
-        now, prev = df.get(now_col, _nan), df.get(prev_col, _nan)
-        ok = (now > 0) & (prev > 0)
-        return pd.Series(np.where(ok, now.where(ok) / prev.where(ok) - 1.0, np.nan), index=df.index)
-
-    profit_growth = _growth("pat", "pat_1yb")
-    revenue_growth = _growth("revenue", "revenue_1yb")
-    margin_change = df.get("opm", _nan) - df.get("opm_1yb", _nan)
-    ranks = pd.concat([_pct_rank(profit_growth), _pct_rank(revenue_growth), _pct_rank(margin_change)], axis=1)
+    ranks = pd.concat([_pct_rank(leg) for leg in _improvement_legs(df)], axis=1)
     return _safe_clip(ranks.mean(axis=1, skipna=True).fillna(50.0))
 
 

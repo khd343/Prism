@@ -40,7 +40,8 @@ import streamlit as st
 from config import BENCHMARK_INDICES, COLORS
 from core.data_engine import price_trend_inputs, traded_value_cr   # ONE liquidity number (moved there 2026-10-09)
 from core.forward_returns import MIN_HORIZON_DAYS
-from core.scoring_engine import _compute_improvement_score, compute_momentum_score, strong_quarter
+from core.scoring_engine import (_compute_improvement_score, compute_momentum_score, improvement_evidence,
+                                 strong_quarter)
 from ui.ui_group_views import MEASURES, group_measures
 from ui.ui_scanner import _SCANNER_HEADER_TIPS        # the Deep Scanner's header tips: one tip per column
 # LIQUIDITY_STEPS and step_label are also re-exported for app.py's Scans selector (its one ui_scans import).
@@ -124,12 +125,14 @@ def _pct(df: pd.DataFrame, col: str) -> pd.Series:
 def playbook_shortlist(df: pd.DataFrame) -> pd.Series:
     """Momentum and Breakout in the market's top third, a 🔥 Strong Quarter (the engine's own
     definition; a quarter that cannot be judged is not strong), Improvement in the top half, and the
-    price at or above its stop. In-sample record (2026-10-06, ui/scan_records.json): +7.1 / +10.3 /
+    price at or above its stop. A stock with no measurable Improvement leg never passes on the neutral
+    fill (2026-10-15). In-sample record (2026-10-06, ui/scan_records.json): +7.1 / +10.3 /
     +3.3 / +2.9pp against the market median, 61-70% of matches beating it."""
     return ((_pct(df, "momentum_score") >= 2 / 3)
             & (_pct(df, "breakout_score") >= 2 / 3)
             & (strong_quarter(df) == 1)
             & (_pct(df, "improvement_score") >= 0.5)
+            & improvement_evidence(df)
             & (_num(df, "dist_to_vstop") >= 0)).fillna(False).astype(bool)
 
 
@@ -266,7 +269,7 @@ SCANS = (
     dict(key="playbook", emoji="🚀", name="Playbook Shortlist", mask=playbook_shortlist,
          benchmark="NSE:NIF500MO50",                  # a momentum list across the whole market
          order="momentum",
-         uses=(strong_quarter, _pct, _num),
+         uses=(strong_quarter, improvement_evidence, _pct, _num),
          inputs=(compute_momentum_score, _compute_improvement_score, price_trend_inputs),
          fixed=("_strong_q",), widths={"name": 185, "sector": 125},
          recipe="Momentum and Breakout in the top third of the market, a 🔥 Strong Quarter, Improvement "

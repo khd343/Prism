@@ -85,8 +85,11 @@ def _fn_strings(name):
 
 
 def test_improvement_reads_exactly_the_six_last_year_pnl_columns():
-    cols = {s for s in _fn_strings("_compute_improvement_score") if s.isidentifier()}
+    # The reads live in _improvement_legs since 2026-10-15 (shared with the 🚀 recipe's evidence check); the
+    # score itself reads no column of its own, so these six are still everything the facet sees.
+    cols = {s for s in _fn_strings("_improvement_legs") if s.isidentifier()}
     assert cols == _INPUTS, cols
+    assert not {s for s in _fn_strings("_compute_improvement_score") if s.isidentifier()}
     # the excluded measures, named so a well-meaning addition has to defeat a test first
     assert not {c for c in cols if c.startswith(("roce", "npm", "ebitda", "gpm", "asset", "debt"))}
     assert not {c for c in cols if c.endswith(("_2yb", "_3yb", "_5yb"))}, "the facet is LAST-YEAR changes"
