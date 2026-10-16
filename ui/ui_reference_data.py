@@ -461,14 +461,14 @@ def shariah_concepts() -> list:
     sectors = ", ".join(sorted(SHARIAH_REVIEW_SECTORS))
     companies = "; ".join(f"{cid} ({why})" for cid, why in sorted(SHARIAH_PROHIBITED_COMPANIES.items()))
     return [
-        ("Shariah", "Passes every rule PRISM can check. Interest income is not in the data, so read the annual "
-                    "report and purify the dividends and gains you receive."),
-        ("Non-Shariah", "A prohibited business, or a PROVEN fail on a rule — debt, illiquid assets, net liquid "
-                        "assets, or a figure you read in the annual report. The reason names the first failing rule."),
+        ("Shariah", "Passes every rule PRISM can check, or is on your Shariah list. Interest income is not in the "
+                    "data, so read the annual report and purify the dividends and gains you receive."),
+        ("Non-Shariah", "A prohibited business, or a PROVEN fail on a rule — debt, illiquid assets or net liquid "
+                        "assets — or on your Non-Shariah list. The reason names the first failing rule."),
         ("Review", "Nothing PRISM can see fails, but one rule waits for you: the investments or the other income "
-                   "the data cannot show (your annual-report check), or a business awaiting your scholar's ruling, "
-                   "or a ruling of yours that lapsed. Never shown green and never a fail; the Tear-Sheet card says "
-                   "what to check, with its rupee limit."),
+                   "the data cannot show (your annual-report check), a business awaiting your scholar's ruling, or a "
+                   "company on your review list. Never shown green and never a fail; the Tear-Sheet card says what "
+                   "to check, with its rupee limit."),
         ("Doubtful", "A figure is missing — fixed assets, total assets, debt, revenue, P/B or the industry — so "
                      "PRISM cannot screen the stock fully. A missing figure outweighs a review item. Never shown green "
                      "and never a fail."),
@@ -492,7 +492,9 @@ def shariah_concepts() -> list:
         (f"Rule 5 — {r['nla']['name']}",
          f"Net worth less fixed assets, CWIP and inventory, {rule_limit_text('nla')}. Net worth is market cap ÷ P/B, "
          f"so a stock trading at or above its book value always passes; the vendor's 'Total Liabilities', which is "
-         f"the balance-sheet total, is never read."),
+         f"the balance-sheet total, is never read. A P/B implying a net worth above total assets is a vendor error "
+         f"and proves nothing. Net liquid assets can never exceed total assets less fixed assets, CWIP and "
+         f"inventory, so where that ceiling is within the market cap the rule passes on the balance sheet alone."),
         (f"Rule 6 — {r['investments']['name']}",
          f"Interest-bearing investments and deposits {rule_limit_text('investments')}. The data has no investments "
          f"line, so PRISM bounds them from above: total assets less fixed assets, CWIP, inventory and receivables "
@@ -505,10 +507,13 @@ def shariah_concepts() -> list:
         ("Purification",
          "Even a Shariah stock may earn some interest. Read its interest and other impermissible income in the "
          "annual report, and give away that share of the dividends and gains you receive."),
-        ("Your rulings",
-         "Figures you read in a company's annual report (config.py, SHARIAH_RULINGS) replace the sheet's for their "
-         "rule and are judged by the same rules, so they can prove a pass or a fail. Each is tied to the balance "
-         "sheet you read; when it changes, the ruling lapses and the stock reads Review until you check again."),
+        ("Your lists",
+         "In config.py, by company id only (NSE:SYMBOL, or BSE:code for a BSE-only stock), with no dates. They come "
+         "after the six rules: a stock passing all six on the latest data is Shariah, whatever a list says; "
+         "otherwise your list decides — SHARIAH_APPROVED Shariah (even when the data shows a fail, which its reason "
+         "then names), SHARIAH_REJECTED Non-Shariah, SHARIAH_REVIEW_COMPANIES Review. A haram business the data "
+         "cannot see goes in SHARIAH_PROHIBITED_COMPANIES with its reason: that is Rule 1 itself, so no new result "
+         "clears it."),
         ("Source",
          f"The KMI-30 / Meezan method (Pakistan Stock Exchange) with your thresholds — debt "
          f"{rule_limit_text('debt')}, illiquid assets {rule_limit_text('illiquid')} — not AAOIFI, which measures "

@@ -336,21 +336,25 @@ SHARIAH_REVIEW_SECTORS = frozenset([
 SHARIAH_PROHIBITED_COMPANIES = {
     "NSE:DELTACORP": "casino gaming in Goa and Sikkim",
 }
-# YOUR RULINGS (the operator's choice, 2026-10-16): after you check a company yourself, write the figures you
-# read in its annual report here, keyed by its company id. PRISM applies the SAME rules to your figures as to the
-# sheet's, so they can prove a pass or a fail, and they replace the sheet's figure for that rule only. A ruling is
-# tied to the balance sheet you read it against: "total_assets" is the total PRISM showed that day (₹ Cr, or None
-# if it showed none). When the sheet's total changes — a new annual or half-year balance sheet — the ruling lapses
-# and the stock reads at best Review, "re-check", until you update it. Figures are percent (12.0 = 12%). Every key but
-# the first three is optional; give at least one figure or a business verdict ("pass" / "fail", your scholar's).
-#     "NSE:EXAMPLE": {"checked": "2026-10-20", "total_assets": 1264.9, "source": "Annual report FY26, notes 6, 12",
-#                     "income_pct": 1.2,        # interest and other impermissible income ÷ revenue
-#                     "debt_pct": 8.0,          # interest-bearing debt ÷ total assets
-#                     "illiquid_pct": 31.0,     # (fixed assets + CWIP) ÷ total assets
-#                     "investments_pct": 12.0,  # interest-bearing investments and deposits ÷ total assets
-#                     "business": "pass"},      # your scholar's ruling on the business
-SHARIAH_RULINGS = {
-}
+# YOUR LISTS (the operator, 2026-10-16: "whatever I said in config, that's it — and if after a new result all six
+# rules pass, give it Shariah"). Only the ticker, no dates: "NSE:SYMBOL", or "BSE:code" for a BSE-only stock. A
+# company sits in at most one list. One rule, read after the six:
+#   the latest data passes all six rules  ->  Shariah, whatever a list says
+#   otherwise your list decides:
+#     SHARIAH_APPROVED          Shariah — even when the data shows a fail (its reason then says "though the data
+#                               shows: ...", so it is never silent)
+#     SHARIAH_REJECTED          Non-Shariah
+#     SHARIAH_REVIEW_COMPANIES  Review
+#   otherwise PRISM's own label.
+# A haram BUSINESS the data cannot see belongs in SHARIAH_PROHIBITED_COMPANIES (above) instead: that is Rule 1
+# itself, so no new result can clear it.
+SHARIAH_APPROVED = frozenset([
+    # "NSE:EXAMPLE",
+])
+SHARIAH_REJECTED = frozenset([
+])
+SHARIAH_REVIEW_COMPANIES = frozenset([
+])
 # Industries whose NAME holds a word the classification guard looks for, decided allowed: "film" here is
 # plastic film, and "media" sits inside "intermediate".
 SHARIAH_ALLOWED_NAME_MATCHES = frozenset([

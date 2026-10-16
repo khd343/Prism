@@ -353,9 +353,36 @@ def test_rule5_proven_fail_needs_every_piece():
 
 
 def test_rule5_needs_a_positive_net_worth():
+    """Market cap 100: the balance-sheet ceiling (1,000 − 600 = 400) cannot settle it, so only net worth can."""
     for over in ({"price_to_book": np.nan}, {"price_to_book": 0.0}, {"price_to_book": -2.0},
                  {"market_cap": 0.0}, {"market_cap": np.nan}):
-        assert _screen(**over)["shariah_nla"] == "unknown", over
+        assert _screen(**{"market_cap": 100.0, **over})["shariah_nla"] == "unknown", over
+
+
+def test_rule5_a_net_worth_above_total_assets_is_no_reading():
+    """Net worth = total assets − liabilities, so it can never exceed total assets. A P/B implying more is a vendor
+    error (EPack Prefab, 15 Oct: P/B 0.34 → ₹7,133 Cr on a ₹1,427 Cr balance sheet) and proves nothing — the screen
+    once made it a 266% fail."""
+    s = _screen(market_cap=100.0, price_to_book=0.01)                  # net worth 10,000 on total assets 1,000
+    assert (s["shariah_nla"], s["shariah_status"]) == ("unknown", "Doubtful")
+    assert s["shariah_nla_note"] == "the P/B in the data implies a net worth above total assets — a vendor error"
+    assert s["shariah_nla_check"] == "the book value: the P/B in the data implies a net worth above total assets"
+    assert _screen(market_cap=100.0, price_to_book=0.1)["shariah_nla"] == "fail", "exactly total assets is a reading"
+
+
+def test_rule5_the_balance_sheet_ceiling_passes_without_any_pb():
+    """NLA can never exceed total assets − (fixed assets + CWIP + inventory): liabilities are never below zero. At or
+    under the market cap that ceiling passes Rule 5 on the balance sheet alone, whatever the P/B."""
+    s = _screen(price_to_book=np.nan)                                   # 1,000 − 600 = 400 against a cap of 2,000
+    assert s["shariah_nla"] == "pass" and s["shariah_nla_pct"] == pytest.approx(20.0)
+    assert s["shariah_nla_note"] == ("net liquid assets are at most 20% of market cap — total assets less fixed "
+                                     "assets, CWIP and inventory (limit 100%)")
+    epack = dict(market_cap=2425.11, price_to_book=0.34, total_assets=1426.90, fixed_assets=357.07, cwip=60.35,
+                 inventory=265.75)                                       # the 15 Oct sheet's own figures
+    s = _screen(**epack)
+    assert s["shariah_nla"] == "pass" and s["shariah_nla_pct"] == pytest.approx(743.73 / 2425.11 * 100)
+    assert _screen(price_to_book=np.nan, inventory=np.nan)["shariah_nla"] == "pass", "a missing piece counts as 0"
+    assert _screen(price_to_book=np.nan, market_cap=399.0)["shariah_nla"] == "unknown", "the ceiling never fails"
 
 
 # ── 6. Rule 6 — non-compliant investments < 33% of total assets (provable pass, never a fail) ─────────
@@ -441,126 +468,110 @@ def test_the_reason_is_always_the_deciding_rules_own_note():
             assert r["shariah_reason"] in set(notes.loc[i]), i
 
 
-# ── The operator's rulings: figures read from the annual report (the operator's choice, 2026-10-16) ───
-# PRISM applies its own rules to the operator's figure exactly as to the sheet's, so one rulebook covers every
-# stock. A ruling is tied to the balance sheet it was read against (the sheet's total assets at the time):
-# when that changes, the ruling lapses and the stock reads at best Review — "re-check".
-_RULED = "NSE:TEST"
-_SOURCE = "Annual report FY26, notes 6 and 12"
+# ── Your lists: what you say in config is final — until the data passes all six rules (the operator, 2026-10-16) ──
+# "If I said it is Shariah then Shariah, if not Shariah then Non-Shariah — whatever I said in config, that's it.
+# When a new quarter comes in, if everything qualifies give Shariah; if not, let the statement be what I said."
+# "If in config it is Non-Shariah but after a new result all six rules pass, give it Shariah."
+# One rule, read after the six: a stock passing all six on the latest data is Shariah; otherwise your list decides
+# (SHARIAH_APPROVED Shariah, SHARIAH_REJECTED Non-Shariah, SHARIAH_REVIEW_COMPANIES Review); otherwise the data's
+# own label. Ticker only, no dates. A haram BUSINESS the data cannot see is not a list but Rule 1 itself
+# (SHARIAH_PROHIBITED_COMPANIES): a new quarter cannot change a business, so it never clears.
+_ME = "NSE:TEST"
 
 
-def _rule(monkeypatch, total_assets=1000.0, **figures):
-    monkeypatch.setitem(config.SHARIAH_RULINGS, _RULED,
-                        {"checked": "2026-10-20", "total_assets": total_assets, "source": _SOURCE, **figures})
+def _list(monkeypatch, name):
+    import core.shariah as sh
+    monkeypatch.setattr(sh, name, frozenset([_ME]))
 
 
-_YOURS = f" — your figure ({_SOURCE}, checked 2026-10-20)"
-
-
-def test_a_ruled_figure_settles_a_rule_the_sheet_cannot(monkeypatch):
+def test_your_shariah_list_settles_what_prisms_data_cannot_show(monkeypatch):
     assert _screen(cash_equivalents=900.0)["shariah_status"] == "Review"            # Rule 6: up to 90%
-    _rule(monkeypatch, investments_pct=12.0)
-    s = _screen(cash_equivalents=900.0)
-    assert (s["shariah_investments"], s["shariah_status"]) == ("pass", "Shariah")
-    assert s["shariah_investments_pct"] == pytest.approx(12.0)
-    assert s["shariah_investments_note"] == "non-compliant investments are 12% of assets (limit 33%)" + _YOURS
-    assert s["shariah_ruling"] == f"your figures: {_SOURCE}, checked 2026-10-20"
+    _list(monkeypatch, "SHARIAH_APPROVED")
+    s = _screen(cash_equivalents=900.0, ebit=900.0)
+    assert (s["shariah_status"], s["shariah_reason"]) == ("Shariah", "on your Shariah list")
+    assert s["shariah_your_list"] == "on your Shariah list"
+    assert s["shariah_investments"] == "review", "the rule still says what the data shows"
 
 
-def test_a_ruled_figure_can_prove_a_fail(monkeypatch):
-    _rule(monkeypatch, investments_pct=45.0)
-    s = _screen()
-    assert (s["shariah_investments"], s["shariah_status"]) == ("fail", "Non-Shariah")
-    assert s["shariah_reason"] == "non-compliant investments are 45% of assets (limit 33%)" + _YOURS
-    _rule(monkeypatch, income_pct=9.0)
-    s = _screen()
-    assert (s["shariah_income"], s["shariah_status"]) == ("fail", "Non-Shariah")
-    assert s["shariah_reason"] == "impermissible income is 9% of revenue (limit 5%)" + _YOURS
-    # the limits hold at their edges for a ruled figure too (found by the mutation check, 2026-10-16)
-    _rule(monkeypatch, investments_pct=33.0)
-    assert _screen()["shariah_investments"] == "fail", "Rule 6 needs BELOW 33%; exactly 33% is not"
-    _rule(monkeypatch, investments_pct=32.9, income_pct=5.0)
-    s = _screen()
-    assert (s["shariah_investments"], s["shariah_income"]) == ("pass", "pass"), "Rule 2's 5% is 'at most'"
+def test_your_shariah_list_settles_a_missing_figure_too(monkeypatch):
+    assert _screen(fixed_assets=np.nan)["shariah_status"] == "Doubtful"
+    _list(monkeypatch, "SHARIAH_APPROVED")
+    s = _screen(fixed_assets=np.nan)
+    assert (s["shariah_status"], s["shariah_illiquid"]) == ("Shariah", "unknown")
 
 
-def test_a_ruled_figure_replaces_the_sheets_figure_for_its_rule(monkeypatch):
-    """The vendor's Debt can include leases and interest-free loans; the annual report says what bears interest."""
-    assert _screen(debt=340.0)["shariah_status"] == "Non-Shariah"
-    _rule(monkeypatch, debt_pct=25.0)
-    s = _screen(debt=340.0)
-    assert (s["shariah_debt"], s["shariah_status"]) == ("pass", "Shariah")
-    assert s["shariah_debt_note"] == "debt is 25% of assets (limit 33%)" + _YOURS
-    _rule(monkeypatch, illiquid_pct=15.0)
-    assert _screen()["shariah_illiquid"] == "fail", "a figure decides both ways"
-
-
-def test_the_non_shariah_reason_reads_rules_in_order_once_figures_can_fail(monkeypatch):
-    _rule(monkeypatch, income_pct=9.0)
-    assert _screen(debt=500.0)["shariah_reason"].startswith("impermissible income is 9%")
-
-
-def test_a_business_ruling_decides_a_review_business_and_can_only_tighten_a_listed_one(monkeypatch):
-    _rule(monkeypatch, business="pass")
-    s = _screen(industry="Quick Service Restaurant - QSR")
-    assert (s["shariah_business"], s["shariah_status"]) == ("pass", "Shariah")
-    assert s["shariah_business_note"] == "Quick Service Restaurant - QSR — your scholar's ruling: permissible" + _YOURS
-    assert _screen(industry="Hotels")["shariah_status"] == "Non-Shariah", "a prohibited industry stays prohibited"
-    _rule(monkeypatch, business="fail")
-    s = _screen()
-    assert (s["shariah_business"], s["shariah_status"]) == ("fail", "Non-Shariah")
-    assert s["shariah_reason"] == "Speciality Chemicals — your scholar's ruling: prohibited" + _YOURS
-    # a "pass" ruling on a business the sheet already passes decides nothing: the sheet's own note stands
-    # (found by the mutation check, 2026-10-16 — the guard on `sheet_unknown` had no test)
-    _rule(monkeypatch, business="pass")
-    assert _screen()["shariah_business_note"] == "Speciality Chemicals — not on PRISM's prohibited lists"
-
-
-def test_a_ruling_lapses_when_the_balance_sheet_changes(monkeypatch):
-    _rule(monkeypatch, total_assets=900.0, investments_pct=12.0)                     # read against 900
-    s = _screen()                                                                    # the sheet now says 1,000
-    assert (s["shariah_status"], s["shariah_investments"]) == ("Review", "pass"), "the figure is ignored"
-    assert s["shariah_reason"] == ("your figures of 2026-10-20 were read against an older balance sheet — "
-                                   "re-check")
-    assert s["shariah_ruling"] == s["shariah_reason"]
+def test_your_shariah_list_is_final_and_a_fail_in_the_data_is_never_silent(monkeypatch):
+    _list(monkeypatch, "SHARIAH_APPROVED")
     s = _screen(debt=500.0)
-    assert (s["shariah_status"], s["shariah_reason"]) == ("Non-Shariah", "debt is 50% of assets (limit 33%)")
-    s = _screen(fixed_assets=np.nan)                         # a missing figure still beats the re-check
-    assert (s["shariah_status"], s["shariah_reason"]) == ("Doubtful", "no fixed-assets figure in the data")
-    # beside a review item the re-check is still the reason: re-reading the report settles both
-    # (found by the mutation check, 2026-10-16 — nothing pinned this order)
-    s = _screen(cash_equivalents=900.0)
-    assert (s["shariah_status"], s["shariah_investments"]) == ("Review", "review")
-    assert s["shariah_reason"].endswith("older balance sheet — re-check")
+    assert s["shariah_status"] == "Shariah", "what you say in config is final"
+    assert s["shariah_reason"] == "on your Shariah list — though the data shows: debt is 50% of assets (limit 33%)"
+    assert s["shariah_your_list"] == s["shariah_reason"]
+    assert s["shariah_debt"] == "fail", "the card still shows the failing rule"
+    assert _screen(industry="Hotels")["shariah_status"] == "Shariah"
 
 
-def test_a_ruling_read_against_a_blank_total_holds_until_a_total_appears(monkeypatch):
-    _rule(monkeypatch, total_assets=None, debt_pct=10.0, illiquid_pct=40.0, investments_pct=10.0)
-    s = _screen(total_assets=np.nan)
-    assert s["shariah_status"] == "Shariah" and s["shariah_ruling"].startswith("your figures:")
-    assert _screen()["shariah_reason"].endswith("older balance sheet — re-check")
+def test_when_a_new_quarter_passes_all_six_the_reason_says_so(monkeypatch):
+    _list(monkeypatch, "SHARIAH_APPROVED")
+    s = _screen()
+    assert (s["shariah_status"], s["shariah_reason"]) == ("Shariah", SHARIAH_PASS_REASON)
+    assert s["shariah_your_list"] == "on your Shariah list"
 
 
-def test_no_ruling_means_an_empty_ruling_column():
-    assert _screen()["shariah_ruling"] == ""
-    assert _screen(company_id="NSE:SOMEONE_ELSE")["shariah_ruling"] == ""
+def test_your_shariah_list_clears_a_business_awaiting_a_ruling(monkeypatch):
+    _list(monkeypatch, "SHARIAH_APPROVED")
+    for industry in ("Quick Service Restaurant - QSR", "Restaurants"):
+        s = _screen(industry=industry)
+        assert (s["shariah_business"], s["shariah_status"]) == ("review", "Shariah"), industry
 
 
-def test_every_ruling_is_well_formed():
-    """Each entry: an exchange-prefixed company id; the day it was checked (not in the future); the sheet's total
-    assets it was read against (a positive ₹ Cr figure, or None when the sheet had none); where the figures come
-    from; and at least one ruling — a figure in percent (0-100) or a business verdict."""
-    from datetime import date
-    figures = {f"{k}_pct" for k in ("income", "debt", "illiquid", "investments")}
-    for cid, r in config.SHARIAH_RULINGS.items():
+def test_your_non_shariah_list_holds_until_the_data_passes_all_six(monkeypatch):
+    _list(monkeypatch, "SHARIAH_REJECTED")
+    for over in ({"cash_equivalents": 900.0}, {"fixed_assets": np.nan}, {"debt": 500.0}):
+        s = _screen(**over)
+        assert (s["shariah_status"], s["shariah_reason"]) == ("Non-Shariah", "on your Non-Shariah list"), over
+    s = _screen()                                           # a new result passes every rule
+    assert (s["shariah_status"], s["shariah_reason"]) == ("Shariah", SHARIAH_PASS_REASON)
+    assert s["shariah_your_list"] == "on your Non-Shariah list — the latest data passes all six rules"
+
+
+def test_your_review_list_holds_until_the_data_passes_all_six(monkeypatch):
+    _list(monkeypatch, "SHARIAH_REVIEW_COMPANIES")
+    for over in ({"cash_equivalents": 900.0}, {"fixed_assets": np.nan}, {"debt": 500.0}):
+        s = _screen(**over)
+        assert (s["shariah_status"], s["shariah_reason"]) == ("Review", "on your review list"), over
+    s = _screen()
+    assert (s["shariah_status"], s["shariah_reason"]) == ("Shariah", SHARIAH_PASS_REASON)
+    assert s["shariah_your_list"] == "on your review list — the latest data passes all six rules"
+    assert _screen(company_id="NSE:SOMEONE_ELSE", debt=500.0)["shariah_status"] == "Non-Shariah"
+
+
+def test_a_haram_business_on_rule_1s_company_list_never_clears():
+    """Delta Corp's figures pass every financial rule; its casino is Rule 1 itself, so no new quarter clears it."""
+    cid, why = next(iter(sorted(SHARIAH_PROHIBITED_COMPANIES.items())))
+    s = _screen(company_id=cid, industry="Miscellaneous", sector="Miscellaneous")
+    assert (s["shariah_status"], s["shariah_reason"], s["shariah_your_list"]) == (
+        "Non-Shariah", f"prohibited business: {why}", "")
+
+
+def test_your_lists_never_expire():
+    """No dates: nothing in the screen reads the clock, so a company stays on your list until you remove it."""
+    src = open(os.path.join(_ROOT, "core", "shariah.py"), encoding="utf-8").read()
+    for clock in ("today(", "now(", "datetime", "Timestamp", "DateOffset", "to_datetime"):
+        assert clock not in src, clock
+
+
+def test_no_list_means_an_empty_your_list_column():
+    assert _screen()["shariah_your_list"] == ""
+    assert _screen(company_id="NSE:SOMEONE_ELSE")["shariah_your_list"] == ""
+
+
+def test_every_list_entry_is_well_formed():
+    """Company ids, exchange-prefixed ("NSE:SYMBOL", or "BSE:code"); a company sits in at most one list."""
+    yours = (config.SHARIAH_APPROVED, config.SHARIAH_REJECTED, config.SHARIAH_REVIEW_COMPANIES)
+    for cid in sorted(frozenset().union(*yours)):
         assert re.fullmatch(r"(NSE|BSE):\S+", cid), cid
-        assert {"checked", "total_assets", "source"} <= set(r) <= {"checked", "total_assets", "source", "business"} | figures, cid
-        assert date.fromisoformat(r["checked"]) <= date.today(), cid
-        assert r["total_assets"] is None or (isinstance(r["total_assets"], (int, float)) and r["total_assets"] > 0), cid
-        assert len(r["source"].strip()) >= 10, f"{cid}: say where the figures come from"
-        assert set(r) & (figures | {"business"}), f"{cid}: a ruling needs a figure or a business verdict"
-        assert all(0.0 <= r[f] <= 100.0 for f in figures & set(r)), f"{cid}: figures are percent, 0-100"
-        assert r.get("business", "pass") in ("pass", "fail"), cid
+    for a, b in itertools.combinations([set(x) for x in yours] + [set(SHARIAH_PROHIBITED_COMPANIES)], 2):
+        assert not (a & b), f"a company in two lists: {sorted(a & b)}"
 
 
 # ── What to check: every rule PRISM cannot decide says what to look up, with the rupee limit ────────────
@@ -592,14 +603,14 @@ def test_a_check_without_a_base_figure_still_names_the_limit():
 
 def test_a_fact_is_its_note_without_the_limit_in_brackets():
     """The Tear-Sheet card shows each rule's limit in its own column; the note's bracketed limit is dropped there,
-    and only there — a ruling's '(source, checked …)' stays."""
+    and only there — any other bracket stays."""
     from core.shariah import shariah_fact
     assert shariah_fact("debt is 41% of assets (limit 33%)") == "debt is 41% of assets"
     assert shariah_fact("illiquid assets are 18% of assets (needs at least 20%)") == "illiquid assets are 18% of assets"
     assert shariah_fact("other income is at least 3% of revenue (limit 5%) — interest income is not in the data; "
                         "purify") == "other income is at least 3% of revenue — interest income is not in the data; purify"
-    yours = "debt is 25% of assets (limit 33%) — your figure (Annual report FY26, checked 2026-10-20)"
-    assert shariah_fact(yours) == "debt is 25% of assets — your figure (Annual report FY26, checked 2026-10-20)"
+    no_est = "other income cannot be estimated (no revenue, EBIT or EBITDA figure)"
+    assert shariah_fact(no_est) == no_est
     assert shariah_fact("no fixed-assets figure in the data") == "no fixed-assets figure in the data"
     assert shariah_fact(None) == "" and shariah_fact(np.nan) == ""
 
@@ -670,7 +681,8 @@ def test_patching_a_config_threshold_moves_the_result(monkeypatch, rule, limit, 
 def test_the_engine_holds_configs_own_objects_not_copies(monkeypatch):
     import core.shariah as sh
     for name in ("SHARIAH_RULES", "SHARIAH_PROHIBITED_INDUSTRIES", "SHARIAH_REVIEW_INDUSTRIES",
-                 "SHARIAH_REVIEW_SECTORS", "SHARIAH_PROHIBITED_COMPANIES", "SHARIAH_STATUSES", "SHARIAH_RULINGS"):
+                 "SHARIAH_REVIEW_SECTORS", "SHARIAH_PROHIBITED_COMPANIES", "SHARIAH_STATUSES", "SHARIAH_APPROVED",
+                 "SHARIAH_REJECTED", "SHARIAH_REVIEW_COMPANIES"):
         assert getattr(sh, name) is getattr(config, name), name
     monkeypatch.setattr(sh, "SHARIAH_PROHIBITED_INDUSTRIES", frozenset(["Speciality Chemicals"]))
     assert _screen()["shariah_status"] == "Non-Shariah"

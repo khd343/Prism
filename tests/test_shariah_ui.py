@@ -248,12 +248,14 @@ def test_the_card_explains_itself_and_carries_the_footnote():
                                 "check the annual report and purify dividends and gains. Confirm with your scholar.")
 
 
-def test_the_card_shows_a_ruling_and_a_lapse():
+def test_the_card_shows_your_list():
     from ui.ui_tearsheet import shariah_card_html
     s = _stock()
-    s["shariah_ruling"] = "your figures: Annual report FY26, notes 6 and 12, checked 2026-10-20"
-    assert "✍ your figures: Annual report FY26" in shariah_card_html(s)
-    s["shariah_ruling"] = ""
+    s["shariah_your_list"] = "on your Shariah list"
+    assert "✍ on your Shariah list" in shariah_card_html(s)
+    s["shariah_your_list"] = "on your Shariah list — though the data shows: debt is 50% of assets (limit 33%)"
+    assert "✍ on your Shariah list — though the data shows: debt is 50%" in shariah_card_html(s)
+    s["shariah_your_list"] = ""
     assert "✍" not in shariah_card_html(s)
 
 
@@ -284,7 +286,8 @@ def test_the_reference_explains_labels_rules_sight_purification_and_source():
     for r in SHARIAH_RULES.values():
         assert f"Rule {r['n']} — {r['name']}" in labels
     text = " ".join(e for _, e in section)
-    for needle in ("KMI-30", "AAOIFI", "purif", "cannot see", "annual report", "SHARIAH_RULINGS"):
+    for needle in ("KMI-30", "AAOIFI", "purif", "cannot see", "annual report", "SHARIAH_APPROVED",
+                   "SHARIAH_REJECTED", "SHARIAH_REVIEW_COMPANIES", "SHARIAH_PROHIBITED_COMPANIES"):
         assert needle in text, needle
 
 

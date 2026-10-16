@@ -4745,9 +4745,9 @@ _SHARIAH_HOW = (
     "The data has no interest-income line and no investments line, so Rule 2 sees only the least other income can "
     "be and Rule 6 only the most investments plus cash can be: both can be proven to pass, never to fail, and above "
     "the line they wait for your annual-report check. Fixed assets include goodwill and intangibles, which the "
-    "method counts as illiquid; a blank figure is missing, not zero. Figures you read in a company's annual report "
-    "(config.py, SHARIAH_RULINGS) replace the sheet's for their rule and lapse when its balance sheet changes. The "
-    "Reference tab explains every rule and list.")
+    "method counts as illiquid; a blank figure is missing, not zero. Your lists in config.py come last: a stock "
+    "passing all six rules on the latest data is Shariah; otherwise your list decides (SHARIAH_APPROVED Shariah, "
+    "SHARIAH_REJECTED Non-Shariah, SHARIAH_REVIEW_COMPANIES Review). The Reference tab explains every rule and list.")
 
 
 def shariah_card_html(stock: pd.Series) -> str:
@@ -4761,7 +4761,7 @@ def shariah_card_html(stock: pd.Series) -> str:
         return head + (f'<div style="font-size:0.75rem;color:{COLORS["text_muted"]};">This stock was not screened '
                        f'— its data did not reach the screen.</div>')
     clr = SHARIAH_COLORS[status]
-    ruling = str(stock.get("shariah_ruling", "") or "")
+    approval = str(stock.get("shariah_your_list", "") or "")
     cell = "padding:5px 8px;border-bottom:1px solid rgba(255,255,255,0.05);vertical-align:top;"
     th = (f'padding:4px 8px;text-align:left;font-size:0.6rem;font-weight:800;color:{COLORS["text_muted"]};'
           f'text-transform:uppercase;letter-spacing:0.6px;border-bottom:1px solid {COLORS["border"]};')
@@ -4795,8 +4795,8 @@ def shariah_card_html(stock: pd.Series) -> str:
           f'<div style="font-size:0.82rem;font-weight:800;color:{clr};">{shariah_label(status)}'
           f'<span style="font-weight:500;color:{COLORS["text_secondary"]};"> — {_esc(stock.get("shariah_reason", ""))}'
           f'</span></div>'
-        + (f'<div style="font-size:0.72rem;color:{COLORS["blue"]};margin-top:4px;">✍ {_esc(ruling)}</div>'
-           if ruling else "")
+        + (f'<div style="font-size:0.72rem;color:{COLORS["blue"]};margin-top:4px;">✍ {_esc(approval)}</div>'
+           if approval else "")
         + f'<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;margin-top:8px;'
           f'font-size:0.74rem;"><thead><tr><th style="{th}">Rule</th><th style="{th}">This company</th>'
           f'<th style="{th}">Limit</th><th style="{th}">Result</th></tr></thead><tbody>{"".join(rows)}</tbody>'
