@@ -44,7 +44,7 @@ from ui import data_check_job as D
 from ui import ui_scans as S
 from ui.scan_records_job import engine_version, sheet_id_from_secret
 
-SCHEMA = 1
+SCHEMA = 2                    # 2 (2026-10-16): the manifest also carries `blanks`; every earlier session is schema 1
 SESSIONS = "sessions"
 COLUMNS = ("symbol", "name", "sector", "industry", "cap", "composite_score", "crs_52w", "dist_to_vstop",
            "momentum_score", "breakout_score", "traded_value_cr", "rsi_14d", "stage", "close_price",
@@ -128,12 +128,74 @@ def validate(frame: pd.DataFrame) -> None:
         raise FeedError(f"close_price missing or not positive on {int((px.isna() | (px <= 0)).sum())} row(s)")
 
 
+# ── What a list could not judge (2026-10-16) ──────────────────────────────────────────────────────────────────────
+# Kite sells a held stock once it is out of the list 3 sessions running. A stock can be out because an input of the
+# recipe came in BLANK — the vendor sent no CRS for it that day, a quarter half-filled in results season — and then the
+# recipe never judged it out (day to day, 10 Sep - 9 Oct 2026: 14 times in 6,017 member-days a member lost an input it
+# had the day before, and 2 of those left the list that day). So each list states its blanks and Kite decides with
+# history: an absence counts as nothing when every condition the stock failed rests on an input it had on its last
+# list. What each of ui_scans.playbook_conditions reads, pinned to the recipe's code and on a real copy
+# (tests/test_playbook_blanks.py); "dist_to_vstop" stands for the stop, which the trend score reads too.
+RECIPE_INPUTS = {
+    "momentum": ("adx_14w", "close_price", "crs_26w", "crs_50d", "crs_52w", "dist_13wh", "dist_52wh", "dist_52wh_days",
+                 "dist_ath", "dist_to_vstop", "last_vstop_change", "ret_vs_industry_1y", "ret_vs_industry_3m",
+                 "rsi_14d", "sector", "sma_200d", "vol_sma_20d", "volume"),
+    "breakout": ("dist_13wh", "dist_52wh", "dist_52wh_days", "dist_ath"),
+    "quarter": ("ebitda_lq", "ebitda_pyq", "pat_lq", "pat_pyq", "rev_lq", "rev_pyq"),
+    "improvement": ("opm", "opm_1yb", "pat", "pat_1yb", "revenue", "revenue_1yb"),
+    "evidence": ("opm", "opm_1yb", "pat", "pat_1yb", "revenue", "revenue_1yb"),
+    "stop": ("close_price", "dist_to_vstop"),
+}
+# A blank that is the vendor's ANSWER, not a gap (StockScans' own definitions): no earlier close that high, no golden
+# cross in force. The recipe reads them as such, so they are never listed; only their floors guard an outage.
+BLANK_IS_A_FACT = ("breakout_window", "golden_cross_days")
+TEXT_INPUTS = ("sector",)
+
+
+def filled(scored: pd.DataFrame, col: str) -> pd.Series:
+    """True where a stock carries the reading: a number, or for a text input non-blank text. An absent column is
+    empty on every stock, never skipped."""
+    if col not in scored.columns:
+        return pd.Series(False, index=scored.index)
+    return D._filled(scored[col]) if col in TEXT_INPUTS else pd.to_numeric(scored[col], errors="coerce").notna()
+
+
+def _named(flags: pd.DataFrame, ids: pd.Series) -> dict:
+    """{ids[row]: [the columns True in that row, sorted]} for every row with one, keys sorted. Rows are positions."""
+    hit = flags.stack()
+    hit = hit[hit]
+    pairs = pd.DataFrame({"symbol": ids.to_numpy()[hit.index.get_level_values(0).to_numpy(dtype=int)],
+                          "input": hit.index.get_level_values(1)}).sort_values(["symbol", "input"], kind="mergesort")
+    return {s: g.tolist() for s, g in pairs.groupby("symbol", sort=True)["input"]}
+
+
+def blanks(scored: pd.DataFrame) -> dict:
+    """The manifest's `blanks` (schema 2): {"in": {member: [inputs that came in blank]}, "out": {stock: {condition:
+    [inputs]}}}. "out" holds only a stock off the list whose EVERY failed condition has a blank input — one condition
+    failed on the data it has is a judgement — with each failed condition's blank inputs. Blank-is-a-fact columns are
+    never listed. Vectorized; positions throughout, so a repeated index label cannot misalign a row."""
+    ids = scored["company_id"].astype(str).reset_index(drop=True)
+    cond = S.playbook_conditions(scored).reset_index(drop=True)
+    inputs = sorted({c for v in RECIPE_INPUTS.values() for c in v})
+    blank = pd.DataFrame({c: ~filled(scored, c).to_numpy() for c in inputs})
+    member = cond.all(axis=1)
+    rests = ~member & pd.concat([cond[c] | blank[list(v)].any(axis=1) for c, v in RECIPE_INPUTS.items()],
+                                axis=1).all(axis=1)
+    out = {}
+    for c, v in RECIPE_INPUTS.items():
+        for sym, names in _named(blank.loc[rests & ~cond[c], list(v)], ids).items():
+            out.setdefault(sym, {})[c] = names
+    listed = set(ids[member])                  # a repeated company_id can be a member on one row: it is not off the list
+    return {"in": _named(blank.loc[member], ids),
+            "out": {s: dict(sorted(out[s].items())) for s in sorted(out) if SYMBOL.fullmatch(s) and s not in listed}}
+
+
 def _counts(s: pd.Series, codes: dict) -> dict:
     return {k: int((s == k).sum()) for k in sorted(set(codes.values()) | {""})}
 
 
 def manifest(frame: pd.DataFrame, csv: bytes, session: str, source_title: str, source: bytes, origin: str,
-             trigger: str, checks: dict, now: datetime) -> dict:
+             trigger: str, checks: dict, now: datetime, blanks: dict) -> dict:
     return {
         "schema": SCHEMA, "session": session, "rows": int(len(frame)), "columns": list(COLUMNS),
         "csv_sha256": sha256(csv), "recipe": "playbook",
@@ -143,6 +205,7 @@ def manifest(frame: pd.DataFrame, csv: bytes, session: str, source_title: str, s
         "origin": origin, "trigger": trigger, "published_at": now.isoformat(timespec="seconds"),
         "counts": {"cap": _counts(frame["cap"], CAP_CODES), "stage": _counts(frame["stage"], STAGE_CODES)},
         "checks": checks,
+        "blanks": blanks,
     }
 
 
@@ -158,7 +221,12 @@ def readme_text() -> str:
             "A missing or invalid session means UNKNOWN, never \"out of the list\".\n\n"
             f"| # | Column |\n|---|---|\n{rows}\n\n"
             f"`cap`: {' '.join(sorted(set(CAP_CODES.values())))} or empty. "
-            "`stage`: Weinstein 1 2 3 4 or empty. Rows sorted by `symbol`; UTF-8, `\\n`; empty = not known.\n")
+            "`stage`: Weinstein 1 2 3 4 or empty. Rows sorted by `symbol`; UTF-8, `\\n`; empty = not known.\n\n"
+            "Since schema 2 (2026-10-16) the manifest also carries `blanks`, the recipe inputs that came in blank: "
+            "`in` names each member's (it passed without them); `out` names each stock off the list whose every "
+            f"failed condition ({', '.join(RECIPE_INPUTS)}) rests on a blank input, with those inputs per condition. "
+            "A stock off the list and not in `out` failed a condition on the data it has. Symbols and inputs sorted. "
+            "A schema 1 manifest has no `blanks`: it says nothing about blank inputs.\n")
 
 
 # ── The branch: written once ──────────────────────────────────────────────────────────────────────
@@ -210,15 +278,26 @@ FEED_GATE_INDICES = ("NSE:CNX500", "NSE:SMALLCA250", "NSE:NFMICRO250", "NSE:NIF5
 # check stays green. Floors sit about ten points under the lowest share measured on all 24 archive copies (29 Jun -
 # 9 Oct 2026): latest quarter 99.2%, the stop 99.6%, last year's quarter 95.0%, sma_30w 95.2%, sma_200d 93.0%. The
 # scores are always filled (the engine fills a missing input), so a broken input shows as a FLAT score instead.
+# EVERY INPUT OF EVERY 🚀 CONDITION (2026-10-16, RECIPE_INPUTS): the same rule — the lowest share on the 24 copies less
+# 8 points, rounded down to 0.05, which gives back each floor above — for the rest of what the conditions read. A
+# blank-is-a-fact column swings with the market (stocks at an all-time high, golden crosses in force), so its floor
+# only catches an outage. The shares behind each: tests/test_playbook_feed.py.
 RECIPE_FLOORS = {"rev_lq": 0.90, "pat_lq": 0.90, "ebitda_lq": 0.90, "dist_to_vstop": 0.90,
-                 "rev_pyq": 0.85, "pat_pyq": 0.85, "ebitda_pyq": 0.85, "sma_30w": 0.85, "sma_200d": 0.85}
+                 "rev_pyq": 0.85, "pat_pyq": 0.85, "ebitda_pyq": 0.85, "sma_30w": 0.85, "sma_200d": 0.85,
+                 "crs_50d": 0.80, "crs_52w": 0.75, "crs_26w": 0.80, "ret_vs_industry_1y": 0.50,
+                 "ret_vs_industry_3m": 0.50, "adx_14w": 0.85, "sma_50d": 0.85, "rsi_14d": 0.90,
+                 "last_vstop_change": 0.90, "vol_sma_20d": 0.90, "volume": 0.90, "close_price": 0.90, "sector": 0.90,
+                 "dist_52wh": 0.90, "dist_52wh_days": 0.90, "dist_13wh": 0.90, "dist_ath": 0.90, "pat": 0.90,
+                 "pat_1yb": 0.90, "revenue": 0.90, "revenue_1yb": 0.90, "opm": 0.90, "opm_1yb": 0.90,
+                 "breakout_window": 0.50, "golden_cross_days": 0.05}
 
 
 def check_recipe_inputs(scored: pd.DataFrame) -> list:
     def num(c):                                          # an absent column is empty, never skipped
         return (pd.to_numeric(scored[c], errors="coerce") if c in scored.columns
                 else pd.Series(float("nan"), index=scored.index))
-    thin = [f"{c} {num(c).notna().mean():.1%}" for c in RECIPE_FLOORS if num(c).notna().mean() < RECIPE_FLOORS[c]]
+    share = {c: float(filled(scored, c).mean()) for c in RECIPE_FLOORS}
+    thin = [f"{c} {share[c]:.1%}" for c in RECIPE_FLOORS if share[c] < RECIPE_FLOORS[c]]
     flat = [c for c in ("breakout_score", "improvement_score") if num(c).round(1).nunique() < D.MIN_DISTINCT]
     return [D._ok(not thin, "Recipe inputs", f"below the floor: {thin}" if thin
                   else f"all {len(RECIPE_FLOORS)} at or above their floor"),
@@ -291,7 +370,7 @@ def publish(workbook: bytes, title: str, session: str, feed: Path, *, origin: st
         raise FeedError(problem)
     csv = to_csv_bytes(frame)
     return write_session(feed, session, csv, manifest(frame, csv, session, title, workbook, origin, trigger,
-                                                      checks, now))
+                                                      checks, now, blanks(scored)))
 
 
 # ── The live run ──────────────────────────────────────────────────────────────────────────────────

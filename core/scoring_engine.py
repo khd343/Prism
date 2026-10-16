@@ -970,9 +970,10 @@ def _compute_breakout_score(df: pd.DataFrame) -> pd.Series:
 
     # 52WH age: how many days since the 52-week high was set (fewer = fresher momentum)
     # Zone-based (not percentile) because absolute thresholds matter regardless of market state:
-    # a 250-day old high is stale whether peers are fresh or not.
+    # a 250-day old high is stale whether peers are fresh or not. A blank age is unknown, so it scores the neutral 50
+    # (config: "NaN → default 50"), never a year-old high: a 9999 fill did that until 2026-10-16.
     if "dist_52wh_days" in df.columns:
-        age_score = _zone_score(df["dist_52wh_days"].fillna(9999), HIGH_AGE_ZONES)
+        age_score = _zone_score(df["dist_52wh_days"], HIGH_AGE_ZONES)
         score += age_score.fillna(50) * BREAKOUT_SIGNALS["52wh_days"]
 
     # 13WH distance

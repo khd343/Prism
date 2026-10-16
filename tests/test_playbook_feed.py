@@ -67,7 +67,7 @@ def _scored(n=30, members=10):
 def _meta(frame, csv=None, session="2026-10-12"):
     csv = F.to_csv_bytes(frame) if csv is None else csv
     return F.manifest(frame, csv, session, "PRISM 2026-10-12 Mon", b"workbook", "recorded", "dispatch",
-                      {"passed": 1, "warnings": []}, NOW)
+                      {"passed": 1, "warnings": []}, NOW, {"in": {}, "out": {}})
 
 
 # ── 1. The rows are exactly the Playbook, from the imported recipe ────────────────────────────────
@@ -83,7 +83,7 @@ def test_columns_are_the_contract_in_order():
     assert F.COLUMNS == ("symbol", "name", "sector", "industry", "cap", "composite_score", "crs_52w",
                          "dist_to_vstop", "momentum_score", "breakout_score", "traded_value_cr", "rsi_14d",
                          "stage", "close_price", "equity_shares")
-    assert F.SCHEMA == 1
+    assert F.SCHEMA == 2                           # 2 (2026-10-16): the manifest carries `blanks`; the columns are 1's
 
 
 def test_a_missing_source_column_fails():
@@ -171,7 +171,8 @@ def test_the_manifest_identifies_list_input_and_recipe():
     assert m["csv_sha256"] == hashlib.sha256(csv).hexdigest()
     assert m["source_sha256"] == hashlib.sha256(b"workbook").hexdigest()
     assert m["recipe_fingerprint"] == S.recipe_fingerprint(F.playbook_scan())
-    assert m["rows"] == 10 and m["columns"] == list(F.COLUMNS) and m["schema"] == 1
+    assert m["rows"] == 10 and m["columns"] == list(F.COLUMNS) and m["schema"] == 2
+    assert m["blanks"] == {"in": {}, "out": {}}
     assert sum(m["counts"]["cap"].values()) == 10 and sum(m["counts"]["stage"].values()) == 10
     assert m["published_at"] == "2026-10-12T20:15:00+05:30"
     assert {"session", "engine_commit", "source_title", "origin", "trigger", "checks"} <= set(m)
@@ -211,6 +212,24 @@ def test_the_branch_tells_git_never_to_touch_the_bytes(tmp_path):
 def test_the_readme_lists_the_contract():
     text = F.readme_text()
     assert all(f"`{c}`" in text for c in F.COLUMNS) and "never modified" in text
+    assert all(f"`{k}`" in text for k in ("blanks", "in", "out")) and "schema 1" in text
+    assert all(c in text for c in F.RECIPE_INPUTS)                       # the six conditions, by name
+
+
+def test_a_published_manifest_carries_the_lists_blanks(monkeypatch, tmp_path):
+    """publish() writes blanks() of the very frame the list came from (schema 2, 2026-10-16)."""
+    df = _scored()
+    for c in sorted({c for v in F.RECIPE_INPUTS.values() for c in v} - set(df.columns)):
+        df[c] = 1.0                                                  # every other recipe input present
+    df.loc[df.index[-1], "pat_1yb"] = np.nan                         # a member that passed without last year's profit
+    df.loc[df.index[0], "dist_to_vstop"] = np.nan                    # off the list, but judged on its quarter
+    _all_pass(monkeypatch)
+    monkeypatch.setattr(F, "score", lambda wb: ({}, None, None, df))
+    assert F.publish(b"wb", "PRISM 2026-10-12 Mon", "2026-10-12", tmp_path, origin="recorded",
+                     trigger="dispatch", now=NOW) is True
+    meta = json.loads((tmp_path / "sessions" / "2026-10-12.json").read_text(encoding="utf-8"))
+    assert meta["schema"] == 2 and meta["blanks"] == F.blanks(df)
+    assert meta["blanks"]["in"]["NSE:S29"] == ["pat_1yb"] and "NSE:S00" not in meta["blanks"]["out"]
 
 
 # ── 7. The gate fails closed; the back-fill tolerance is exact and never live ─────────────────────
@@ -717,13 +736,14 @@ def test_the_manifest_names_the_code_that_ran(monkeypatch):
 # The data check guards the columns its daily email is about; the Playbook also reads the quarterly levels behind
 # 🔥 Strong Quarter, the stop distance and the moving averages behind the stage and the trend scores. A vendor that
 # thins one shrinks and skews the list while every other check stays green.
-_RECIPE_COLUMNS = ["dist_to_vstop", "ebitda_lq", "ebitda_pyq", "pat_lq", "pat_pyq", "rev_lq", "rev_pyq", "sma_200d",
-                   "sma_30w"]
+_RECIPE_COLUMNS = sorted(F.RECIPE_FLOORS)
 
 
 def _recipe_frame():
     df = _scored(n=200, members=20)
-    df["sma_30w"], df["sma_200d"] = 100.0, 100.0
+    for c in _RECIPE_COLUMNS:
+        if c not in df.columns:
+            df[c] = 100.0                                             # every floored column filled
     return df
 
 
@@ -736,11 +756,27 @@ def _live_gate_recipe(monkeypatch, scored, backfill=False):
 
 
 def test_the_recipe_floors_are_the_measured_ones():
-    """About ten points under the lowest share on all 24 archive copies (29 Jun - 9 Oct 2026): latest quarter 99.2%,
-    the stop 99.6%, last year's quarter 95.0%, sma_30w 95.2%, sma_200d 93.0%."""
-    assert F.RECIPE_FLOORS == {"rev_lq": 0.90, "pat_lq": 0.90, "ebitda_lq": 0.90, "dist_to_vstop": 0.90,
-                               "rev_pyq": 0.85, "pat_pyq": 0.85, "ebitda_pyq": 0.85, "sma_30w": 0.85,
-                               "sma_200d": 0.85}
+    """The lowest share on all 24 archive copies (29 Jun - 9 Oct 2026) less 8 points, rounded DOWN to 0.05 — the rule
+    reproduces the nine floors of 2026-10-14 (latest quarter 99.2%, the stop 99.6%, last year's quarter 95.0%, sma_30w
+    95.2%, sma_200d 93.0%) and sets every other recipe input's (2026-10-16): crs_50d 90.8%, crs_52w 87.6%, crs_26w
+    89.9%, ret_vs_industry 1y 59.7% / 3m 62.5% (the 29 Jun vintage), adx_14w 95.4%, sma_50d 97.8%, rsi_14d 99.2%,
+    last_vstop_change 99.0%, vol_sma_20d 98.9%, opm_1yb 98.0%, pat_1yb and revenue_1yb 98.6%, opm 99.4%, the rest
+    99.96-100%. A blank-is-a-fact column swings with the market (at an all-time high, no golden cross in force), so its
+    floor only catches an outage: breakout_window 0.50 (lowest 92.3%), golden_cross_days 0.05 (lowest 26.5%)."""
+    assert F.RECIPE_FLOORS == {
+        "rev_lq": 0.90, "pat_lq": 0.90, "ebitda_lq": 0.90, "dist_to_vstop": 0.90,
+        "rev_pyq": 0.85, "pat_pyq": 0.85, "ebitda_pyq": 0.85, "sma_30w": 0.85, "sma_200d": 0.85,
+        "crs_50d": 0.80, "crs_52w": 0.75, "crs_26w": 0.80, "ret_vs_industry_1y": 0.50, "ret_vs_industry_3m": 0.50,
+        "adx_14w": 0.85, "sma_50d": 0.85, "rsi_14d": 0.90, "last_vstop_change": 0.90, "vol_sma_20d": 0.90,
+        "volume": 0.90, "close_price": 0.90, "sector": 0.90, "dist_52wh": 0.90, "dist_52wh_days": 0.90,
+        "dist_13wh": 0.90, "dist_ath": 0.90, "pat": 0.90, "pat_1yb": 0.90, "revenue": 0.90, "revenue_1yb": 0.90,
+        "opm": 0.90, "opm_1yb": 0.90, "breakout_window": 0.50, "golden_cross_days": 0.05}
+
+
+def test_every_recipe_input_has_a_floor():
+    """A vendor that thins any input the 🚀 conditions read skews the list while every other check stays green."""
+    read = {c for v in F.RECIPE_INPUTS.values() for c in v} | set(F.BLANK_IS_A_FACT)
+    assert read <= set(F.RECIPE_FLOORS), sorted(read - set(F.RECIPE_FLOORS))
 
 
 def test_full_recipe_inputs_pass(monkeypatch):
@@ -750,8 +786,18 @@ def test_full_recipe_inputs_pass(monkeypatch):
 @pytest.mark.parametrize("col", _RECIPE_COLUMNS)
 def test_a_thinned_recipe_input_publishes_nothing(monkeypatch, col):
     df = _recipe_frame()
-    df.loc[df.index[:70], col] = np.nan                                    # 65% left, under every floor
-    with pytest.raises(F.FeedError, match=f"Recipe inputs: .*{col} 65.0%"):
+    left = int(round(max(F.RECIPE_FLOORS[col] - 0.05, 0.0) * len(df)))    # 5 points under its floor
+    df.loc[df.index[left:], col] = np.nan
+    with pytest.raises(F.FeedError, match=rf"Recipe inputs: .*{col} {left / len(df):.1%}"):
+        _live_gate_recipe(monkeypatch, df)
+
+
+def test_a_blank_sector_thins_like_any_other_input(monkeypatch):
+    """Text, so blank is empty text: the floor counts the sector the way the data check does."""
+    df = _recipe_frame()
+    df["sector"] = df["sector"].astype(object)
+    df.loc[df.index[:40], "sector"] = " "
+    with pytest.raises(F.FeedError, match=r"Recipe inputs: .*sector 80.0%"):
         _live_gate_recipe(monkeypatch, df)
 
 
