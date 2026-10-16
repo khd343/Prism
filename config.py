@@ -574,8 +574,9 @@ BAID_SELL_TRIGGERS = {
 # and the engine carried the literal "Hybrid" independently, so changing the app alone would have
 # left every snapshot, census and verify run scored under a mode the user no longer sees — the
 # silent-divergence class. Changed 2026-09-19 Hybrid -> Breakout on three-window forward evidence
-# (see the Breakout entry below); revert by changing this line alone.
-DEFAULT_ANALYSIS_MODE = "Breakout"
+# (see the Breakout entry below), and 2026-10-15 Breakout -> MomentumBreakout, the user's decision
+# ahead of December (see the MomentumBreakout entry); revert by changing this line alone.
+DEFAULT_ANALYSIS_MODE = "MomentumBreakout"
 
 ANALYSIS_MODES = {
     "Hybrid": {
@@ -596,7 +597,7 @@ ANALYSIS_MODES = {
         "momentum_w": 0.90,
         "description": "Pure price action — follow institutional money flow with O'Neil rules",
     },
-    # ── THE DEFAULT since 2026-09-19 (added the same day as a candidate, promoted hours later) ─
+    # ── THE DEFAULT 2026-09-19 → 2026-10-15 (a candidate that morning, promoted hours later) ──
     # Equal thirds of quality, momentum and breakout (the composite's third leg, `breakout_w`;
     # absent from every other mode, so those are byte-identical to before it existed).
     #
@@ -637,11 +638,11 @@ ANALYSIS_MODES = {
         "momentum_w":    1.0 / 3.0,
         "breakout_w":    1.0 / 3.0,
         "description": "Quality, momentum and breakout in equal thirds — price strength at two-thirds "
-                       "of the score. The default since 2026-09-19: it beat Hybrid on all three "
-                       "forward windows, which rank Hybrid #56/#60/#60 of 66 weightings. December's "
-                       "6-month window reviews it",
+                       "of the score. It beat Hybrid on all three forward windows, which rank Hybrid "
+                       "#56/#60/#60 of 66 weightings. December's 6-month window compares it with "
+                       "Momentum + Breakout",
     },
-    # ── SELECTABLE, NOT THE DEFAULT (2026-10-10) ────────────────────────────────────────────
+    # ── THE DEFAULT SINCE 2026-10-15 (selectable since 2026-10-10) ──────────────────────────
     # Momentum and breakout in halves, quality OUT of the blend. Measured in exactly this form
     # (governance 15%, framework boosts, governance shield and forensic multiplier all kept) on
     # the four forward windows PRISM holds — rank-IC, all stocks / stocks trading >= Rs 1 Cr a day:
@@ -650,21 +651,25 @@ ANALYSIS_MODES = {
     #   08-22→09-19 (28 days)            -2.0%       +0.091 / +0.072     +0.135 / +0.134
     #   06-29→10-09 (102 days, archive)  -6.2%       +0.110 / +0.073     +0.133 / +0.111
     #   06-17→10-03 (108 days)           -3.6%       +0.128 / +0.126     +0.157 / +0.172
-    # Ties the default once, beats it three times, wins all four on the buyable stocks.
-    # NOT THE DEFAULT because the two long windows overlap almost entirely, three of the four were
-    # falling markets (where price strength protects best) and the longest is ~3.5 months against
-    # a multi-year aim. December's 6-month window decides (docs/december-2026-plan.md rule 26).
-    # Quality + Breakout (no momentum), measured the same day, trailed the default in three of four
-    # and is not a mode. Contract: tests/test_momentum_breakout_mode.py.
+    # Ties thirds once, beats it three times, wins all four on the buyable stocks.
+    # Held back from the default on 2026-10-10 because the two long windows overlap almost
+    # entirely, three of the four were falling markets (where price strength protects best) and
+    # the longest is ~3.5 months against a multi-year aim; December's 6-month window was to decide
+    # (docs/december-2026-plan.md rule 26). 2026-10-15: THE USER MADE IT THE DEFAULT, ahead of
+    # December. The caveats stand, so December now REVIEWS it: if thirds beats it on that window,
+    # quality earns its third back — one constant above, and tools/validate.py rebuilds every
+    # mode on every snapshot, so the comparison does not depend on which mode is the default.
+    # Quality + Breakout (no momentum), measured the same day, trailed thirds in three of four and
+    # is not a mode. Contract: tests/test_momentum_breakout_mode.py.
     "MomentumBreakout": {
         "label": "🚀 Momentum + Breakout",
         "fundamental_w": 0.0,
         "momentum_w":    0.5,
         "breakout_w":    0.5,
         "description": "Momentum and breakout in halves, quality left out of the blend — the forensic "
-                       "penalty, hard gates and framework boosts still apply. Measured ahead of "
-                       "33/33/33 on 3 of 4 forward windows (all falling or flat markets, the longest "
-                       "~3.5 months); December's 6-month window decides whether it earns more",
+                       "penalty, hard gates and framework boosts still apply. The default since "
+                       "2026-10-15: measured ahead of 33/33/33 on 3 of 4 forward windows (all falling "
+                       "or flat markets, the longest ~3.5 months); December's 6-month window reviews it",
     },
 }
 

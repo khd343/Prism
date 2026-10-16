@@ -1,9 +1,10 @@
 """
 test_breakout_mode.py
 =====================
-Contract: the "Breakout" Analysis Mode — quality, momentum and breakout in EQUAL THIRDS — is
-THE DEFAULT (config.DEFAULT_ANALYSIS_MODE), and every other mode is byte-identical to before
-the third leg existed.
+Contract: the "Breakout" Analysis Mode — quality, momentum and breakout in EQUAL THIRDS — was
+THE DEFAULT (config.DEFAULT_ANALYSIS_MODE) from 2026-09-19 to 2026-10-15, when the user made
+Momentum + Breakout the default (tests/test_momentum_breakout_mode.py); every other mode is
+byte-identical to before the third leg existed.
 
 HOW IT GOT HERE (2026-09-19, all in one day). The user proposed blending the composite from
 quality + momentum + breakout. Measured on both forward windows in EXACTLY the form the engine
@@ -90,15 +91,17 @@ def test_only_the_declared_modes_carry_a_third_leg():
     assert carriers == ["Breakout", "MomentumBreakout"], f"third-leg carriers: {carriers}"
 
 
-def test_the_default_mode_is_breakout_and_lives_in_exactly_one_place():
+def test_the_default_mode_is_momentum_breakout_and_lives_in_exactly_one_place():
     """THE DIVERGENCE GUARD, and the reason this is a constant rather than four literals: before
     2026-09-19 the app carried "Hybrid" and so did run_scoring_pipeline, run_full_scoring,
     /census and /verify — independently. Changing the app alone would have left every snapshot,
-    census and verify run scored under a mode the user no longer sees, with nothing failing."""
+    census and verify run scored under a mode the user no longer sees, with nothing failing.
+    The default was Breakout from 2026-09-19 and is Momentum + Breakout since 2026-10-15, the
+    user's decision (tests/test_momentum_breakout_mode.py)."""
     import inspect
     import core
     from scoring_engine import run_full_scoring
-    assert C.DEFAULT_ANALYSIS_MODE == "Breakout"
+    assert C.DEFAULT_ANALYSIS_MODE == "MomentumBreakout"
     assert C.DEFAULT_ANALYSIS_MODE in C.ANALYSIS_MODES, "the default names a mode that does not exist"
     for fn in (core.run_scoring_pipeline, run_full_scoring):
         got = inspect.signature(fn).parameters["analysis_mode"].default

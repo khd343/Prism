@@ -2,7 +2,7 @@
 test_momentum_breakout_mode.py
 ==============================
 Contract: the "MomentumBreakout" Analysis Mode — momentum and breakout in HALVES, quality 0% in
-the blend — is SELECTABLE and is NOT the default (2026-10-10).
+the blend — is THE DEFAULT since 2026-10-15 (selectable since 2026-10-10).
 
 THE EVIDENCE, measured in exactly the engine's form (governance 15%, framework boosts, the
 governance shield and the forensic multiplier all kept) on the four forward windows PRISM holds.
@@ -18,11 +18,15 @@ It ties the default once and beats it three times; on the buyable stocks it wins
 Quality + Breakout (no momentum), measured the same day, trailed the default in three of the
 four and is NOT a mode.
 
-WHY NOT THE DEFAULT: the two long windows overlap almost entirely (June -> October), three of
-the four were falling markets — where price strength protects best — and the longest is ~3.5
-months while PRISM's aim is years. December's 6-month window decides (docs/december-2026-plan.md
-rule 26, written before these results): if it beats thirds there on BOTH columns it can take the
-default; if it loses, quality earned its third.
+WHY IT WAS NOT THE DEFAULT AT FIRST (2026-10-10): the two long windows overlap almost entirely
+(June -> October), three of the four were falling markets — where price strength protects best —
+and the longest is ~3.5 months while PRISM's aim is years. December's 6-month window was to decide
+(docs/december-2026-plan.md rule 26, written before these results).
+
+2026-10-15: THE USER MADE IT THE DEFAULT, ahead of December. Those caveats still stand, so
+December's window now REVIEWS it: if equal thirds beats it there on BOTH columns, quality earned
+its third back. tools/validate.py rebuilds every mode on every snapshot from the snapshot's own
+`scored_mode`, so that comparison is the same whichever mode is the default.
 
 WHAT "QUALITY 0%" DOES NOT MEAN: the forensic penalty, the governance shield, the hard gates and
 the framework boosts all still apply — the mode removes quality from the BLEND only, which is
@@ -51,7 +55,7 @@ _ROOT = Path(__file__).resolve().parent.parent
 _MODE = "MomentumBreakout"
 
 
-# ── 1. the mode exists, is what it says, and is not the default ─────────────────────────
+# ── 1. the mode exists, is what it says, and is the default ─────────────────────────────
 def test_the_mode_is_momentum_and_breakout_in_halves_with_no_quality_leg():
     m = C.ANALYSIS_MODES[_MODE]
     assert (m["fundamental_w"], m["momentum_w"], m["breakout_w"]) == (0.0, 0.5, 0.5)
@@ -59,11 +63,11 @@ def test_the_mode_is_momentum_and_breakout_in_halves_with_no_quality_leg():
     assert "allowed_profiles" not in m
 
 
-def test_it_is_selectable_but_not_the_default():
-    assert C.DEFAULT_ANALYSIS_MODE != _MODE, (
-        "promotion to default is December's decision (rule 26), not this change's")
-    assert "default" not in C.ANALYSIS_MODES[_MODE]["description"].lower(), (
-        "the caption under the selector would claim a default the mode does not hold")
+def test_it_is_the_default_and_its_caption_says_so():
+    """Promoted 2026-10-15 by the user, ahead of December's review (rule 26), which now reviews it."""
+    assert C.DEFAULT_ANALYSIS_MODE == _MODE, "the user made Momentum + Breakout the default on 2026-10-15"
+    assert "default" in C.ANALYSIS_MODES[_MODE]["description"].lower(), (
+        "the caption under the selector must say the mode is the default it is")
 
 
 def test_the_description_says_the_penalties_still_apply():
@@ -107,13 +111,15 @@ def test_quality_does_not_move_the_blend():
     assert np.allclose(_score(f)["composite_score"], _score(g)["composite_score"])
 
 
-# ── 3. live: a real re-rank, nothing upstream moves, the default is untouched ──────────
+# ── 3. live: a real re-rank against equal thirds, nothing upstream moves ───────────────
 @pytest.fixture(scope="module")
 def live_pair():
+    """(equal thirds, this mode) on the local data. Thirds is NAMED, not taken as the default: since
+    2026-10-15 the default IS this mode, and a pair of one mode would compare nothing."""
     from core import fetch_and_clean_data, run_scoring_pipeline
     with contextlib.redirect_stdout(io.StringIO()):
         clean = fetch_and_clean_data("local")
-        base = run_scoring_pipeline(clean.copy())
+        base = run_scoring_pipeline(clean.copy(), analysis_mode="Breakout")
         mode = run_scoring_pipeline(clean.copy(), analysis_mode=_MODE)
     assert mode.attrs.get("analysis_mode") == _MODE, "the engine fell back to another mode"
     b = base.set_index("company_id")
@@ -122,8 +128,8 @@ def live_pair():
 
 
 def test_the_mode_scores_every_stock_and_genuinely_reranks(live_pair):
-    """Measured 2026-10-10 on the local 09-18 data: rank corr with the default 0.941, top-50
-    overlap 31/50, top-tier counts 4/20/172 -> 2/47/255."""
+    """Measured 2026-10-10 on the local 09-18 data: rank corr with equal thirds (then the default)
+    0.941, top-50 overlap 31/50, top-tier counts 4/20/172 -> 2/47/255."""
     base, mode = live_pair
     c_b = pd.to_numeric(base["composite_score"], errors="coerce")
     c_m = pd.to_numeric(mode["composite_score"], errors="coerce")

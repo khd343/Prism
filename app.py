@@ -3334,9 +3334,9 @@ with tabs[5]:
                                    + (" · default" if k == DEFAULT_ANALYSIS_MODE else "")),
             key="cfg_mode",
             help="Blend of the composite — the one control that re-ranks the universe "
-                 "(Breakout 33/33/33 quality·momentum·breakout, the default since 2026-09-19 · "
-                 "Momentum + Breakout 0/50/50 · Hybrid 70/30 · Fundamental 100/0 · Technical 10/90). "
-                 "December's 6-month window "
+                 "(Momentum + Breakout 0/50/50, the default since 2026-10-15 · "
+                 "Breakout 33/33/33 quality·momentum·breakout · Hybrid 70/30 · Fundamental 100/0 · "
+                 "Technical 10/90). December's 6-month window "
                  "reviews the default; see the note in config.ANALYSIS_MODES.",
         )
     # The description renders OUTSIDE the column, at full width. Browser-checked 2026-09-20: with

@@ -118,12 +118,17 @@ def test_convergence_still_discriminates(live, lenses):
 
 
 def test_convergence_is_not_just_the_composite_score(live, lenses):
-    """If it tracked the score it would add nothing over what the tearsheet already shows."""
-    c = _convergence(live, lenses).corr(live["composite_score"])
-    assert 0.15 < c < 0.85, (
-        f"corr(convergence, composite) = {c:.3f}. Near 1 means redundant; near 0 means it is "
-        f"measuring noise. It was 0.479 when the tab was built."
-    )
+    """If it tracked the score it would add nothing over what the tearsheet already shows; if it tracked
+    nothing it would be noise. Since 2026-10-15 the two halves are judged against different things: the
+    default composite (Momentum + Breakout) leaves quality out of its blend, so corr with it fell to 0.126
+    on the local data (0.479 under Hybrid when the tab was built, 0.294 under thirds) -- LESS redundant,
+    not noisier. Noise is judged against quality_score, which the lenses gate: 0.589, the same under
+    every mode."""
+    conv = _convergence(live, lenses)
+    c = conv.corr(live["composite_score"])
+    assert c < 0.85, f"corr(convergence, composite) = {c:.3f}: near 1 means the tab repeats the score"
+    q = conv.corr(live["quality_score"])
+    assert q > 0.15, f"corr(convergence, quality_score) = {q:.3f}: near 0 means the lenses measure noise"
 
 
 def test_every_listed_lens_actually_fires(live, lenses):
