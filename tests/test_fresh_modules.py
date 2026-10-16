@@ -103,8 +103,60 @@ def test_app_runs_the_guard_before_its_first_party_imports_and_records_after_the
 
     body = _TREE.body
     imports = [i for i, n in enumerate(body) if isinstance(n, (ast.Import, ast.ImportFrom)) and first_party(n)]
-    calls = [i for i, n in enumerate(body) if isinstance(n, ast.Expr) and "_drop_stale_first_party(" in ast.unparse(n)]
+    # The guard call sits in a `with _first_party_lock():` block since 2026-10-16 (the test below pins the lock).
+    calls = [i for i, n in enumerate(body) if isinstance(n, (ast.Expr, ast.With))
+             and "_drop_stale_first_party(" in ast.unparse(n)]
     records = [i for i, n in enumerate(body) if "_first_party_file_times().update(" in ast.unparse(n)]
     assert len(calls) == 1 and calls[0] < imports[0], "the guard must run before the first first-party import"
     assert len(records) == 1 and records[0] > imports[-1], "the times must be recorded after the last one"
     assert '_FIRST_PARTY = ("config", "core", "ui")' in _APP
+
+
+def test_a_module_mid_import_and_its_package_are_never_dropped(pkg):
+    """PRODUCTION CRASH, 2026-10-16 ("KeyError: 'config'", right after a deploy): two sessions ran this guard and
+    their imports at once, one dropped the first-party modules while the other was still importing config, and
+    Python's import, finding its half-built module gone from sys.modules, raised KeyError. A module mid-import is
+    being built from the file as it is NOW, so it is not stale; neither is the package it is importing into, which
+    the import reads back when it finishes. Everything else still goes."""
+    import threading
+    import types
+    gate = types.ModuleType("zzfresh_gate")
+    gate.entered, gate.release = threading.Event(), threading.Event()
+    sys.modules["zzfresh_gate"] = gate
+    (pkg / "c.py").write_text("import zzfresh_gate\nzzfresh_gate.entered.set()\nzzfresh_gate.release.wait(10)\n"
+                              "Y = 2\n", encoding="utf-8")
+    importlib.invalidate_caches()
+    g = _guard_ns(("zzfresh",))
+    seen = g["_file_times"](sys.modules, g["_first_party"](sys.modules))
+    _push(pkg)
+    errors = []
+
+    def importer():
+        try:
+            importlib.import_module("zzfresh.c")
+        except BaseException as e:      # the import's own failure is the evidence
+            errors.append(e)
+
+    t = threading.Thread(target=importer, daemon=True)
+    try:
+        t.start()
+        assert gate.entered.wait(10), "the importer never reached its module body"
+        assert g["_drop_stale_first_party"](sys.modules, seen) == ["zzfresh.a"]
+        kept = sorted(n for n in sys.modules if n.split(".")[0] == "zzfresh")
+    finally:
+        gate.release.set()
+        t.join(10)
+        sys.modules.pop("zzfresh_gate", None)
+    assert not errors, errors
+    assert kept == ["zzfresh", "zzfresh.c"], "only the module mid-import and the package it imports into stay"
+    assert sys.modules["zzfresh.c"].Y == 2
+
+
+def test_two_sessions_never_drop_at_the_same_moment():
+    """The guard runs under ONE lock for the whole process (a cache_resource), so two sessions a deploy reruns
+    together cannot both find the old record and drop modules under each other's re-import (2026-10-16)."""
+    withs = [n for n in _TREE.body if isinstance(n, ast.With) and "_drop_stale_first_party(" in ast.unparse(n)]
+    assert len(withs) == 1 and [ast.unparse(i.context_expr) for i in withs[0].items] == ["_first_party_lock()"]
+    lock = [n for n in _TREE.body if isinstance(n, ast.FunctionDef) and n.name == "_first_party_lock"]
+    assert len(lock) == 1 and any("cache_resource" in ast.unparse(d) for d in lock[0].decorator_list)
+    assert ast.unparse(lock[0].body[-1]) == "return threading.Lock()"

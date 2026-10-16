@@ -61,6 +61,7 @@ import warnings
 warnings.filterwarnings('ignore')
 
 import sys
+import threading
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 # ── One version of PRISM's code per run (2026-10-10) ──
@@ -92,13 +93,25 @@ def _file_times(modules, names):
 
 def _drop_stale_first_party(modules, seen):
     """Drop every first-party module when one has changed since it was recorded in `seen` (the first run
-    of a process has nothing recorded, so nothing is stale). Returns the changed names."""
+    of a process has nothing recorded, so nothing is stale). Returns the changed names.
+
+    Never a module being imported at this moment, nor a package one is being imported into (2026-10-16): the live
+    app raised "KeyError: 'config'" after a deploy because one session dropped the modules while another was still
+    importing config, and Python's import reads its module, and the parent package, back from sys.modules when it
+    finishes. A module mid-import is being built from the file as it is now, so it is not stale."""
     names = _first_party(modules)
     now = _file_times(modules, names)
     stale = [n for n in names if n in seen and now[n] != seen[n]]
     if stale:
+        busy = set()
         for n in names:
-            modules.pop(n, None)
+            spec = getattr(modules.get(n), "__spec__", None)
+            if getattr(spec, "_initializing", False) or getattr(spec, "_uninitialized_submodules", None):
+                parts = n.split(".")
+                busy.update(".".join(parts[:i]) for i in range(1, len(parts) + 1))
+        for n in names:
+            if n not in busy:
+                modules.pop(n, None)
         seen.clear()
     return stale
 
@@ -109,7 +122,15 @@ def _first_party_file_times():
     return {}
 
 
-_drop_stale_first_party(sys.modules, _first_party_file_times())
+@st.cache_resource(show_spinner=False)
+def _first_party_lock():
+    """One lock for the whole process: two sessions a deploy reruns together never drop modules at the same moment,
+    so the second finds the record already cleared instead of dropping under the first one's re-import (2026-10-16)."""
+    return threading.Lock()
+
+
+with _first_party_lock():
+    _drop_stale_first_party(sys.modules, _first_party_file_times())
 
 from core import (fetch_and_clean_data, load_market, run_full_scoring, compute_forensic_signals,
                   apply_forensic_penalty, compute_verdict, run_scoring_pipeline)
