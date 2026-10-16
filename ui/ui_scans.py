@@ -129,12 +129,21 @@ def playbook_shortlist(df: pd.DataFrame) -> pd.Series:
     fill (2026-10-15). In-sample record (re-measured 2026-10-15 with the corrected inputs,
     ui/scan_records.json): +7.1 / +10.7 / +3.3 / +3.1pp against the market median, 62-70% of matches
     beating it."""
-    return ((_pct(df, "momentum_score") >= 2 / 3)
-            & (_pct(df, "breakout_score") >= 2 / 3)
-            & (strong_quarter(df) == 1)
-            & (_pct(df, "improvement_score") >= 0.5)
-            & improvement_evidence(df)
-            & (_num(df, "dist_to_vstop") >= 0)).fillna(False).astype(bool)
+    return playbook_conditions(df).all(axis=1)
+
+
+def playbook_conditions(df: pd.DataFrame) -> pd.DataFrame:
+    """The 🚀 recipe's six conditions, one column each, True where a stock meets it; the shortlist is the stocks
+    meeting all six. One definition: the Playbook feed reads which condition a stock missed, to say which blank input
+    its absence rests on (ui/playbook_feed_job.py, 2026-10-16). Row by row, never aligned on the index."""
+    return pd.DataFrame({
+        "momentum": (_pct(df, "momentum_score") >= 2 / 3).to_numpy(),
+        "breakout": (_pct(df, "breakout_score") >= 2 / 3).to_numpy(),
+        "quarter": (strong_quarter(df) == 1).to_numpy(),
+        "improvement": (_pct(df, "improvement_score") >= 0.5).to_numpy(),
+        "evidence": improvement_evidence(df).to_numpy(),
+        "stop": (_num(df, "dist_to_vstop") >= 0).to_numpy(),
+    }, index=df.index).fillna(False).astype(bool)
 
 
 def leading_sectors(df: pd.DataFrame, n: int = 5, min_stocks: int = 5) -> list:

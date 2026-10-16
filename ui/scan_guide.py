@@ -61,7 +61,7 @@ def study_stamp(study: dict) -> str:
 # vendor grew it from ~2,110 to ~2,715 stocks between 22 Aug and 19 Sep 2026, which moves every rank).
 GUIDES = {
     "playbook": dict(
-        written_for="7377560e6a399178",
+        written_for="135cfc40d93df721",
         short="strong price trends backed by a fresh strong quarter",
         idea=[
             "Stocks the market is already rewarding — strong, rising prices close to a breakout — whose "
@@ -157,6 +157,9 @@ GUIDES = {
             "On 15 Oct 2026 two of its inputs were corrected to mean what they say — the breakout window and "
             "the fresh-stop flag had read the data vendor's columns wrongly — and its record and the figures "
             "above were re-measured.",
+            "On 16 Oct 2026 a blank 52-week-high age was made to count as unknown — the middle of its 20% — "
+            "instead of as a high more than a year old. No saved snapshot's list changes, so the figures above "
+            "stand.",
         ],
     ),
     "leaders": dict(
