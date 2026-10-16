@@ -2887,12 +2887,16 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     # ── Framework 23: fw_qmom — Quality Momentum (Gray & Vogel QMOM, India Edition) ──
     # The ONLY pure-momentum-first framework in the system. All 22 prior frameworks are
     # fundamentals-led (quality/value/growth required, momentum is secondary confirmation).
-    # QMOM flips the hierarchy: top-decile RS rank is the PRIMARY gate; quality is the filter
+    # QMOM flips the hierarchy: top-decile momentum is the PRIMARY gate; quality is the filter
     # to EXCLUDE junk-momentum and crash risk — NOT a growth prerequisite.
     # Two signals unique in the system:
-    #   1. rs_pctrank_qm >= 80 as PRIMARY gate: RS composite in top 20% of all 2108 stocks
-    #      (CAN SLIM also uses rs_pctrank >= 80, but CAN SLIM requires EPS 25%+, quarterly
-    #       growth, near-52WH, volume surge, ROE 17% — fundamentals-first. Here RS is the door.)
+    #   1. Gray's own generic momentum as the PRIMARY gate (since 2026-10-16): the TOP DECILE of
+    #      gray_mom_2_12 (12-month return skipping the last month, data_engine D52) WITHIN the
+    #      framework's universe (market cap >= ₹500 Cr), Gray Ch.5 + Ch.8. Until then the six tabs had
+    #      no 1-year or 1-month return, so the top 20% of d47_rs_composite stood in — a blend of the
+    #      vendor's CRS STREAK counters (how long a stock outperformed, not by how much). The operator
+    #      added Returns 1M + Returns 1Y on 15 Oct; a copy older than that has no 2-12 return, so
+    #      nobody passes there (unverifiable is not passed). tests/test_qmom_gray_momentum.py.
     #   2. pledged_percentage <= 30: ENGINEERING ADAPTATION (India), NOT from Gray's book.
     #      Gray (US-focused) has no pledge concept; this defends against operator-driven discrete
     #      spikes that fake momentum. The companion India codex carried it as "Ch.7" — FALSE:
@@ -2901,9 +2905,8 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     #   - Gray's exact 5-step QMOM recipe (Ch.8): universe → top 10% generic momentum (100 of
     #     1000) → rank those on FIP, keep smoothest top 50% (~50 stocks) → equal-weight →
     #     rebalance end of Feb/May/Aug/Nov. Net selectivity ≈ 5% of universe.
-    #   - OUR gate uses top-QUINTILE RS (rs_pctrank >= 80 = top 20%, LOOSER than Gray's decile)
-    #     but tightens with the ROCE/CFO/D-E/pledge quality filters to 76 passers ≈ 3.6% — close
-    #     to Gray's final 5% by a different path (quality filter substitutes for the FIP cut).
+    #   - OUR gate follows steps 1-2 exactly (universe, then its top decile of 2-12 momentum); the
+    #     CRS-alignment and ROCE/CFO/D-E/pledge filters then stand in for step 3's FIP cut.
     #   - Generic momentum = "2-12 momentum" (cumulative 12-mo return SKIPPING the most recent
     #     month to dodge short-term reversal), top decile — Gray Ch.5 (NOT Ch.2).
     #   - "Frog-in-the-pan" path quality = Information Discreteness ID = sign(PRET)x(%neg-%pos)
@@ -2912,14 +2915,13 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     #   - Quality is NOT a Gray prerequisite: Ch.4 argues value & momentum belong in SEPARATE
     #     sleeves combined at portfolio level. Our ROCE/CFO/D-E filter is an India junk-momentum
     #     defense (engineering choice), faithful to QMOM's spirit of excluding crash-prone movers.
-    # What CANNOT be implemented (genuine data gaps, CSV has no monthly/daily return series):
-    #   - 2-12 skip-month momentum (needs monthly price history) → crs_52w/RS composite is the proxy
+    # What CANNOT be implemented (genuine data gaps, the sheet has no daily return series):
     #   - FIP / Information Discreteness score (needs ~252 daily returns for %pos vs %neg) — same
     #     daily-OHLCV gap as the Weis/Wyckoff audit; d51_qmom_quality_score is a FUNDAMENTAL
     #     quality composite (ROCE+D/E+CFO ranks), NOT a path-quality/FIP proxy — display only.
     #   - Seasonality timing & monthly rebalancing (Ch.7) — a static screener can't time months.
     _qm_nan       = pd.Series(np.nan, index=df.index)
-    rs_comp_qm    = df.get("d47_rs_composite",   pd.Series(0.0, index=df.index)).fillna(0)
+    mom_qm        = df.get("gray_mom_2_12",       _qm_nan)   # Gray's 2-12 momentum, % (data_engine D52)
     crs_ali_qm    = df.get("crs_aligned",         pd.Series(0, index=df.index)).fillna(0)
     roce_qm       = df.get("roce",                _qm_nan)
     de_qm         = df.get("debt_to_equity",      _qm_nan)
@@ -2927,16 +2929,18 @@ def compute_qglp_score(df: pd.DataFrame, profile: dict = None) -> pd.DataFrame:
     cfo_pat_qm    = df.get("cfo_to_pat",          _qm_nan)   # PERCENTAGE: 70.0 = 70%
     pledge_qm     = df.get("pledged_percentage",  pd.Series(100.0, index=df.index)).fillna(100.0)
     mcap_qm       = df.get("market_cap",          _qm_nan)
-    # RS percentile rank: ascending=True → higher RS composite → higher rank → >= 80 = top 20%
-    rs_pctrank_qm = _pct_rank(rs_comp_qm, ascending=True).fillna(50)
+    # Gray's universe first, then the top decile of 2-12 momentum WITHIN it (Ch.8: 100 of 1,000). Ranked
+    # only inside the universe and only where a 2-12 return exists; > 90 = the top 10% (of 40, the best 4).
+    universe_qm   = mcap_qm.fillna(0) >= 500
+    mom_pct_qm    = _pct_rank(mom_qm.where(universe_qm), ascending=True)
     fw_qmom = (
-        (rs_pctrank_qm          >= 80) &         # UNIQUE PRIMARY GATE: top 20% RS momentum leadership
-        (crs_ali_qm             == 1) &          # All 3 CRS timeframes positive (smooth persistence proxy)
+        (mom_pct_qm             > 90) &          # UNIQUE PRIMARY GATE: top decile of Gray's 2-12 momentum
+        (crs_ali_qm             == 1) &          # All 3 CRS timeframes positive (stand-in for Gray's FIP cut)
         (roce_qm.fillna(0)      >= 15) &         # Quality: ROCE ≥ 15% (proxy for ROIC > 15%)
         (is_fin_qm | (de_qm.fillna(999) < 0.5)) & # Balance sheet: D/E < 0.5 (financials exempt)
         (cfo_pat_qm.fillna(0)   >= 70) &         # Earnings quality: CFO/PAT ≥ 70% (PERCENTAGE)
         (pledge_qm              <= 30) &          # UNIQUE: India operator manipulation threshold
-        (mcap_qm.fillna(0)      >= 500)          # Minimum liquidity: ₹500 Cr
+        universe_qm                              # Minimum liquidity: ₹500 Cr (the universe above)
     )
 
     # ── Framework 24: fw_mosl_wealth_creator — MOSL Wealth Creator (30 Annual Wealth Creation Studies) ──

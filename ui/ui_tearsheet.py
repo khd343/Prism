@@ -1254,7 +1254,7 @@ _FW_IDEA = {
     # ⚡ Technical momentum & growth sieves
     "CAN SLIM":               "O'Neil's screen for an elite grower breaking out with institutional backing — all seven criteria, very rare to pass.",
     "SEPA Momentum":          "Minervini's Specific Entry Point Analysis — buy strength in a Stage 2 uptrend near its highs. A volatility contraction (VCP) is his ideal entry; here it adds to the score but is not required.",
-    "Quality Momentum":       "Gray's strongest, smoothest uptrends among quality names — top-20% relative strength with a governance guard.",
+    "Quality Momentum":       "Gray's strongest uptrends among quality names — the top 10% by 12-month return excluding the last month, with a governance guard.",
     "Lynch Dream":            "Peter Lynch's fast grower at a fair price — growth-at-a-reasonable-price the big funds haven't crowded yet.",
     "EP Improver":            "28th WCS turnaround stage: economic profit still negative but climbing, with RoE, ROCE and margins all turning. Speculative by the study's own word.",
     "SMILE":                  "Vijay Kedia's small-cap with Integrity, large aspiration and extra-large potential — an under-the-radar scaler.",

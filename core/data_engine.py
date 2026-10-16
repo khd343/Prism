@@ -296,6 +296,10 @@ TECHNICAL_COLS = {
     "Returns Vs Nifty 500 3M": "ret_vs_n500_3m",
     "Returns Vs Nifty 500 6M": "ret_vs_n500_6m",
     "Returns Vs Industry 1Y": "ret_vs_industry_1y",
+    # In the sheet since 15 Oct 2026 (absent from every older copy): the stock's own price change, %.
+    # Read for Gray's 2-12 momentum (D52, Quality Momentum); Returns 1Y is blank for a stock listed under a year.
+    "Returns 1M": "ret_1m",
+    "Returns 1Y": "ret_1y",
     # BREAKOUT PROXIMITY
     "52WH Distance":     "dist_52wh",
     "52WL Distance":     "dist_52wl",   # Criterion 6: price ≥ 30% above 52-week low
@@ -938,7 +942,7 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         "vstop_value", "last_vstop_change",
         "crs_50d", "crs_26w", "crs_52w",
         "ret_vs_n500_3m", "ret_vs_n500_6m", "ret_vs_n500_1y",
-        "ret_vs_industry_1y", "ret_vs_industry_3m",
+        "ret_vs_industry_1y", "ret_vs_industry_3m", "ret_1m", "ret_1y",
         "adx_14w", "rsi_14d",
         "dist_52wh", "dist_52wl", "dist_13wh", "dist_ath",
         "dist_52wh_days", "golden_cross_days", "breakout_window",
@@ -3033,6 +3037,14 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         df["d51_qmom_quality_score"] = ((_qm_roce_r + _qm_de_r + _qm_cfo_r + _qm_gp_r) / 4.0).round(3)
     else:
         df["d51_qmom_quality_score"] = ((_qm_roce_r + _qm_de_r + _qm_cfo_r) / 3.0).round(3)
+
+    # ── D52: Gray's generic momentum, "2-12" (Quantitative Momentum Ch.5) — added 2026-10-16 ──
+    # The return over the last 12 months SKIPPING the most recent month (it dodges short-term reversal):
+    # (1 + Returns 1Y) / (1 + Returns 1M) - 1, in percent like the vendor's own columns. NaN unless BOTH exist:
+    # a stock listed under a year has no 2-12 return, and a copy older than 15 Oct 2026 carries neither column.
+    _r1m = df.get("ret_1m", _de_nan) / 100.0
+    _r1y = df.get("ret_1y", _de_nan) / 100.0
+    df["gray_mom_2_12"] = np.where(1.0 + _r1m > 0.0, ((1.0 + _r1y) / (1.0 + _r1m) - 1.0) * 100.0, np.nan)
 
     # ══════════════════════════════════════════════════════════════
     # MOTILAL OSWAL 30-STUDY ALPHA SIGNALS
