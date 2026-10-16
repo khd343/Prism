@@ -185,8 +185,9 @@ def blanks(scored: pd.DataFrame) -> dict:
     for c, v in RECIPE_INPUTS.items():
         for sym, names in _named(blank.loc[rests & ~cond[c], list(v)], ids).items():
             out.setdefault(sym, {})[c] = names
+    listed = set(ids[member])                  # a repeated company_id can be a member on one row: it is not off the list
     return {"in": _named(blank.loc[member], ids),
-            "out": {s: dict(sorted(out[s].items())) for s in sorted(out) if SYMBOL.fullmatch(s)}}
+            "out": {s: dict(sorted(out[s].items())) for s in sorted(out) if SYMBOL.fullmatch(s) and s not in listed}}
 
 
 def _counts(s: pd.Series, codes: dict) -> dict:

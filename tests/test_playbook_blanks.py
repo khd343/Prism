@@ -242,6 +242,16 @@ def test_an_absent_input_column_is_blank_for_every_stock():
     assert set(b["in"]) == {f"NSE:S{k}" for k in range(20, 30)} and all(v == ["crs_26w"] for v in b["in"].values())
 
 
+def test_a_symbol_on_the_list_is_never_named_off_it():
+    """The loader merges on company_id without dropping a repeated row, so one id can be a member on one row and fail on
+    another. A symbol on the list is not off it: `out` never names a member, or Kite would refuse the whole list."""
+    df = pd.concat([_frame(), _frame().iloc[[25]]], ignore_index=True)   # member NSE:S25 again ...
+    df.loc[len(df) - 1, "dist_to_vstop"] = np.nan                        # ... out on a blank stop alone
+    cond = S.playbook_conditions(df)
+    assert cond.iloc[25].all() and not cond.iloc[-1]["stop"] and cond.iloc[-1].drop("stop").all()
+    assert "NSE:S25" not in F.blanks(df)["out"]
+
+
 def test_the_map_is_sorted_and_the_same_whatever_the_row_order():
     df = _frame()
     df.loc[[21, 27], "crs_52w"] = np.nan
