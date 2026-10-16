@@ -15,12 +15,15 @@ from config import COLORS, FRAMEWORK_CATEGORIES, STALE_RESULT_DAYS, TREND_TEMPLA
 from core.data_engine import CONSOLIDATION_BASE_LABELS, VCP_DRYUP_SHARE, traded_value_cr
 from core.verdict_engine import WEALTH_NA, WEALTH_TIERS
 from ui.ui_liquidity import LIQUIDITY_STEPS, ORDER_SHARE, SURVEILLANCE_NOTE, order_guide, step_label, step_value
+# shariah_label and shariah_mask are also re-exported for app.py's 🎯 Scans row (with shariah_filter below).
+from ui.shariah_view import SHARIAH_ALL, SHARIAH_FILTER_OPTIONS, shariah_counts, shariah_label, shariah_mask
 
 
 # ── Active-filter chips: registry + pure detector (unit-tested) ───────────────
 # (sb_key, chip label, kind). kind drives BOTH the active-check and the label. MUST cover every key
 # in the funnel's _active_n total (pinned by test) so no filter is ever active-but-chipless.
 _CHIP_META = [
+    ("sb_shariah", "Shariah", "sel"),
     ("sb_mcap", "Market Cap", "ms"), ("sb_liq", "Liquidity", "liq"), ("sb_sector", "Sector", "sel"), ("sb_industry", "Industry", "sel"),
     ("sb_cyc", "Cyclicality", "ms"), ("sb_capphase", "Capital Phase", "ms"), ("sb_tier", "Tier", "ms"),
     ("sb_verdict", "Soundness", "ms"), ("sb_wealthtier", "Wealth Tier", "ms"), ("sb_corpclass", "Corp Class", "ms"),
@@ -279,6 +282,32 @@ def keep_selected(options, stored) -> list:
     return out
 
 
+_SHARIAH_HELP = ("The Shariah screen: six rules from the KMI-30 method with your thresholds (the Reference tab "
+                 "explains each). ✅ Shariah passes every rule PRISM can check · ⛔ Non-Shariah is a prohibited "
+                 "business or a proven fail · 📝 Review: nothing visible fails, and your annual-report check or "
+                 "your scholar settles it · ❔ Doubtful: a figure is missing. All = no filter. Counts are live; each "
+                 "stock's reason and what to check are on its Tear-Sheet.")
+
+
+def shariah_filter(label: str, key: str, frame: pd.DataFrame, help: str = _SHARIAH_HELP) -> str:
+    """THE ONE Shariah control (2026-10-16), drawn by this sidebar AND the 🎯 Scans row: All · ✅ Shariah ·
+    ⛔ Non-Shariah · 📝 Review · ❔ Doubtful, each with its live count in `frame` (the stocks the controls before
+    it kept).
+    It opens on All, so nobody's view changes. The key is seeded before the widget (the Steel repro), and a
+    round-tripped label ("✅ Shariah  ·  462") is recovered to its value before anything reads it — through
+    recover_labels, because the icon sits in front of the word (the 2026-09-21 class). The options never change,
+    so a pick stays in its own list, reading 0 when the cascade holds none. Matched by equality (shariah_mask)."""
+    counts = shariah_counts(frame)
+
+    def fmt(v):
+        return _fmt_pick(shariah_label(v), counts.get(v, 0))
+
+    st.session_state.setdefault(key, SHARIAH_ALL)
+    got = recover_labels([st.session_state[key]], SHARIAH_FILTER_OPTIONS, fmt)
+    st.session_state[key] = got[0] if got else SHARIAH_ALL
+    return st.selectbox(label, SHARIAH_FILTER_OPTIONS, key=key, format_func=fmt, help=help)
+
+
 def _remove_one_filter(key) -> None:
     """Chip ✕ callback — drop one filter (re-inits to its show-all default on the auto-rerun the
     button fires). Runs BEFORE any widget instantiates, so popping a widget-key is safe (no
@@ -327,7 +356,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
             n = 0
             for k in keys:
                 v = st.session_state.get(k)
-                if k in ("sb_sector", "sb_industry"):
+                if k in ("sb_sector", "sb_industry", "sb_shariah"):
                     n += 1 if (v and v != "All") else 0
                 elif k == "sb_maxrf":
                     n += 1 if (v is not None and v < _RF_MAX) else 0   # show-all value is the max
@@ -416,7 +445,14 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
         # slider range is stable across the cascade); _active_n treats this value as the show-all state.
         _RF_MAX = int(df["red_flag_count"].max()) if "red_flag_count" in df.columns else 28
 
-        with _grp("🏢 Universe", "sb_mcap", "sb_liq", "sb_sector", "sb_industry", "sb_cyc", "sb_capphase", expanded=False):
+        with _grp("🏢 Universe", "sb_shariah", "sb_mcap", "sb_liq", "sb_sector", "sb_industry", "sb_cyc", "sb_capphase",
+                  expanded=False):
+            # 0. Shariah screen (2026-10-16) — the operator invests only in Shariah stocks, so it narrows first and
+            # every count below reflects it. The shared control (shariah_filter), the one the 🎯 Scans row draws.
+            sel_shariah = shariah_filter("Shariah screen", "sb_shariah", _cf)
+            if sel_shariah != SHARIAH_ALL:
+                _cf = _narrow(_cf, shariah_mask(_cf, sel_shariah), "Shariah")
+
             # 1. Market Category — cascade root (only categories present in the data)
             _ALL_MCAPS = ["Mega Cap", "Large Cap", "Mid Cap", "Small Cap", "Micro Cap", "Nano Cap"]
             _mcap_opts = _ordered_present(_cf, "market_category", _ALL_MCAPS)
@@ -1107,7 +1143,7 @@ def render_discovery_sidebar(df: pd.DataFrame) -> pd.DataFrame:
     _uni_n, _fin_n = len(df), len(filt)
     _pct = (_fin_n / _uni_n) if _uni_n else 0.0
     _active_total = _active_n(
-        "sb_mcap", "sb_liq", "sb_sector", "sb_industry", "sb_cyc", "sb_capphase", "sb_tier", "sb_verdict",
+        "sb_shariah", "sb_mcap", "sb_liq", "sb_sector", "sb_industry", "sb_cyc", "sb_capphase", "sb_tier", "sb_verdict",
         "sb_wealthtier", "sb_corpclass", "sb_capalloc",
         "sb_maxrf", "sb_piotier", "sb_cashmach", "sb_mincov", "sb_hidestale",
         "sb_fwfam", "sb_fw_exclude", "sb_fw_include", "sb_fw_combine", "sb_moat", "sb_peg_zone", "sb_buy_zone",

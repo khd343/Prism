@@ -423,7 +423,9 @@ def test_star_table_is_uncapped_in_material_but_shown_capped_with_a_download():
     star = src[i:src.index("r, fl = res", i)]
     assert 'material(res, reasons=meta.get("reasons"), cap=None)' in star, "the star must compute UNCAPPED"
     assert "shown=min(len(mat), 40)" in star and "picked = _table(mat, limit=40" in star
-    assert "st.download_button(" in star and "_to_csv_bytes(mat" in star, "no download of the full set"
+    # 2026-10-16: every CSV download carries the Shariah screen — the WHOLE material set, its status joined on
+    assert "st.download_button(" in star and '_to_csv_bytes(with_shariah(mat, meta.get("shariah"))' in star, (
+        "no download of the full set")
     assert "prism_movers_" in star, "the download is not named by the two vintages"
     assert "st.session_state" not in src, "ui_movers must stay stateless — download_button writes none"
 

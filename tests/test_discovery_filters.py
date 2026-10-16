@@ -589,7 +589,8 @@ def _all_filters_app():
     flag = lambda: [1, 0, 0]              # only A fires
     df = _pd.DataFrame({
         "name": ["A", "B", "C"],
-        # ── 🏢 Universe
+        # ── 🏢 Universe — Shariah sits inside Non-Shariah, so picking B's value must not keep A and C
+        "shariah_status":    lab("Non-Shariah", "Shariah"),
         "market_category":   lab("Mega Cap", "Nano Cap"),
         "vol_sma_20d":       [1e5, 1e3, 1e5],                 # × ₹1,000 = ₹10 / ₹0.1 / ₹10 Cr a day
         "close_price":       [1000.0, 1000.0, 1000.0],
@@ -641,6 +642,7 @@ def _all_filters_app():
 # (session_state to set, expected survivors). Each case sets exactly ONE filter; every other
 # control sits at its show-all default, so a case measures that filter alone.
 _FILTER_CASES = [
+    ("sb_shariah",     {"sb_shariah": "Shariah"},                    ["B"]),       # equality, never contains
     ("sb_mcap",        {"sb_mcap": ["Mega Cap"]},                    ["A", "C"]),
     ("sb_liq",         {"sb_liq": 1.0},                              ["A", "C"]),
     ("sb_sector",      {"sb_sector": "P"},                           ["A", "C"]),

@@ -432,6 +432,14 @@ def material(res: dict, top_rank: int = 25, min_flags: int = 3, cap=40, reasons=
     return m if cap is None else m.head(cap)
 
 
+def with_shariah(frame: pd.DataFrame, shariah) -> pd.DataFrame:
+    """`frame` with the CURRENT vintage's Shariah status and reason joined on company_id — every CSV download
+    carries them (2026-10-16). Unchanged when there is no screen to join. Display only: the diff never reads it."""
+    if shariah is None:
+        return frame
+    return frame.merge(shariah[[JOIN_KEY, "shariah_status", "shariah_reason"]], on=JOIN_KEY, how="left")
+
+
 def restrict(res: dict, ids) -> dict:
     """Apply the lens row to a computed result: keep only stocks whose CURRENT-side company_id is
     in `ids`. Computed AFTER the diff, never before — filtering the current frame first would
@@ -634,7 +642,7 @@ def render_movers(res: dict, meta: dict):
         # st.download_button writes no session_state, so it belongs here beside its table.
         st.download_button(
             f"📥 Download all {len(mat):,} material movers (CSV)",
-            data=_to_csv_bytes(mat.drop(columns=[JOIN_KEY])),
+            data=_to_csv_bytes(with_shariah(mat, meta.get("shariah")).drop(columns=[JOIN_KEY])),
             file_name=f"prism_movers_{meta.get('prev_vintage', 'prev')}_to_{meta.get('cur_vintage', 'cur')}.csv",
             mime="text/csv", key="mp_mv_dl",
             help="Every stock the chips currently select, not just the 40 on screen. Excel-safe UTF-8.",

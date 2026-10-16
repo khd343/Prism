@@ -176,7 +176,8 @@ def test_every_label_emitting_column_is_fully_documented():
                   "mef_label", "smart_money_flow", "wealth_tier", "ep_power_curve",
                   "corporate_class", "tier_label", "moat_growth_quad", "peg_zone",
                   "earnings_power_box", "cyclicality_tier", "sector_capital_phase", "cash_machine_label",
-                  "verdict_direction", "atoms_to_bits_label", "forensic_label"]
+                  "verdict_direction", "atoms_to_bits_label", "forensic_label",
+                  "shariah_status"]          # born 2026-10-16 (core/shariah.py) — in the list the day it was born
     problems = []
     for col in sorted(LABEL_COLS):
         assert col in df.columns, f"{col} vanished from the frame — update the sweep list"

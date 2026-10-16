@@ -147,7 +147,7 @@ from ui import (render_moat_growth_matrix, render_fisher_module,
                 render_lynch_radar, render_mauboussin_radar, render_qglp_radar, render_mosl_wealth_matrix,
                 render_piotroski_checklist,
                 render_sector_peer_strip,
-                render_trajectory_card,
+                render_trajectory_card, render_shariah_card,
                 render_valuation_inversion_and_sizing_cockpit,
                 inject_css, render_hero_banner, render_metric_strip, render_pulse_band,
                 render_stock_card, help_chip,
@@ -155,7 +155,8 @@ from ui import (render_moat_growth_matrix, render_fisher_module,
                 render_reference, render_concepts, render_flags, render_frameworks,
                 render_wcs_studies, build_reference_markdown)
 from ui.ui_discovery import (render_discovery_sidebar, clear_all_filters, keep_selected,
-                             _BUY_ZONE_ORDER, _WEIN_ORDER)
+                             _BUY_ZONE_ORDER, _WEIN_ORDER, shariah_filter, shariah_label, shariah_mask)
+from ui.shariah_view import shariah_pill_html
 from ui.ui_scanner import _SCANNER_HEADER_TIPS, ds_view_columns
 from ui.ui_components import _RAW_GLOSSARY
 from ui.ui_group_views import (MEASURES, OWNERSHIP, OWNERSHIP_GROUP_NOTE, OWNERSHIP_NOTE, SOURCE_COLUMNS,
@@ -861,17 +862,25 @@ def _mp_lens_row(frame, prefix, extra_keys=(), with_tier=True):
 # Wealth tier and Catalyst left the tab: they live in the sidebar, which reaches this list through the 🎯
 # opt-in. Every control opens EMPTY (the user's call, 2026-10-13 — it first shipped opening on ₹1 Cr a day
 # and Stage 1 + 2, and the user removed both defaults the same day), so the list opens on the whole scan;
-# the caption names whatever narrows it, and 🧹 Clear empties the row.
-_SCAN_FILTER_DEFAULTS = {"scan_liq": None, "scan_cap": [], "scan_stage": [], "scan_zone": []}
+# the caption names whatever narrows it, and 🧹 Clear empties the row. Shariah (2026-10-16, the operator's brief)
+# joined the row first: the one control the sidebar draws too, opening on All.
+_SCAN_FILTER_DEFAULTS = {"scan_liq": None, "scan_shariah": "All", "scan_cap": [], "scan_stage": [], "scan_zone": []}
 
 
-def _scan_filter_row(frame, slots):
-    """Market cap · Weinstein Stage · Buy Zone · 🧹 in slots[1:] (Liquidity, slots[0], is drawn by the tab
-    first and applied by scan_table, the floor's one rule). Cascading left to right through the shared
-    _mp_ms: each control's options and live counts come from the stocks the controls to its left kept, and
-    a stored pick the cascade has narrowed out stays, at a count of 0. Narrows the FINISHED list only — the
-    recipe already ran on the whole market. Returns (kept frame, words for the caption)."""
+def _scan_filter_row(frame, slots, shariah_slot):
+    """Market cap · Weinstein Stage · Buy Zone · 🧹 in slots[1:] (Liquidity, slots[0], is drawn by the tab first
+    and applied by scan_table, the floor's one rule), and Shariah in `shariah_slot`, its own line just above
+    (2026-10-16). Cascading: Shariah first, through the sidebar's own control (ui_discovery.shariah_filter — the
+    same words, counts and label recovery, matched by equality), then the rest left to right through the shared
+    _mp_ms; each control's options and live counts come from the stocks the controls before it kept, and a stored
+    pick the cascade has narrowed out stays, at a count of 0. Narrows the FINISHED list only — the recipe already
+    ran on the whole market. Returns (kept frame, words for the caption)."""
     _cf, why = frame, []
+    with shariah_slot:
+        _sh = shariah_filter("Shariah", "scan_shariah", _cf)
+    if _sh != _SCAN_FILTER_DEFAULTS["scan_shariah"]:
+        _cf = _cf[shariah_mask(_cf, _sh)]
+        why.append(shariah_label(_sh))
     spec = (("Market cap", "scan_cap", "market_category", _MP_CAP_ORDER,
              "Market-cap tiers (the sheet's Market Category). Pick several; counts reflect the "
              "controls to the left."),
@@ -974,6 +983,11 @@ with tabs[1]:
     # Widths measured 2026-10-13 at 1536px: two Stage pills (Stage 1 + 2, the common pick) need ~340px on
     # ONE line (142 + 126 plus the box's icons); Market cap and Buy Zone hold one pill each; Liquidity fits
     # "₹1 Cr/day".
+    # Shariah (2026-10-16) sits on its own line just above the row: with their widest common picks the row cannot
+    # hold a fifth control at 1536px — measured that day in the browser with five slots, Shariah (191px) clipped
+    # "⛔ Non-Shariah  ·  95", Market cap (140px) "Small Cap  ·  43", Buy Zone (180px) "🟡 Standard Zone  ·  10", and
+    # two Stage pills wrapped onto a second line. So the row keeps its measured widths and Shariah gets ~210px.
+    _sc_sh = st.columns([2.1, 7.9])[0]
     _sc_slots = st.columns([1.4, 1.8, 3.5, 2.3, 1.0])
     with _sc_slots[0]:
         # "Any" is the value None, which Streamlit (>= 1.27) also reads as "nothing chosen" and shows its
@@ -992,7 +1006,7 @@ with tabs[1]:
     _sc_base = scan_table(df, _sc_sel, min_cr=_sc_min,
                           keep_ids=set(filt['company_id'].astype(str)) if _sc_scoped else None)
     _sc_kept, _sc_narrow = _scan_filter_row(
-        df[df["company_id"].astype(str).isin(set(_sc_base["company_id"]))], _sc_slots)
+        df[df["company_id"].astype(str).isin(set(_sc_base["company_id"]))], _sc_slots, _sc_sh)
     _sc_tbl = scan_table(df, _sc_sel, members_at_latest=_sc_members, min_cr=_sc_min,
                          keep_ids=set(_sc_kept["company_id"].astype(str)), result_window_days=_sc_window)
     _sc_total = _sc_counts[_sc_sel["key"]]
@@ -1005,8 +1019,8 @@ with tabs[1]:
         elif _sc_base.empty:
             st.info(f"None of the {_sc_total:,} matches clears the traded-value floor — choose a lower one.")
         else:
-            st.info(f"None of these {len(_sc_base):,} stocks passes the Market cap, Weinstein Stage and "
-                    f"Buy Zone picks — widen one of them.")
+            st.info(f"None of these {len(_sc_base):,} stocks passes {' + '.join(_sc_narrow)} — widen one of the "
+                    f"picks in this row.")
     else:
         _sc_why = " · ".join(w for w in ("your filters" if _sc_scoped else "",
                                          f"₹{_sc_min:g} Cr+ a day" if _sc_min else "", *_sc_narrow) if w)
@@ -1457,8 +1471,10 @@ with tabs[2]:
         # and it's ~10x smaller to serialize on every rerun. ──
         # …plus every SORT column (2026-10-05): MCap left the views as size, not value, and the file
         # should carry whatever the table can be ordered by.
+        # …and the Shariah screen's status and reason (2026-10-16): every CSV download carries them.
         _export_cols = [c for c in dict.fromkeys([*(_c for _v in _DS_VIEWS.values() for _c in _v),
-                                                  *(_s for _s, _ in _DS_SORTS.values())])
+                                                  *(_s for _s, _ in _DS_SORTS.values()),
+                                                  "shariah_status", "shariah_reason"])
                         if c in ds_df.columns]
         _safe_mode = analysis_mode.replace(" ", "_").lower()
         # Encode via the shared _to_csv_bytes (UTF-8-with-BOM) — the SAME Excel-safe path the sidebar
@@ -1614,6 +1630,9 @@ with tabs[3]:
             "UNEVEN":     ("rgba(228,179,65,0.10)",  COLORS["gold"],  "rgba(228,179,65,0.3)"),
             "STALLED":    ("rgba(110,118,129,0.12)", COLORS["text_secondary"], "rgba(110,118,129,0.35)"),
         }
+        # ── Shariah chip (2026-10-16): the screen's status, always in this row — on a rejected or sell-alert
+        # stock too. Icon, word and colour from ui/shariah_view.py; nothing over a stock it did not screen.
+        _shariah_pill = shariah_pill_html(stock.get("shariah_status"))
         _wealth_pill = ""
         if _wtier in _WT_PILL_CLR:          # N/A and missing render nothing — no pill over no data
             _bg, _fg, _bd = _WT_PILL_CLR[_wtier]
@@ -1631,7 +1650,7 @@ with tabs[3]:
                  letter-spacing:1.1px;white-space:nowrap;">{_verdict}</span>
             <span style="font-size:0.7rem;color:{COLORS['text_secondary']};
                  white-space:nowrap;">{_meta_line}</span>
-            {_wealth_pill}{_risk_pill}{_mr_pill}{_trend_pill}
+            {_shariah_pill}{_wealth_pill}{_risk_pill}{_mr_pill}{_trend_pill}
           </div>
           <div style="font-size:0.75rem;color:{COLORS['text_secondary']};margin-top:5px;">
             {_verdict_reason}</div>
@@ -1748,6 +1767,10 @@ with tabs[3]:
             # move is speeding up. Sits after the peer strip (absolute -> relative -> directional)
             # and before the detailed financials it summarises.
             render_trajectory_card(stock)
+
+            # The Shariah screen (2026-10-16): status, reason and the six rules, in the evidence layer — the
+            # verdict band above carries its chip.
+            render_shariah_card(stock)
 
             st.markdown(
                 f"<div class='sec-head'>📊 Business & Financial Analysis</div>",
@@ -3310,6 +3333,8 @@ def _render_market_pulse():
                             "cur_regime": str(df.attrs.get("detected_market_regime", "SIDEWAYS")),
                             "mode": analysis_mode,
                             "reasons": _mv_why, "elapsed": _mv_elapsed,
+                            # the CURRENT vintage's screen, for the download (every CSV carries it)
+                            "shariah": df[["company_id", "shariah_status", "shariah_reason"]],
                         })
                         # CLICK A MOVER, READ ITS TEAR-SHEET — the same handoff Tsunami and QGLP
                         # use. Stage a transient key + rerun rather than setting the xray_stock

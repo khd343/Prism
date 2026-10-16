@@ -13,6 +13,7 @@ import pandas as pd
 import numpy as np
 import html as _html
 from config import COLORS, TIER_COLORS, CONVICTION_TIERS, UI, FRAMEWORK_CATEGORIES
+from ui.shariah_view import SHARIAH_COLORS, shariah_label
 
 
 # ── PRISM brand mark ──────────────────────────────────────────────────────────
@@ -937,9 +938,13 @@ def render_stock_card(row: pd.Series, show_scores: bool = True):
         _forensic_v = f'<span style="color:{COLORS["red"]};font-size:0.72rem;">🔴 Risk — {_f_cnt}⚑</span>'
 
     # The moat-growth quadrant is already a coloured pill in the tag row — don't duplicate it here.
-    # The status strip is now just gate + forensic, complementing (not repeating) the verdict chip.
+    # The status strip is gate + forensic, complementing (not repeating) the verdict chip — and since 2026-10-16
+    # the Shariah screen's word, in its colour (ui/shariah_view.py; nothing over a stock it did not screen).
     _dot = '<span style="color:#555;font-size:0.65rem;margin:0 3px;">·</span>'
-    _verdict_strip = _dot.join([_gate_v, _forensic_v])
+    _sh = row.get("shariah_status")
+    _shariah_v = (f'<span style="color:{SHARIAH_COLORS[_sh]};font-size:0.72rem;font-weight:700;">'
+                  f'{shariah_label(_sh)}</span>') if _sh in SHARIAH_COLORS else ""
+    _verdict_strip = _dot.join([v for v in (_gate_v, _forensic_v, _shariah_v) if v])
 
     if show_scores:
         _bars = [

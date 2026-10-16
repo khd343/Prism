@@ -20,6 +20,7 @@ from config import (CSV_FILES, MCAP_TIERS,
                     PRELISTING_BASELINE_DAYS, STALE_RESULT_DAYS, BENCHMARK_INDICES,
                     TREND_TEMPLATE_MAX_BELOW_HIGH, VSTOP_FRESH_MAX_WEEKS, _vintage_sort_key, newer_vintage)
 from core.cyclicality_map import INDUSTRY_TIER, SECTOR_TIER_FALLBACK, TIER_LABELS
+from core.shariah import compute_shariah
 from core.taxonomy import canonicalize_taxonomy
 
 warnings.filterwarnings('ignore')
@@ -2733,6 +2734,10 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
                 .fillna("F")
     )
     df["cyclicality_tier"] = df["cyclicality_tier_code"].map(TIER_LABELS)
+
+    # Shariah screen (2026-10-16): a label and a filter, never a score. It reads raw columns, the tier code
+    # just set and cf_year_lag, and adds its own columns in one block (core/shariah.py).
+    df = compute_shariah(df)
 
     # ── D24: OCF/PAT Delta (CFO/PAT − 100) ──
     # D24 ≥ 0: OCF ≥ PAT = earnings are cash-backed (Clean Accounts signal)

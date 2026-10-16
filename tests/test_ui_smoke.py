@@ -69,7 +69,7 @@ def _render_tearsheet_app():
         render_mauboussin_radar, render_valuation_inversion_and_sizing_cockpit,
         render_canslim_radar, render_sepa_radar, render_marks_radar,
         render_mosl_wealth_matrix, render_sector_peer_strip,
-        render_trajectory_card,
+        render_trajectory_card, render_shariah_card,
         render_bruised_blue_chip_badge, render_dorsey_radar, render_ep_power_curve_module,
         render_fisher_module, render_lynch_radar, render_malik_radar,
         render_moat_growth_matrix, render_multitrillioncap_card, render_outsider_radar,
@@ -83,6 +83,7 @@ def _render_tearsheet_app():
     render_sell_alerts_panel(stock)
     render_sector_peer_strip(stock)
     render_trajectory_card(stock)
+    render_shariah_card(stock)
     render_financial_insights(stock)
     render_forensic_perimeter(stock)
     render_piotroski_checklist(stock)
