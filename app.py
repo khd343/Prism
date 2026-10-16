@@ -159,7 +159,7 @@ from config import (COLORS, TIER_COLORS, CONVICTION_TIERS, UI, HARD_GATES,
                     VALUATION_SIGNALS,
                     BAID_SELL_TRIGGERS, MEAN_REVERSION, PEG_ZONES,
                     ANALYSIS_MODES, DEFAULT_ANALYSIS_MODE, FORENSIC_MAX_FLAGS,
-                    FORENSIC_PENALTY_TIERS, GOVERNANCE_RISK_MULTIPLIERS)
+                    FORENSIC_PENALTY_TIERS, GOVERNANCE_RISK_MULTIPLIERS, mode_label, mode_value)
 _first_party_file_times().update(_file_times(sys.modules, _first_party(sys.modules)))
 
 
@@ -422,6 +422,10 @@ render_hero_banner(compact=True)
 # Streamlit commits a changed widget's value to session_state BEFORE the rerun starts. Fresh
 # cfg_* keys on purpose: resurrected sessions carrying the old adv_*/_w_* keys are ignored.
 st.session_state.setdefault("cfg_mode", DEFAULT_ANALYSIS_MODE)   # config owns the default (2026-09-19)
+# A tab open across a deploy re-sends the selectbox's old DISPLAY label (Streamlit syncs it by label), and this read
+# comes before the selectbox can check it: "KeyError: '⚡ Quantamental + Breakout · default'" on the live app,
+# 16 Oct. mode_value turns whatever is stored into a real mode key first (config; the sidebar's round-trip rule).
+st.session_state["cfg_mode"] = mode_value(st.session_state["cfg_mode"])
 
 analysis_mode   = st.session_state["cfg_mode"]
 # The QGLP screen is a CONSTANT, not a control (2026-09-20). What stood here was a snap of
@@ -3330,8 +3334,7 @@ with tabs[5]:
             "Analysis Mode", options=list(ANALYSIS_MODES.keys()),
             # the default is MARKED, not just pre-selected: a reader who changes it should be able
             # to see what they moved away from without opening config.py
-            format_func=lambda k: (ANALYSIS_MODES[k]["label"]
-                                   + (" · default" if k == DEFAULT_ANALYSIS_MODE else "")),
+            format_func=mode_label,
             key="cfg_mode",
             help="Blend of the composite — the one control that re-ranks the universe "
                  "(Momentum + Breakout 0/50/50, the default since 2026-10-15 · "

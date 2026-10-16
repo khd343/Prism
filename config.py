@@ -673,6 +673,31 @@ ANALYSIS_MODES = {
     },
 }
 
+# The Analysis Mode selectbox's label, and the way back from it (2026-10-16). Streamlit 1.54 syncs a selectbox by its
+# DISPLAY label and hands back a label it cannot match as it is; a tab open across the 15 Oct deploy that moved the
+# default re-sent "⚡ Quantamental + Breakout · default", which no option carried any more, and app.py, reading
+# cfg_mode before the selectbox could check it, crashed on ANALYSIS_MODES[...] (KeyError, live, 16 Oct). The label
+# round-trip rule the sidebar already follows (ui_discovery.recover_labels, ui_liquidity.step_value). Pinned by
+# tests/test_analysis_mode_roundtrip.py.
+_DEFAULT_MARK = " · default"
+
+
+def mode_label(key) -> str:
+    """The selectbox's label for a mode key: its label, the default marked. The ONE label — mode_value reverses it."""
+    return ANALYSIS_MODES[key]["label"] + (_DEFAULT_MARK if key == DEFAULT_ANALYSIS_MODE else "")
+
+
+def mode_value(stored) -> str:
+    """A real mode key from whatever session state holds: a key passes through; the label of any mode, with or
+    without the default mark, recovers its key (recover, do not drop: the tab keeps the mode it showed); anything
+    else reads as the default. Never raises."""
+    if not isinstance(stored, str):
+        return DEFAULT_ANALYSIS_MODE
+    if stored in ANALYSIS_MODES:
+        return stored
+    stem = stored.removesuffix(_DEFAULT_MARK)
+    return next((k for k, m in ANALYSIS_MODES.items() if m["label"] == stem), DEFAULT_ANALYSIS_MODE)
+
 # ═══════════════════════════════════════════════════════════════
 # 7d. THE QGLP PROFILE — Agrawal's own weights and gates, FIXED
 # ═══════════════════════════════════════════════════════════════
