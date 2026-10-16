@@ -67,6 +67,7 @@ _HARNESS = textwrap.dedent('''
         "vol_sma_20d": rng.uniform(1e4, 1e6, n), "close_price": rng.uniform(20, 900, n),
         "rf_wc_double_squeeze": 0, "rf_receivables_bloat": 0, "rf_negative_fcf": 0,
         "result_age_days": rng.integers(-5, 80, n),
+        "shariah_status": np.array(["Shariah", "Non-Shariah", "Doubtful"])[np.arange(n) % 3],
     }})
     filt = df
     tabs = [st.container(), st.container()]
@@ -163,13 +164,15 @@ def _frame():
     return ns["df"]
 
 
-def _expected(scan, min_cr=None, stages=(), caps=(), zones=()):
+def _expected(scan, min_cr=None, stages=(), caps=(), zones=(), shariah=None):
     """The names the tab should list: the recipe on the whole market, the liquidity floor, then the
     tab's filters — all empty unless told otherwise (2026-10-13: the user removed the ₹1 Cr a day and
-    Stage 1 + 2 defaults the day they shipped)."""
+    Stage 1 + 2 defaults the day they shipped). Shariah (2026-10-16) is matched by equality."""
     from ui import ui_scans as S
     df = _frame()
     kept = df[df["company_id"].isin(set(S.scan_table(df, scan, min_cr=min_cr)["company_id"]))]
+    if shariah:
+        kept = kept[kept["shariah_status"] == shariah]
     for col, picks in (("weinstein_stage", stages), ("market_category", caps), ("buy_zone_label", zones)):
         if picks:
             kept = kept[kept[col].isin(picks)]
@@ -331,6 +334,30 @@ def test_each_filter_narrows_the_finished_list(tab):
     assert not tab.exception, [e.value for e in tab.exception]
     want = _expected(play, stages=(), caps=("Small Cap",), zones=("🟢 Perfect Entry (Low Risk)",))
     assert sorted(tab.dataframe[0].value["name"]) == want and len(want) > 0
+
+
+def test_the_shariah_filter_keeps_only_its_status_and_opens_on_all(tab):
+    """RUN (2026-10-16, the operator's brief): the Shariah control opens on All — the whole scan, every status —
+    with live counts; a pick keeps exactly that status ('Shariah' does not keep 'Non-Shariah': equality, never
+    contains), the caption names it, and 🧹 returns it to All."""
+    from ui import ui_scans as S
+    comp = next(s for s in S.SCANS if s["key"] == "compounder")
+    tab.button(key="scan_open_compounder").click().run()
+    sel = tab.selectbox(key="scan_shariah")
+    assert sel.value == "All"
+    assert [o.split("  ·  ")[0] for o in sel.options] == ["All", "✅ Shariah", "⛔ Non-Shariah", "📝 Review",
+                                                          "❔ Doubtful"]
+    sel.set_value("Shariah").run()
+    assert not tab.exception, [e.value for e in tab.exception]
+    want = _expected(comp, shariah="Shariah")
+    assert 0 < len(want) < len(_expected(comp)), "the pick must really narrow"
+    assert sorted(tab.dataframe[0].value["name"]) == want
+    cap = next(c.value for c in tab.caption if "sorted by Rank" in c.value)
+    assert "(✅ Shariah)" in cap, cap
+    clear = [b for b in tab.button if b.key == "scan_clear"]
+    assert clear, "🧹 shows once Shariah leaves All"
+    clear[0].click().run()
+    assert tab.selectbox(key="scan_shariah").value == "All"
 
 
 def test_clear_returns_every_control_to_its_default(tab):

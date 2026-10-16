@@ -1,6 +1,7 @@
 """
-test_scan_filters.py — the 🎯 Scans tab's own filters: Liquidity · Market cap · Weinstein Stage · Buy Zone
-(2026-10-13, the user's choice), every one opening empty.
+test_scan_filters.py — the 🎯 Scans tab's own filters: Liquidity · Shariah · Market cap · Weinstein Stage · Buy Zone
+(2026-10-13, the user's choice; Shariah joined 2026-10-16, the operator's brief), every one opening empty — Shariah
+on All, which is no filter.
 
 Until today the tab carried the Market Pulse lens row (Sector · Wealth tier · Market cap · Catalyst) beside
 Liquidity. All of those also live in the sidebar, which reaches this list through the 🎯 opt-in, so the
@@ -53,9 +54,16 @@ def _row_labels():
     return [e.elts[0].value for e in spec.value.elts]
 
 
-def test_the_tab_offers_exactly_four_filters_of_its_own():
-    labels = _labels(_scans_block()) + _row_labels()
-    assert sorted(labels) == sorted(["Liquidity", "Market cap", "Weinstein Stage", "Buy Zone"]), labels
+def _shariah_labels():
+    """The label of the Shariah control the row draws — the sidebar's own (ui_discovery.shariah_filter)."""
+    return [c.args[0].value for c in ast.walk(_fn("_scan_filter_row")) if isinstance(c, ast.Call)
+            and ast.unparse(c.func) == "shariah_filter"]
+
+
+def test_the_tab_offers_exactly_five_filters_of_its_own():
+    """Four of the user's (2026-10-13) and Shariah (2026-10-16), drawn by the control the sidebar uses."""
+    labels = _labels(_scans_block()) + _shariah_labels() + _row_labels()
+    assert sorted(labels) == sorted(["Liquidity", "Shariah", "Market cap", "Weinstein Stage", "Buy Zone"]), labels
     calls = {ast.unparse(n.func) for n in ast.walk(_scans_block()) if isinstance(n, ast.Call)}
     assert "_mp_lens_row" not in calls, "Sector, Wealth tier and Catalyst live in the sidebar (via 🎯)"
 
@@ -65,13 +73,18 @@ def test_the_filters_read_left_to_right_liquidity_first():
     assert order == ["Market cap", "Weinstein Stage", "Buy Zone"], "the cascade's order is the row's order"
     src = ast.unparse(_scans_block())
     assert src.index("'Liquidity'") < src.index("_scan_filter_row("), "Liquidity is the first control"
+    row = ast.unparse(_fn("_scan_filter_row"))
+    assert row.index("shariah_filter(") < row.index("for i, (label"), "Shariah opens the row, after Liquidity"
 
 
 def test_every_control_opens_empty():
-    """REPOINTED 2026-10-13, the user's call: the ₹1 Cr a day / Stage 1 + 2 defaults were removed."""
+    """REPOINTED 2026-10-13, the user's call: the ₹1 Cr a day / Stage 1 + 2 defaults were removed. 2026-10-16:
+    Shariah joined, opening on All — no filter — so nobody's view changed (the operator's brief)."""
+    from ui.shariah_view import SHARIAH_ALL
     node = next(n for n in _TREE.body if isinstance(n, ast.Assign)
                 and ast.unparse(n.targets[0]) == "_SCAN_FILTER_DEFAULTS")
-    assert ast.literal_eval(node.value) == {"scan_liq": None, "scan_cap": [], "scan_stage": [], "scan_zone": []}
+    assert ast.literal_eval(node.value) == {"scan_liq": None, "scan_shariah": SHARIAH_ALL, "scan_cap": [],
+                                            "scan_stage": [], "scan_zone": []}
 
 
 def test_the_options_are_the_sidebars_one_definition():

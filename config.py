@@ -277,6 +277,90 @@ UTILITY_SECTOR_NAMES = frozenset([
 ])
 
 # ═══════════════════════════════════════════════════════════════
+# SHARIAH SCREEN (2026-10-16) — a label and a filter, ZERO scoring
+# ═══════════════════════════════════════════════════════════════
+# The KMI-30 / Meezan method (Pakistan Stock Exchange) with the operator's thresholds: debt 33% and illiquid
+# assets 20% of total assets. NOT AAOIFI, which measures debt against 30% of market value. core/shariah.py
+# reads every number and list here, and so do the UI and the Reference tab — nothing types a copy. No scorer,
+# gate, framework or scan recipe reads shariah_* (tests/test_shariah_screen.py). Kite will later buy only
+# "Shariah", sell on "Non-Shariah" and never sell on "Review" or "Doubtful": an open question must never sell a
+# holding.
+#   Review    nothing visible fails, but a rule the sheet cannot prove (investments, other income) or a business
+#             awaiting a scholar's ruling is open — the operator's check settles it (added 2026-10-16, the operator's
+#             call: 236 of 1,484 in the ₹500–20,000 Cr window on the 15 Oct sheet, Infosys / HCL / Wipro among them)
+#   Doubtful  a figure is MISSING, so PRISM cannot screen the stock fully. A missing figure beats a review item.
+# Each rule reads the same way: pass / fail / review / unknown (missing).
+SHARIAH_STATUSES = ("Shariah", "Non-Shariah", "Review", "Doubtful")
+SHARIAH_RULE_STATES = ("pass", "fail", "review", "unknown")
+# The six rules in the order the reasons are read. `limit` is a share of the rule's base (0.33 = 33%).
+SHARIAH_RULES = {
+    "business":    {"n": 1, "name": "Business",                  "limit": None},
+    "income":      {"n": 2, "name": "Impermissible income",      "limit": 0.05},   # of revenue, at most
+    "debt":        {"n": 3, "name": "Interest-bearing debt",     "limit": 0.33},   # of total assets, at most
+    "illiquid":    {"n": 4, "name": "Illiquid assets",           "limit": 0.20},   # of total assets, at least
+    "nla":         {"n": 5, "name": "Net liquid assets",         "limit": None},   # at most the market cap
+    "investments": {"n": 6, "name": "Non-compliant investments", "limit": 0.33},   # of total assets, below
+}
+# Industry names exactly as core/cyclicality_map.INDUSTRY_TIER spells them (after core.taxonomy translates the
+# vendor's names). Financials need no list: Rule 1 reads the map's tier E (banks, NBFCs, insurers, AMCs,
+# brokers), never FINANCIAL_SECTORS, which lacks banks and insurers and holds the REITs below.
+SHARIAH_PROHIBITED_INDUSTRIES = frozenset([
+    "Alcoholic Beverages",
+    "Cigarettes & Tobacco Products",
+    "Hotels",
+    "Hotels - Resorts",
+    "Resorts",
+    "Entertainment & Media",
+    "Music Licensing",
+    "Aerospace & Defence - Equipments",
+])
+# Review, "awaiting a scholar's ruling" — never a pass, never a fail.
+SHARIAH_REVIEW_INDUSTRIES = frozenset([
+    "Restaurants",
+    "Quick Service Restaurant - QSR",
+    "Airport Restaurants and Lounges",
+    "Amusement Parks",
+    "Chemicals - Organic - Alcohol Based",
+    "Real Estate Investment Trusts",
+    "Infrastructure Investment Trusts",
+    "Infra/Real Estate Investment Trust",
+])
+# The operator's call, 2026-10-16: 20 stocks carry this sector with another industry, and 18 of them describe
+# their own business as defence (warships, missile propellants, "defence-focused"); Cochin Shipyard and JTL
+# Defence (copper and brass products) are for the scholar to clear.
+SHARIAH_REVIEW_SECTORS = frozenset([
+    "Aerospace & Defence",
+])
+# A prohibited business the vendor files under a neutral industry. Each entry carries its reason, a fact about
+# the business from its own filings — never a price or a return.
+SHARIAH_PROHIBITED_COMPANIES = {
+    "NSE:DELTACORP": "casino gaming in Goa and Sikkim",
+}
+# YOUR RULINGS (the operator's choice, 2026-10-16): after you check a company yourself, write the figures you
+# read in its annual report here, keyed by its company id. PRISM applies the SAME rules to your figures as to the
+# sheet's, so they can prove a pass or a fail, and they replace the sheet's figure for that rule only. A ruling is
+# tied to the balance sheet you read it against: "total_assets" is the total PRISM showed that day (₹ Cr, or None
+# if it showed none). When the sheet's total changes — a new annual or half-year balance sheet — the ruling lapses
+# and the stock reads at best Review, "re-check", until you update it. Figures are percent (12.0 = 12%). Every key but
+# the first three is optional; give at least one figure or a business verdict ("pass" / "fail", your scholar's).
+#     "NSE:EXAMPLE": {"checked": "2026-10-20", "total_assets": 1264.9, "source": "Annual report FY26, notes 6, 12",
+#                     "income_pct": 1.2,        # interest and other impermissible income ÷ revenue
+#                     "debt_pct": 8.0,          # interest-bearing debt ÷ total assets
+#                     "illiquid_pct": 31.0,     # (fixed assets + CWIP) ÷ total assets
+#                     "investments_pct": 12.0,  # interest-bearing investments and deposits ÷ total assets
+#                     "business": "pass"},      # your scholar's ruling on the business
+SHARIAH_RULINGS = {
+}
+# Industries whose NAME holds a word the classification guard looks for, decided allowed: "film" here is
+# plastic film, and "media" sits inside "intermediate".
+SHARIAH_ALLOWED_NAME_MATCHES = frozenset([
+    "Packaging - Films",
+    "Plastics - Sheets/Films",
+    "Detergents/Intermediates",
+    "Dyes - Intermediate",
+])
+
+# ═══════════════════════════════════════════════════════════════
 # 4. QUALITY SCORE WEIGHTS (Layer 2) — 0 to 100
 # ═══════════════════════════════════════════════════════════════
 # IMPROVEMENT joined 2026-10-03 at 0.20; the six level facets were each scaled by 0.8 (moat 0.22 ->

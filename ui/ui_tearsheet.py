@@ -27,6 +27,11 @@ from ui.ui_liquidity import trade_line
 from core.forensic_engine import _SECTOR_DSO_THRESHOLDS, _DEFAULT_DSO_THRESHOLD
 # Same rule for the ⏳ Consolidation Base card and the SEPA panel's V box: the engine's lines and labels.
 from core.data_engine import CONSOLIDATION_BASE_LABELS, VCP_DRYUP_SHARE
+# The Shariah screen card reads the engine's columns and the shared vocabulary; it recomputes no rule.
+from config import SHARIAH_RULES
+from core.shariah import shariah_fact
+from ui.shariah_view import (SHARIAH_COLORS, SHARIAH_FOOTNOTE, SHARIAH_ICONS, SHARIAH_RESULT_COLORS,
+                             SHARIAH_RESULTS, rule_limit_text, shariah_label)
 
 
 # ─── Display Utilities ──────────────────────────────────────────────────────
@@ -4728,6 +4733,84 @@ def render_trajectory_card(stock: pd.Series):
         f'</div></div>',
         unsafe_allow_html=True,
     )
+
+
+# ═══════════════════════════════════════════════════════════════
+# SHARIAH SCREEN CARD (2026-10-16) — the answer, the six rules, what to check
+# ═══════════════════════════════════════════════════════════════
+_SHARIAH_HOW = (
+    "Six rules from the KMI-30 method, with your thresholds. Each rule passes, fails, waits for your review, or "
+    "lacks a figure, and a missing figure is never a pass. Any fail makes the stock Non-Shariah; otherwise a missing "
+    "figure makes it Doubtful; otherwise anything waiting for your review makes it Review; otherwise it is Shariah. "
+    "The data has no interest-income line and no investments line, so Rule 2 sees only the least other income can "
+    "be and Rule 6 only the most investments plus cash can be: both can be proven to pass, never to fail, and above "
+    "the line they wait for your annual-report check. Fixed assets include goodwill and intangibles, which the "
+    "method counts as illiquid; a blank figure is missing, not zero. Figures you read in a company's annual report "
+    "(config.py, SHARIAH_RULINGS) replace the sheet's for their rule and lapse when its balance sheet changes. The "
+    "Reference tab explains every rule and list.")
+
+
+def shariah_card_html(stock: pd.Series) -> str:
+    """The Shariah screen card: the answer first (status and reason), then six rows — Rule · This company · Limit ·
+    Result — with what to check under every rule PRISM cannot decide, a stateless <details> on how it is checked,
+    and the footnote. Every word comes from core/shariah.py's columns and config; no rule is recomputed here."""
+    status = stock.get("shariah_status")
+    head = (f'<div style="font-size:0.62rem;font-weight:800;color:{COLORS["text_muted"]};text-transform:uppercase;'
+            f'letter-spacing:0.8px;margin:13px 0 4px 0;">Shariah screen</div>')
+    if status not in SHARIAH_ICONS:
+        return head + (f'<div style="font-size:0.75rem;color:{COLORS["text_muted"]};">This stock was not screened '
+                       f'— its data did not reach the screen.</div>')
+    clr = SHARIAH_COLORS[status]
+    ruling = str(stock.get("shariah_ruling", "") or "")
+    cell = "padding:5px 8px;border-bottom:1px solid rgba(255,255,255,0.05);vertical-align:top;"
+    th = (f'padding:4px 8px;text-align:left;font-size:0.6rem;font-weight:800;color:{COLORS["text_muted"]};'
+          f'text-transform:uppercase;letter-spacing:0.6px;border-bottom:1px solid {COLORS["border"]};')
+    rows = []
+    for key, rule in SHARIAH_RULES.items():
+        state = stock.get(f"shariah_{key}")
+        check = str(stock.get(f"shariah_{key}_check", "") or "")
+        check_html = (f'<div style="font-size:0.68rem;color:{COLORS["gold"]};margin-top:2px;">Check: {_esc(check)}'
+                      f'</div>') if check else ""
+        rows.append(
+            f'<tr><td class="sh-rule" style="{cell}color:{COLORS["text_secondary"]};white-space:nowrap;">'
+            f'{rule["n"]} · {_esc(rule["name"])}</td>'
+            f'<td class="sh-fact" style="{cell}color:{COLORS["text_primary"]};">'
+            f'{_esc(shariah_fact(stock.get(f"shariah_{key}_note")))}{check_html}</td>'
+            f'<td class="sh-limit" style="{cell}color:{COLORS["text_secondary"]};">{_esc(rule_limit_text(key))}</td>'
+            f'<td class="sh-result" style="{cell}color:{SHARIAH_RESULT_COLORS.get(state, COLORS["text_muted"])};'
+            f'font-weight:700;white-space:nowrap;">{SHARIAH_RESULTS.get(state, "—")}</td></tr>')
+    return (
+        head
+        # On a phone the four columns crush "This company" to a word a line and cut Result (seen 2026-10-16 at
+        # 420px): below 640px each rule becomes a block — rule and result on one line, then the fact, then the limit.
+        + '<style>@media (max-width:640px){.prism-shariah thead{display:none}'
+          '.prism-shariah table,.prism-shariah tbody{display:block;width:100%}'
+          '.prism-shariah tr{display:flex;flex-wrap:wrap;border-bottom:1px solid rgba(255,255,255,0.06);padding:4px 0}'
+          '.prism-shariah td{display:block;border:none!important;padding:2px 6px!important}'
+          '.prism-shariah td.sh-rule{order:1}.prism-shariah td.sh-result{order:2;margin-left:auto}'
+          '.prism-shariah td.sh-fact{order:3;flex-basis:100%}.prism-shariah td.sh-limit{order:4;flex-basis:100%}'
+          '.prism-shariah td.sh-limit::before{content:"Limit: "}}</style>'
+        + f'<div class="prism-shariah" style="background:{COLORS["bg_secondary"]};border:1px solid {COLORS["border"]};'
+          f'border-left:4px solid {clr};border-radius:10px;padding:10px 14px;">'
+          f'<div style="font-size:0.82rem;font-weight:800;color:{clr};">{shariah_label(status)}'
+          f'<span style="font-weight:500;color:{COLORS["text_secondary"]};"> — {_esc(stock.get("shariah_reason", ""))}'
+          f'</span></div>'
+        + (f'<div style="font-size:0.72rem;color:{COLORS["blue"]};margin-top:4px;">✍ {_esc(ruling)}</div>'
+           if ruling else "")
+        + f'<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;margin-top:8px;'
+          f'font-size:0.74rem;"><thead><tr><th style="{th}">Rule</th><th style="{th}">This company</th>'
+          f'<th style="{th}">Limit</th><th style="{th}">Result</th></tr></thead><tbody>{"".join(rows)}</tbody>'
+          f'</table></div>'
+          f'<details style="margin-top:8px;"><summary style="cursor:pointer;font-size:0.72rem;'
+          f'color:{COLORS["blue"]};">How this is checked</summary><div style="font-size:0.7rem;'
+          f'color:{COLORS["text_secondary"]};line-height:1.5;margin-top:6px;">{_esc(_SHARIAH_HOW)}</div></details>'
+          f'<div style="font-size:0.66rem;color:{COLORS["text_muted"]};margin-top:8px;">{_esc(SHARIAH_FOOTNOTE)}</div>'
+          f'</div>')
+
+
+def render_shariah_card(stock: pd.Series):
+    """Overview: the Shariah screen card (shariah_card_html). Stateless — one st.markdown."""
+    st.markdown(shariah_card_html(stock), unsafe_allow_html=True)
 
 
 def render_sector_peer_strip(stock: pd.Series):
