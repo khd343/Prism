@@ -449,8 +449,9 @@ def _not_renamed(title, have: list, now: datetime) -> bool:
 
 
 def run_live(sheet_id: str, feed: Path, *, trigger: str, now: datetime | None = None,
-             sleep=time.sleep) -> str | None:
-    """Publish the sheet's session if it is new. Returns the session written, or None."""
+             sleep=time.sleep, publish_fn=None) -> str | None:
+    """Publish the sheet's session if it is new. Returns the session written, or None. `publish_fn` (same signature
+    as publish) lets Kite v2's lists (ui/v2_lists_job.py) run through these same session rules; None = publish."""
     now = now or datetime.now(IST)
     have = sessions_on_branch(feed)
     title = _title(sheet_id, sleep)
@@ -474,8 +475,8 @@ def run_live(sheet_id: str, feed: Path, *, trigger: str, now: datetime | None = 
     session = _new_session(title, have, now)
     if session is None:
         return None
-    return session if publish(workbook, title, session, feed, origin="recorded", trigger=trigger,
-                              now=now) else None
+    return session if (publish_fn or publish)(workbook, title, session, feed, origin="recorded", trigger=trigger,
+                                              now=now) else None
 
 
 # ── Back-fill (local, once) ───────────────────────────────────────────────────────────────────────

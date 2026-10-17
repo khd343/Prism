@@ -1,0 +1,100 @@
+# 📋 Kite v2's lists — PRISM's two lists per session for Kite v2 (ui/v2_lists_job.py): the 🚀 Playbook list and the
+# rank list, both made by ONE commit (V2_CODE_SHA below; Kite-v2 design §3.1 and addendum A5). It runs as each
+# Playbook feed run completes (workflow_run), so a session lands minutes after the feed's own; the two crons are only
+# backstops (GitHub cron runs hours late). A manual run publishes live, or back-fills a date range from the PRISM
+# Archive's copies: a session already on the branch is rebuilt and compared byte for byte, which is how this runner
+# proves it makes the lists the PC back-fill made. Each run writes only the v2-lists branch, never main, so the
+# Streamlit app never restarts for it; the playbook-feed branch and its own pin are untouched. A failed check
+# publishes nothing and fails the run; GitHub emails the repository owner. Its only prompt trigger is the Playbook
+# feed's own workflow: if that is ever disabled (when v1 retires), dispatch this one from stockscans-sync instead, or
+# the lists arrive only with the late crons. A session missed live can be back-filled only until the next one is
+# published (no back-fill goes behind the newest session): the red run says which day and how.
+name: Kite v2 lists
+
+on:
+  workflow_run:
+    workflows: ["Playbook feed"]
+    types: [completed]
+  schedule:
+    - cron: "45 14 * * 1-5"    # 20:15 IST
+    - cron: "40 21 * * *"      # 03:10 IST, ten minutes after the feed's own backstop
+  workflow_dispatch:
+    inputs:
+      backfill_from:
+        description: "Back-fill from this day (YYYY-MM-DD); leave both empty to publish live"
+        required: false
+        default: ""
+      backfill_to:
+        description: "Back-fill to this day (YYYY-MM-DD)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: v2-lists
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    # Pinned, not ubuntu-latest; actions on the Node-24 releases (as the Playbook feed).
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      # ONE COMMIT MAKES EVERY LIST ON v2-lists (Kite-v2 addendum A5 and its dated record): the code checkout below is
+      # this commit and every manifest names it. A change that would change a list waits for a new freeze; moving this
+      # pin is a deliberate edit (tests/test_v2_lists_workflow.py holds it to the job's own code).
+      V2_CODE_SHA: bfae0709075b50a70d7572030727eb12c5d401c5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.V2_CODE_SHA }}
+
+      - uses: actions/checkout@v7
+        with:
+          ref: v2-lists
+          path: lists
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install the pinned engine
+        run: pip install -r requirements.txt
+
+      - name: Fetch the archive's copies
+        if: inputs.backfill_from != ''
+        env:
+          ARCHIVE_INDEX_SHEET_ID: ${{ secrets.ARCHIVE_INDEX_SHEET_ID }}
+          FROM: ${{ inputs.backfill_from }}
+          TO: ${{ inputs.backfill_to }}
+          PYTHONUTF8: "1"
+        run: python -m ui.archive_copies --out copies --from "$FROM" --to "$TO"
+
+      - name: Publish
+        id: publish
+        env:
+          SHEET_ID: ${{ secrets.SHEET_ID }}
+          V2_TRIGGER: ${{ github.event_name == 'workflow_run' && 'after-feed' || github.event_name == 'schedule' && 'schedule' || 'manual' }}
+          BACKFILL: ${{ inputs.backfill_from != '' && 'copies' || '' }}
+          PYTHONUTF8: "1"
+        run: |
+          if [ -n "$BACKFILL" ]; then
+            python -m ui.v2_lists_job --lists lists --backfill "$BACKFILL"
+          else
+            python -m ui.v2_lists_job --lists lists
+          fi
+
+      - name: Commit and push
+        if: steps.publish.outputs.session != ''
+        working-directory: lists
+        env:
+          MSG: ${{ steps.publish.outputs.message }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .gitattributes README.md sessions rank
+          git commit -m "$MSG"
+          git push origin HEAD:v2-lists
