@@ -312,16 +312,17 @@ SHARIAH_PROHIBITED_INDUSTRIES = frozenset([
     "Resorts",
     "Entertainment & Media",
     "Music Licensing",
+    "Real Estate Investment Trusts",
+    "Infrastructure Investment Trusts",
+    "Real Estate Investment Trusts",
+    "Amusement Parks",
+    "Airport Restaurants and Lounges",
+    "Quick Service Restaurant - QSR",
+    "Restaurants",
+    "Infra/Real Estate Investment Trust",
 ])
 # Review, "awaiting a scholar's ruling" — never a pass, never a fail.
 SHARIAH_REVIEW_INDUSTRIES = frozenset([
-    "Restaurants",
-    "Quick Service Restaurant - QSR",
-    "Airport Restaurants and Lounges",
-    "Amusement Parks",
-    "Real Estate Investment Trusts",
-    "Infrastructure Investment Trusts",
-    "Infra/Real Estate Investment Trust",
     "Aerospace & Defence - Equipments",
 ])
 # The operator's call, 2026-10-16: 20 stocks carry this sector with another industry, and 18 of them describe
