@@ -320,6 +320,19 @@ def test_a_new_session_is_published_with_its_name(monkeypatch, tmp_path):
     assert sheet.published == [("PRISM 2026-10-12 Mon", "2026-10-12", "recorded", "dispatch")]
 
 
+def test_run_live_still_publishes_with_its_own_publish_by_default(monkeypatch, tmp_path):
+    """Kite v2's lists (ui/v2_lists_job.py) pass their own publish through the same session rules; without one,
+    the feed publishes exactly as it always did."""
+    sheet = _Sheet(monkeypatch, ["PRISM 2026-10-12 Mon"])
+    assert F.run_live("id", tmp_path, trigger="schedule", now=NOW) == "2026-10-12"
+    assert sheet.published == [("PRISM 2026-10-12 Mon", "2026-10-12", "recorded", "schedule")]
+    other = []
+    assert F.run_live("id", tmp_path / "v2", trigger="schedule", now=NOW,
+                      publish_fn=lambda wb, title, session, lists, **kw: other.append((session, lists, kw["origin"]))
+                      or True) == "2026-10-12"
+    assert other == [("2026-10-12", tmp_path / "v2", "recorded")] and len(sheet.published) == 1
+
+
 def test_an_already_published_session_is_a_no_op_without_a_download(monkeypatch, tmp_path):
     _published(tmp_path, "2026-10-12")
     sheet = _Sheet(monkeypatch, ["PRISM 2026-10-12 Mon"])

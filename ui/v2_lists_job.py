@@ -16,16 +16,22 @@ pinned 68b38e0) is untouched: Kite v1 reads it until it retires, and v2 never mi
 """
 from __future__ import annotations
 
+import argparse
 import json
+import os
+import sys
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
 from config import SHARIAH_STATUSES
+from core.sheet_meta import IST
 from ui import data_check_job as D
 from ui import playbook_feed_job as F
 from ui import ui_scans as S
+from ui.scan_records_job import engine_version, sheet_id_from_secret
 
 # ── The rank list: one row per scored stock (design §3.1) ────────────────────────────────────────────────────────────
 RANK_COLUMNS = ("symbol", "shariah_status", "cap", "traded_value_cr", "momentum_score", "momentum_pct", "vstop_value",
@@ -219,3 +225,132 @@ def write_pair(lists: Path, session: str, playbook: bytes, rank: bytes, meta: di
 def read_rank(lists: Path, session: str) -> pd.DataFrame:
     """A published rank list as text: every value exactly as written, a blank as ''."""
     return pd.read_csv(_paths(lists, session)[1], dtype=str, keep_default_na=False)
+
+
+# ── The job: the feed's own gate, recipe and session rules, imported ─────────────────────────────────────────────────
+TRIGGERS = ("after-feed", "schedule", "manual")
+
+
+def publish(workbook: bytes, title: str, session: str, lists: Path, *, origin: str, trigger: str,
+            now: datetime) -> bool:
+    """F.publish's steps with the rank list beside them: score, gate (the feed's checks and the rank list's own),
+    build and validate the Playbook list, refuse a stale copy, build the rank list carrying from the newest earlier
+    session on the branch, write both once. True when a new session was written."""
+    datasets, stocks, bench, scored = F.score(workbook)
+    checks = F.gate(datasets, stocks, bench, scored, backfill=origin == "backfilled")
+    own = check_rank_inputs(scored)
+    failed = [r for r in own if r.status == "fail"]
+    if failed:
+        raise F.FeedError("data check failed — " + "; ".join(f"{r.name}: {r.detail}" for r in failed))
+    frame = F.build_frame(scored)
+    F.validate(frame)
+    problem = F.stale_problem(frame, lists, session)
+    if problem:
+        raise F.FeedError(problem)
+    before = [s for s in F.sessions_on_branch(lists) if s < session]
+    carried_from = before[-1] if before else ""
+    rank, stats = build_rank(scored, session, read_rank(lists, carried_from) if carried_from else None)
+    validate_rank(rank)
+    playbook_csv, rank_csv = F.to_csv_bytes(frame), rank_csv_bytes(rank)
+    meta = {
+        "schema": SCHEMA, "session": session,
+        "playbook": {"rows": int(len(frame)), "columns": list(F.COLUMNS), "csv_sha256": F.sha256(playbook_csv)},
+        "rank": {"rows": int(len(rank)), "columns": list(RANK_COLUMNS), "csv_sha256": F.sha256(rank_csv)},
+        "recipe": "playbook", "recipe_fingerprint": S.recipe_fingerprint(F.playbook_scan()),
+        "engine_commit": os.environ.get("V2_CODE_SHA") or engine_version(),
+        "source_title": title, "source_sha256": F.sha256(workbook),
+        "origin": origin, "trigger": trigger, "published_at": now.isoformat(timespec="seconds"),
+        "checks": {"passed": checks["passed"] + len(own), "warnings": checks["warnings"]},
+        "blanks": F.blanks(scored),
+        "counts": {"cap": F._counts(rank["cap"], F.CAP_CODES), "stage": F._counts(rank["stage"], F.STAGE_CODES),
+                   "shariah": {k: int((rank["shariah_status"] == k).sum()) for k in sorted({*SHARIAH_STATUSES, ""})}},
+        "carried_from": carried_from, "carried": stats["carried"], "unknown_days": stats["unknown_days"],
+    }
+    return write_pair(lists, session, playbook_csv, rank_csv, meta)
+
+
+# THE TWO ARCHIVE COPIES MEASURED WRONG (14 Oct 2026, against Kite's own daily closes; Kite 327efbb, I5). The stale
+# guard compares a copy with the session before it, so alone it would publish '10 Sep' (11 Sep's data under 10 Sep's
+# name) and refuse the true 11 Sep as its copy. No correct copy of either day exists, so the branch starts on 11 Sep,
+# where addendum A5's in-sample lists start. Keyed by date: every export of one copy has different workbook bytes.
+BACKFILL_REFUSED = {
+    "2026-09-03": "the archive's copy is a mid-day snapshot: its closes match no trading day's (best 3.4%, against "
+                  "Kite's daily bars, measured 14 Oct)",
+    "2026-09-10": "the archive's copy holds 11 Sep's data: its NSE closes are Kite's 11 Sep closes on 99.1% of stocks "
+                  "and 10 Sep's on 0% (measured 14 Oct)",
+}
+
+
+def backfill(folder: Path, lists: Path, *, now: datetime | None = None) -> tuple[list, list]:
+    """Every saved `PRISM ….xlsx` in `folder` whose name carries a session not yet on the branch, as `backfilled`,
+    oldest SESSION first (never by file name). Returns (done, refused). A copy that fails a check is refused and the
+    others still go in. So is a copy measured wrong (BACKFILL_REFUSED), and a session older than the newest on the
+    branch: its rank list would carry from a later session, and every list after it has already carried without it."""
+    now = now or datetime.now(IST)
+    copies = sorted((s, p.name, p) for p in Path(folder).glob("PRISM *.xlsx") if (s := F._session(p.stem)))
+    done, refused = [], []
+    for session, _, path in copies:
+        if session in BACKFILL_REFUSED:
+            refused.append(f"{session}: {BACKFILL_REFUSED[session]}")
+            continue
+        have = F.sessions_on_branch(lists)
+        if session in have:
+            continue
+        if have and session < have[-1]:
+            refused.append(f"{session}: older than {have[-1]}, the newest session on the branch — a back-fill never "
+                           "goes behind the carry")
+            continue
+        try:
+            if publish(path.read_bytes(), path.stem, session, lists, origin="backfilled", trigger="backfill",
+                       now=now):
+                done.append(session)
+        except F.FeedError as exc:
+            refused.append(f"{session}: {exc}")
+    for line in refused:
+        print(f"  ✗ not back-filled {line}")
+    return done, refused
+
+
+# ── The run ──────────────────────────────────────────────────────────────────────────────────────────────────────────
+def _github_output(path: str, session: str, message: str) -> None:
+    """What the workflow commits when something was written: the session, and its message."""
+    with open(path, "a", encoding="utf-8", newline="\n") as f:
+        f.write(f"session={session}\nmessage=v2-lists: {message}\n")
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description="Publish Kite v2's two lists to the v2-lists branch.")
+    ap.add_argument("--lists", required=True, type=Path, help="a checkout of the v2-lists branch")
+    ap.add_argument("--backfill", type=Path, help="a folder of archived 'PRISM YYYY-MM-DD.xlsx' copies")
+    args = ap.parse_args(argv)
+    out = os.environ.get("GITHUB_OUTPUT")
+    if args.backfill:
+        done, _ = backfill(args.backfill, args.lists)
+        print(f"back-filled {len(done)} session(s): {done}")
+        if done and out:
+            _github_output(out, done[-1], f"back-filled {len(done)} session(s), {done[0]} to {done[-1]}")
+        return 0
+    raw = os.environ.get("SHEET_ID", "")
+    sheet_id = sheet_id_from_secret(raw)
+    print(D._secret_shape(raw, sheet_id))
+    if not sheet_id:
+        raise SystemExit("SHEET_ID holds no spreadsheet id — paste the live data sheet's id (the part of its "
+                         "address between /d/ and /edit).")
+    trigger = os.environ.get("V2_TRIGGER") or "manual"
+    if trigger not in TRIGGERS:
+        raise SystemExit(f"V2_TRIGGER {trigger!r} is not one of {TRIGGERS}")
+    try:
+        session = F.run_live(sheet_id, args.lists, trigger=trigger, publish_fn=publish)
+    except F.FeedError as exc:
+        print(f"❌ nothing published: {exc}")
+        return 1
+    if session and out:
+        meta = json.loads(_paths(args.lists, session)[2].read_text(encoding="utf-8"))
+        _github_output(out, session, f"{session} · {meta['playbook']['rows']} Playbook · {meta['rank']['rows']} "
+                                     f"ranked · recorded ({trigger})")
+    print(f"✅ published {session}" if session else "nothing new to publish")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
