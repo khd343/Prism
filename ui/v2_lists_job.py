@@ -282,10 +282,12 @@ BACKFILL_REFUSED = {
 
 
 def backfill(folder: Path, lists: Path, *, now: datetime | None = None) -> tuple[list, list]:
-    """Every saved `PRISM ….xlsx` in `folder` whose name carries a session not yet on the branch, as `backfilled`,
-    oldest SESSION first (never by file name). Returns (done, refused). A copy that fails a check is refused and the
-    others still go in. So is a copy measured wrong (BACKFILL_REFUSED), and a session older than the newest on the
-    branch: its rank list would carry from a later session, and every list after it has already carried without it."""
+    """Every saved `PRISM ….xlsx` in `folder` whose name carries a session, as `backfilled`, oldest SESSION first
+    (never by file name). Returns (done, refused). A copy that fails a check is refused and the others still go in.
+    So is a copy measured wrong (BACKFILL_REFUSED), and a new session older than the newest on the branch: its rank
+    list would carry from a later session, and every list after it has already carried without it. A session already
+    on the branch is rebuilt from its copy with the same carry and compared byte for byte (write_pair): the same bytes
+    are a no-op, other bytes are refused. That is how another machine proves it makes the same lists."""
     now = now or datetime.now(IST)
     copies = sorted((s, p.name, p) for p in Path(folder).glob("PRISM *.xlsx") if (s := F._session(p.stem)))
     done, refused = [], []
@@ -294,9 +296,7 @@ def backfill(folder: Path, lists: Path, *, now: datetime | None = None) -> tuple
             refused.append(f"{session}: {BACKFILL_REFUSED[session]}")
             continue
         have = F.sessions_on_branch(lists)
-        if session in have:
-            continue
-        if have and session < have[-1]:
+        if session not in have and have and session < have[-1]:
             refused.append(f"{session}: older than {have[-1]}, the newest session on the branch — a back-fill never "
                            "goes behind the carry")
             continue
@@ -304,6 +304,8 @@ def backfill(folder: Path, lists: Path, *, now: datetime | None = None) -> tuple
             if publish(path.read_bytes(), path.stem, session, lists, origin="backfilled", trigger="backfill",
                        now=now):
                 done.append(session)
+            else:
+                print(f"  = {session} is already on the branch, byte for byte")
         except F.FeedError as exc:
             refused.append(f"{session}: {exc}")
     for line in refused:
@@ -325,8 +327,14 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
     out = os.environ.get("GITHUB_OUTPUT")
     if args.backfill:
-        done, _ = backfill(args.backfill, args.lists)
+        done, refused = backfill(args.backfill, args.lists)
         print(f"back-filled {len(done)} session(s): {done}")
+        on = set(F.sessions_on_branch(args.lists))
+        broken = [line for line in refused if line.split(":", 1)[0] in on]
+        if broken:              # a copy of a session on the branch did not make its bytes: this machine, or the copy
+            print(f"❌ {len(broken)} copy(ies) of sessions on the branch did not rebuild them byte for byte: nothing "
+                  "to commit")
+            return 1
         if done and out:
             _github_output(out, done[-1], f"back-filled {len(done)} session(s), {done[0]} to {done[-1]}")
         return 0

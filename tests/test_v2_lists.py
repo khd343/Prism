@@ -530,6 +530,26 @@ def test_backfill_refuses_the_two_copies_measured_wrong(monkeypatch, tmp_path):
     assert [line.split(":")[0] for line in refused] == ["2026-09-03", "2026-09-10"]
 
 
+def test_backfill_rebuilds_a_session_already_on_the_branch_and_compares_it(monkeypatch, tmp_path, capsys):
+    """How another machine proves it makes the same lists: a back-fill of a published session rebuilds both lists
+    from its copy and compares them byte for byte. The same bytes are a no-op; other bytes are refused, never written."""
+    _all_pass(monkeypatch)
+    folder, lists = tmp_path / "copies", tmp_path / "lists"
+    folder.mkdir()
+    (folder / "PRISM 2026-10-15.xlsx").write_bytes(b"15")
+    _markets(monkeypatch, {b"15": _day("15")})
+    assert V.backfill(folder, lists, now=NOW) == (["2026-10-15"], [])
+    capsys.readouterr()
+    assert V.backfill(folder, lists, now=NOW) == ([], [])
+    assert "2026-10-15 is already on the branch, byte for byte" in capsys.readouterr().out
+    moved = _day("15")
+    moved.loc[0, "close_price"] += 1.0                             # a stock off the Playbook list: the rank list moves
+    _markets(monkeypatch, {b"15": moved})
+    done, refused = V.backfill(folder, lists, now=NOW)
+    assert done == [] and len(refused) == 1 and "rank list" in refused[0] and "never rewritten" in refused[0]
+    assert _files(lists)[1].read_bytes() == V.rank_csv_bytes(V.build_rank(_day("15"), SESSION, None)[0])
+
+
 def _sheet(monkeypatch, title, workbook=b"15"):
     """The sheet as the feed's live path reads it: its name, and the workbook downloaded under that name."""
     monkeypatch.setattr(F, "fetch_sheet_title", lambda sheet_id: title)
@@ -614,6 +634,32 @@ def test_main_backfills_and_names_the_sessions_for_the_commit(monkeypatch, tmp_p
                                                "message=v2-lists: back-filled 2 session(s), 2026-10-13 to 2026-10-15\n")
     assert V.main(args) == 0                                           # nothing new: nothing for the workflow to commit
     assert out.read_text(encoding="utf-8").count("session=") == 1
+
+
+def test_main_fails_a_backfill_when_a_session_on_the_branch_does_not_rebuild(monkeypatch, tmp_path):
+    """A refused copy of a session that IS on the branch means its bytes were not made again — this machine differs, or
+    two copies of the day disagree: the run fails and the workflow commits nothing. A refused copy of a session that
+    is not on the branch (a holiday, a failed check) is an ordinary back-fill."""
+    lists = tmp_path / "lists"
+    (lists / F.SESSIONS).mkdir(parents=True)
+    (lists / F.SESSIONS / "2026-10-15.csv").write_bytes(PB)
+
+    def backfill(folder, lists_, *, now=None):
+        step = steps.pop(0)
+        for s in step[0]:
+            (lists_ / F.SESSIONS / f"{s}.csv").write_bytes(PB)
+        return step
+    steps = [(["2026-10-16"], ["2026-10-14: stale: 88% of the 291 stocks in both lists close exactly as on ..."]),
+             ([], ["2026-10-15: 2026-10-15's rank list is already on the branch with different content"]),
+             (["2026-10-19"], ["2026-10-19: 2026-10-19's rank list is already on the branch with different content"])]
+    monkeypatch.setattr(V, "backfill", backfill)
+    out = tmp_path / "github_output"
+    monkeypatch.setenv("GITHUB_OUTPUT", str(out))
+    args = ["--lists", str(lists), "--backfill", str(tmp_path / "copies")]
+    assert V.main(args) == 0                                           # a holiday refused: ordinary
+    assert V.main(args) == 1                                           # a published session did not rebuild
+    assert V.main(args) == 1                                           # a second copy of a new day disagreed
+    assert out.read_text(encoding="utf-8").count("session=") == 1      # only the green run names a commit
 
 
 # ── 10. Two real sessions ─────────────────────────────────────────────────────────────────────────
