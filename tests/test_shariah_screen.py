@@ -144,6 +144,8 @@ def test_rule1_the_review_sector_awaits_a_ruling_and_its_prohibited_industry_sti
     assert (s["shariah_business"], s["shariah_status"]) == ("review", "Review")
     assert s["shariah_reason"] == "Aerospace & Defence sector — awaiting a scholar's ruling"
     s = _screen(industry="Aerospace & Defence - Equipments", sector="Aerospace & Defence")
+    assert (s["shariah_business"], s["shariah_status"]) == ("review", "Review")   # the operator, 2026-10-17
+    s = _screen(industry="Alcoholic Beverages", sector="Aerospace & Defence")
     assert (s["shariah_business"], s["shariah_status"]) == ("fail", "Non-Shariah"), "a fail beats a review"
 
 
@@ -647,16 +649,19 @@ def test_every_map_industry_with_a_flagged_word_is_classified_exactly_once():
 
 
 def test_the_lists_are_the_operators_final_lists():
+    # The operator's web edit of 2026-10-17 (cbfa906): defence equipment moved to review, industrial alcohol
+    # cleared from review (and so named in the allowed list below).
     assert SHARIAH_PROHIBITED_INDUSTRIES == frozenset([
         "Alcoholic Beverages", "Cigarettes & Tobacco Products", "Hotels", "Hotels - Resorts", "Resorts",
-        "Entertainment & Media", "Music Licensing", "Aerospace & Defence - Equipments"])
+        "Entertainment & Media", "Music Licensing"])
     assert SHARIAH_REVIEW_INDUSTRIES == frozenset([
         "Restaurants", "Quick Service Restaurant - QSR", "Airport Restaurants and Lounges", "Amusement Parks",
-        "Chemicals - Organic - Alcohol Based", "Real Estate Investment Trusts", "Infrastructure Investment Trusts",
-        "Infra/Real Estate Investment Trust"])
+        "Real Estate Investment Trusts", "Infrastructure Investment Trusts", "Infra/Real Estate Investment Trust",
+        "Aerospace & Defence - Equipments"])
     assert SHARIAH_REVIEW_SECTORS == frozenset(["Aerospace & Defence"])
     assert SHARIAH_ALLOWED_NAME_MATCHES == frozenset([
-        "Packaging - Films", "Plastics - Sheets/Films", "Detergents/Intermediates", "Dyes - Intermediate"])
+        "Packaging - Films", "Plastics - Sheets/Films", "Detergents/Intermediates", "Dyes - Intermediate",
+        "Chemicals - Organic - Alcohol Based"])
 
 
 # ── One source: config.py ─────────────────────────────────────────────────────────────────────────────
