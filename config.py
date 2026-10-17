@@ -322,14 +322,12 @@ SHARIAH_REVIEW_INDUSTRIES = frozenset([
     "Real Estate Investment Trusts",
     "Infrastructure Investment Trusts",
     "Infra/Real Estate Investment Trust",
-    "Aerospace & Defence - Equipments",
 ])
-# The operator's call, 2026-10-16: 20 stocks carry this sector with another industry, and 18 of them describe
-# their own business as defence (warships, missile propellants, "defence-focused"); Cochin Shipyard and JTL
-# Defence (copper and brass products) are for the scholar to clear.
-SHARIAH_REVIEW_SECTORS = frozenset([
-    "Aerospace & Defence",
-])
+# The operator's ruling, 2026-10-17: the Aerospace & Defence sector and its "Aerospace & Defence - Equipments"
+# industry no longer await a scholar's ruling. Their stocks are screened by the six rules like any other business
+# (on 2026-10-16 the sector had been sent to review: 18 of the 20 stocks carrying it under another industry describe
+# their own business as defence). No sector awaits a ruling now; the set stays, empty, for the next one.
+SHARIAH_REVIEW_SECTORS = frozenset()
 # A prohibited business the vendor files under a neutral industry. Each entry carries its reason, a fact about
 # the business from its own filings — never a price or a return.
 SHARIAH_PROHIBITED_COMPANIES = {
@@ -363,6 +361,7 @@ SHARIAH_ALLOWED_NAME_MATCHES = frozenset([
     "Detergents/Intermediates",
     "Dyes - Intermediate",
     "Chemicals - Organic - Alcohol Based",
+    "Aerospace & Defence - Equipments",     # cleared by the operator's ruling, 2026-10-17
 ])
 
 # ═══════════════════════════════════════════════════════════════
