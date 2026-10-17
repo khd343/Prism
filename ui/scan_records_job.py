@@ -28,6 +28,9 @@ current recipe's windows only (ui_scans.record_state). A recipe changed after un
 must move its design date past them (check_recipe_dates), and an archive whose newest copy is older than
 MAX_ARCHIVE_AGE_DAYS fails the run (archive_problem) — before, it stayed green while the record stood still.
 
+Since 2026-10-17 every unseen window is also read on the stocks the operator buys: the scan's Shariah matches
+among Mega, Large, Mid and Small caps, against the same slice of the market (shariah_reading).
+
 The file is rewritten only when a measured value changed, so a quiet week makes no commit.
 """
 import contextlib
@@ -42,7 +45,7 @@ from datetime import date
 import numpy as np
 import pandas as pd
 
-from config import BENCHMARK_INDICES
+from config import BENCHMARK_INDICES, SHARIAH_STATUSES
 from core import load_market, run_scoring_pipeline
 from core.data_engine import price_trend_inputs
 from core.forward_returns import MIN_HORIZON_DAYS, forward_returns
@@ -213,6 +216,38 @@ def revenue_led_reading(early: pd.DataFrame, excess: pd.Series, match: pd.Series
     return out
 
 
+def shariah_reading(early: pd.DataFrame, ret: pd.Series, match: pd.Series):
+    """The window read on the stocks the operator buys (2026-10-17): the scan's matches that are Shariah and a Mega,
+    Large, Mid or Small cap (S.HOLD_CAPS, the caps "Holding 20" uses), measured against the SAME slice of the
+    market — every Shariah stock of those caps with a return — so a month that lifts Shariah stocks as a group
+    never reads as scan skill. The label is matched by equality ("Shariah" sits inside "Non-Shariah"); Review and
+    Doubtful never count. Its size and the slice's; once it has MIN_N matches, its median excess and beat rate,
+    the liquid reading after the round trip (with those matches as one equal-weight portfolio, to set beside the
+    window's index readings) and holding S.HOLD_K of them. None when the copy carries no label: a reading on
+    absent evidence would be invented. The job re-scores every archive copy with today's engine, which writes
+    the label; the design-period snapshots predate it, so the slice starts with the first unseen window."""
+    if "shariah_status" not in early.columns:
+        return None
+    cap = early["market_category"] if "market_category" in early.columns else pd.Series(np.nan, index=early.index)
+    pool = early["shariah_status"].eq(SHARIAH_STATUSES[0]) & cap.isin(S.HOLD_CAPS) & ret.notna()
+    sub = match & pool
+    out = dict(caps=list(S.HOLD_CAPS), n=int(sub.sum()), pool=int(pool.sum()))
+    if out["n"] < MIN_N:
+        return out
+    excess = ret - ret[pool].median()
+    liquid = sub & (S.traded_value_cr(early) >= S.NET_MIN_CR)
+    net = dict(min_cr=S.NET_MIN_CR, cost_pp=S.NET_COST_PP, n=int(liquid.sum()))
+    if net["n"] >= MIN_N:
+        kept = excess[liquid] - S.NET_COST_PP
+        net.update(median_excess_pp=round(float(kept.median()), 1),
+                   beat_pct=int(round(float((kept > 0).mean() * 100))),
+                   portfolio_pp=round(float(ret[liquid].mean()) - S.NET_COST_PP, 2))
+    out.update(median_excess_pp=round(float(excess[sub].median()), 1),
+               beat_pct=int(round(float((excess[sub] > 0).mean() * 100))),
+               net=net, hold=hold_reading(early, ret, sub))
+    return out
+
+
 def measure_window(early: pd.DataFrame, late: pd.DataFrame, scan: dict, start: str, end: str,
                    bench_early=None, bench_late=None):
     """The scan's record over one window. The recipe runs on the WHOLE early frame (as the tab runs it
@@ -231,7 +266,10 @@ def measure_window(early: pd.DataFrame, late: pd.DataFrame, scan: dict, start: s
     index's return less the fund fee for the window (index_returns).
 
     revenue_led (2026-10-15), for the scans S.REVENUE_LED_RULE names: the matches split by revenue_led
-    (revenue_led_reading), the reading the revenue-led check decides on."""
+    (revenue_led_reading), the reading the revenue-led check decides on.
+
+    shariah (2026-10-17): the same window read on its Shariah matches of the four caps (shariah_reading);
+    report-only, no registered rule reads it."""
     fr = forward_returns(early, late, "company_id")
     corp = early["company_id"].isin(set(fr.loc[fr["corp_action"], "company_id"]))
     m = fr[~fr["corp_action"]][["company_id", "fwd_return"]]
@@ -256,6 +294,9 @@ def measure_window(early: pd.DataFrame, late: pd.DataFrame, scan: dict, start: s
                dropped_corp_action=int((in_scan & corp).sum()),
                net=net)
     out["hold"] = hold_reading(early, ret, match)
+    cut = shariah_reading(early, ret, match)
+    if cut is not None:
+        out["shariah"] = cut
     if scan.get("key") in S.REVENUE_LED_RULE["scans"]:
         out["revenue_led"] = revenue_led_reading(early, excess, match)
     indices = index_returns(bench_early, bench_late, _days(start, end))

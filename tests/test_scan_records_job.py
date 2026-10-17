@@ -787,3 +787,105 @@ def test_a_snapshot_is_rescored_with_the_current_engine():
     assert out["vstop_fresh"].iloc[0] == 1
     assert out["momentum_score"].iloc[0] == want["momentum_score"].iloc[0] > 0
     assert out["breakout_score"].iloc[0] == want["breakout_score"].iloc[0] > 0
+
+
+# ── 9. The Shariah slice (2026-10-17) ─────────────────────────────────────────────────────────────────
+# The operator buys only Shariah stocks of Mega, Large, Mid and Small caps (the caps "Holding 20" already uses), so
+# each window also reads the scan on exactly those — against the SAME slice of the market, never the whole one.
+def _slice_frames(blocks, extra=0):
+    """blocks: (count, shariah_status, market_category, in_scan, end_price) runs of stocks priced 100 at the start.
+    `extra` adds that many plain non-scan Shariah Small caps that stay flat."""
+    rows = []
+    for count, status, cap, flag, end in blocks + ([(extra, "Shariah", "Small Cap", 0, 100.0)] if extra else []):
+        rows += [dict(shariah_status=status, market_category=cap, flag=flag, end=end)] * count
+    early = pd.DataFrame(rows)
+    early["company_id"] = [f"C{i:03d}" for i in range(len(early))]
+    early["close_price"], early["equity_shares"], early["vol_sma_20d"] = 100.0, 10.0, 1_000_000.0  # ₹10 Cr a day
+    late = early[["company_id", "equity_shares"]].assign(close_price=early["end"])
+    return early.drop(columns="end"), late
+
+
+def test_the_shariah_slice_reads_only_shariah_matches_of_the_four_caps():
+    """35 Shariah Small caps match, beside matches the slice must leave out: Shariah Micro and Nano caps (not caps
+    the operator buys), a Non-Shariah Mid cap (matched by EQUALITY: "Shariah" sits inside "Non-Shariah") and the
+    Review and Doubtful labels (never a pass). A Mega cap is in."""
+    early, late = _slice_frames([(34, "Shariah", "Small Cap", 1, 130.0), (1, "Shariah", "Mega Cap", 1, 130.0),
+                                 (5, "Shariah", "Micro Cap", 1, 130.0), (3, "Shariah", "Nano Cap", 1, 130.0),
+                                 (6, "Non-Shariah", "Mid Cap", 1, 130.0), (2, "Review", "Small Cap", 1, 130.0),
+                                 (2, "Doubtful", "Large Cap", 1, 130.0)], extra=41)
+    late = late.iloc[:-1]                      # one plain Shariah stock has no price at the end: not in the pool
+    r = J.measure_window(early, late, _SCAN, "2026-10-31", "2026-11-28")
+    cut = r["shariah"]
+    assert cut["caps"] == list(S.HOLD_CAPS) == ["Mega Cap", "Large Cap", "Mid Cap", "Small Cap"]
+    assert cut["n"] == 35, "34 Small + 1 Mega; Micro, Nano, Non-Shariah, Review and Doubtful left out"
+    assert cut["pool"] == 75, ("the market the slice is measured against: every Shariah stock of the four caps "
+                               "WITH a return")
+    assert r["n"] == 53, "the scan's own reading is unchanged: every match"
+
+
+def test_the_slice_is_measured_against_the_same_slice_of_the_market():
+    """A month that lifts Shariah stocks as a group must not read as scan skill. Shariah matches +30%, other Shariah
+    stocks of the four caps +10%, everything else -20%: the slice's excess is 30 - 10 = 20 points, not 30 - (-20)."""
+    early, late = _slice_frames([(35, "Shariah", "Small Cap", 1, 130.0), (40, "Shariah", "Mid Cap", 0, 110.0),
+                                 (100, "Non-Shariah", "Small Cap", 0, 80.0)])
+    r = J.measure_window(early, late, _SCAN, "2026-10-31", "2026-11-28")
+    assert r["shariah"]["median_excess_pp"] == pytest.approx(20.0)
+    assert r["shariah"]["beat_pct"] == 100
+    assert r["median_excess_pp"] == pytest.approx(50.0), "the whole-market reading stays as it was"
+
+
+def test_too_few_shariah_matches_give_only_the_count():
+    early, late = _slice_frames([(29, "Shariah", "Small Cap", 1, 130.0), (20, "Non-Shariah", "Small Cap", 1, 130.0)],
+                                extra=30)
+    cut = J.measure_window(early, late, _SCAN, "2026-10-31", "2026-11-28")["shariah"]
+    assert cut["n"] == 29
+    assert not {"median_excess_pp", "beat_pct", "net", "hold"} & set(cut), "29 matches are not evidence"
+
+
+def test_a_copy_without_the_shariah_label_records_no_slice():
+    """No label, no reading: a slice on absent evidence would be invented (an archive copy is always re-scored with
+    today's engine, which writes the label, so this is a guard, not a path the job takes)."""
+    early, late = _slice_frames([(40, "Shariah", "Small Cap", 1, 130.0)], extra=40)
+    r = J.measure_window(early.drop(columns="shariah_status"), late, _SCAN, "2026-10-31", "2026-11-28")
+    assert r is not None and "shariah" not in r
+
+
+def test_the_slice_net_reading_keeps_liquid_matches_and_charges_the_round_trip():
+    early, late = _slice_frames([(35, "Shariah", "Small Cap", 1, 130.0), (40, "Shariah", "Mid Cap", 0, 110.0)])
+    early.loc[:4, "vol_sma_20d"] = 10_000.0                    # x ₹100 = ₹0.1 Cr a day: five matches under the floor
+    cut = J.measure_window(early, late, _SCAN, "2026-10-31", "2026-11-28")["shariah"]
+    net = cut["net"]
+    assert (net["min_cr"], net["cost_pp"], net["n"]) == (S.NET_MIN_CR, S.NET_COST_PP, 30)
+    assert net["median_excess_pp"] == pytest.approx(20.0 - S.NET_COST_PP)
+    assert net["portfolio_pp"] == pytest.approx(30.0 - S.NET_COST_PP), "the equal-weight mean of liquid matches"
+
+
+def test_the_slice_holds_twenty_from_its_own_matches():
+    early, late = _slice_frames([(35, "Shariah", "Small Cap", 1, 130.0), (40, "Shariah", "Mid Cap", 0, 110.0),
+                                 (30, "Non-Shariah", "Small Cap", 1, 160.0)])
+    r = J.measure_window(early, late, _SCAN, "2026-10-31", "2026-11-28")
+    assert r["shariah"]["hold"]["n"] == 35 and r["hold"]["n"] == 65
+    assert r["shariah"]["hold"]["median_pp"] == pytest.approx(30.0 - S.NET_COST_PP)
+
+
+@pytest.mark.parametrize("seed", [1, 2, 3])
+def test_the_slice_agrees_with_an_independent_recalculation(seed):
+    rng = np.random.default_rng(seed)
+    n = 400
+    early = pd.DataFrame({
+        "company_id": [f"R{i:03d}" for i in range(n)], "close_price": 100.0, "equity_shares": 10.0,
+        "vol_sma_20d": rng.choice([10_000.0, 1_000_000.0], n),
+        "flag": rng.integers(0, 2, n),
+        "shariah_status": rng.choice(["Shariah", "Non-Shariah", "Review", "Doubtful"], n, p=[0.5, 0.3, 0.1, 0.1]),
+        "market_category": rng.choice(["Mega Cap", "Large Cap", "Mid Cap", "Small Cap", "Micro Cap", "Nano Cap"], n)})
+    late = early[["company_id", "equity_shares"]].assign(close_price=100.0 * (1 + rng.normal(0.02, 0.15, n)))
+    cut = J.measure_window(early, late, _SCAN, "2026-10-31", "2026-11-28")["shariah"]
+    ret = (late["close_price"] / 100.0 - 1) * 100
+    pool = (early["shariah_status"] == "Shariah") & early["market_category"].isin(
+        ["Mega Cap", "Large Cap", "Mid Cap", "Small Cap"])
+    sub = pool & (early["flag"] == 1)
+    ex = ret - ret[pool].median()
+    assert (cut["n"], cut["pool"]) == (int(sub.sum()), int(pool.sum()))
+    assert cut["median_excess_pp"] == pytest.approx(round(float(ex[sub].median()), 1))
+    assert cut["beat_pct"] == int(round(float((ex[sub] > 0).mean() * 100)))
+
