@@ -9,6 +9,7 @@ vendor's own Next Result Date on 326 of 326 stocks), and a value it cannot vouch
 Run with: pytest tests/test_v2_lists.py -v
 """
 import io
+import json
 import sys
 from pathlib import Path
 
@@ -254,3 +255,96 @@ def test_nan_is_written_empty_never_zero():
     df.loc[2, "traded_value_cr"] = np.nan
     row = _as_text(_rank(df)[0]).set_index("symbol").loc["NSE:S02"]
     assert row["vstop_value"] == "" and row["traded_value_cr"] == ""
+
+
+# ── 7. The branch: both lists of a session, written once ──────────────────────────────────────────
+PB = b"symbol,name\nNSE:S01,Stock 01\n"
+RK = b"symbol,momentum_pct\nNSE:S01,0.5\nNSE:S02,1.0\n"
+
+
+def _meta(playbook=PB, rank=RK, session=SESSION, **extra):
+    """The two hashes write_pair checks (publish's manifest carries more)."""
+    return {"session": session, "playbook": {"csv_sha256": F.sha256(playbook)},
+            "rank": {"csv_sha256": F.sha256(rank)}, **extra}
+
+
+def _files(lists, session=SESSION):
+    """(the Playbook list, the rank list, the manifest) of a session on the branch."""
+    return (lists / F.SESSIONS / f"{session}.csv", lists / V.RANK_DIR / f"{session}.csv",
+            lists / F.SESSIONS / f"{session}.json")
+
+
+def test_write_once_identical_is_a_no_op_different_raises(tmp_path):
+    assert V.write_pair(tmp_path, SESSION, PB, RK, _meta(published_at="first")) is True
+    assert V.write_pair(tmp_path, SESSION, PB, RK, _meta(published_at="second")) is False
+    for pb, rk in ((PB + b"NSE:S09,Stock 09\n", RK), (PB, RK + b"NSE:S09,0.1\n")):      # either file different
+        with pytest.raises(F.FeedError, match="never rewritten"):
+            V.write_pair(tmp_path, SESSION, pb, rk, _meta(pb, rk))
+    pb_path, rank_path, m_path = _files(tmp_path)
+    assert pb_path.read_bytes() == PB and rank_path.read_bytes() == RK
+    assert json.loads(m_path.read_text(encoding="utf-8"))["published_at"] == "first"
+    assert F.sessions_on_branch(tmp_path) == [SESSION]                 # the feed's own session rules see it
+
+
+def test_files_without_their_manifest_are_completed(tmp_path):
+    """A run stopped between the files and the manifest: the same session, run again, completes it."""
+    pb_path, rank_path, m_path = _files(tmp_path)
+    rank_path.parent.mkdir(parents=True)
+    rank_path.write_bytes(RK)                                          # stopped after the first file
+    assert V.write_pair(tmp_path, SESSION, PB, RK, _meta()) is True
+    assert pb_path.read_bytes() == PB and json.loads(m_path.read_text(encoding="utf-8")) == _meta()
+    later = "2026-10-16"
+    pb_path, rank_path, m_path = _files(tmp_path, later)
+    pb_path.write_bytes(PB)
+    rank_path.write_bytes(RK)                                          # stopped after both files
+    assert V.write_pair(tmp_path, later, PB, RK, _meta(session=later)) is True and m_path.exists()
+
+
+def test_a_run_stopped_between_the_files_leaves_no_session_the_feed_rules_count(tmp_path, monkeypatch):
+    """The rank list goes first: a session the feed's session rules can see always has its rank list to carry."""
+    real, calls = Path.write_bytes, []
+
+    def stop_at_the_second_file(self, data):
+        calls.append(self.name)
+        if len(calls) == 2:
+            raise OSError("the run stopped here")
+        return real(self, data)
+    monkeypatch.setattr(Path, "write_bytes", stop_at_the_second_file)
+    with pytest.raises(OSError):
+        V.write_pair(tmp_path, SESSION, PB, RK, _meta())
+    assert F.sessions_on_branch(tmp_path) == [] and _files(tmp_path)[1].read_bytes() == RK
+
+
+def test_a_manifest_is_written_only_when_both_files_match_it(tmp_path):
+    """The manifest is the session's seal: it is never written over a file that does not match its hash."""
+    for key in ("playbook", "rank"):
+        wrong = _meta()
+        wrong[key]["csv_sha256"] = F.sha256(b"other bytes")
+        with pytest.raises(F.FeedError, match="checksum"):
+            V.write_pair(tmp_path, SESSION, PB, RK, wrong)
+        assert not _files(tmp_path)[2].exists()
+
+
+def test_the_branch_tells_git_never_to_touch_the_bytes(tmp_path):
+    """Windows git (core.autocrlf) would check a list out with CRLF, and its hash would stop matching."""
+    (tmp_path / ".gitattributes").write_bytes(b"* text=auto\n")
+    V.write_pair(tmp_path, SESSION, PB, RK, _meta())
+    assert (tmp_path / ".gitattributes").read_bytes() == F.GITATTRIBUTES == b"* -text\n"
+
+
+def test_the_readme_lists_both_contracts(tmp_path):
+    (tmp_path / "README.md").write_text("an older contract\n", encoding="utf-8")
+    V.write_pair(tmp_path, SESSION, PB, RK, _meta())
+    text = (tmp_path / "README.md").read_text(encoding="utf-8")
+    assert text == V.readme_text() and f"schema {V.SCHEMA}" in text
+    for columns in (F.COLUMNS, V.RANK_COLUMNS):                        # each list's own table, in order
+        assert "\n".join(f"| {i} | `{c}` |" for i, c in enumerate(columns, 1)) in text
+    for part in ("sessions/<YYYY-MM-DD>.csv", "rank/<YYYY-MM-DD>.csv", "sessions/<YYYY-MM-DD>.json",
+                 "`days_from_result`", "`carried_from`", "never modified", *SHARIAH_STATUSES):
+        assert part in text
+
+
+def test_read_rank_reads_text_never_numbers(tmp_path):
+    rank = b"symbol,momentum_pct,equity_shares,last_result_date\nNSE:S01,1.10,00123,\n"
+    V.write_pair(tmp_path, SESSION, PB, rank, _meta(rank=rank))
+    assert V.read_rank(tmp_path, SESSION).iloc[0].tolist() == ["NSE:S01", "1.10", "00123", ""]

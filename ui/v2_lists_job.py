@@ -16,6 +16,9 @@ pinned 68b38e0) is untouched: Kite v1 reads it until it retires, and v2 never mi
 """
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 
@@ -138,3 +141,81 @@ def check_rank_inputs(scored: pd.DataFrame) -> list:
                   else f"all {len(RANK_FLOORS)} at or above their floor"),
             D._ok(SHARIAH_SHARE_MIN <= sh <= SHARIAH_SHARE_MAX, "Shariah share",
                   f"{sh:.1%} labelled Shariah, the measured band is {SHARIAH_SHARE_MIN:.0%}-{SHARIAH_SHARE_MAX:.0%}")]
+
+
+# ── The branch: both lists of a session, written once ────────────────────────────────────────────────────────────────
+SCHEMA = 1
+RANK_DIR = "rank"
+
+
+def _table(columns) -> str:
+    return "| # | Column |\n|---|---|\n" + "\n".join(f"| {i} | `{c}` |" for i, c in enumerate(columns, 1))
+
+
+def readme_text() -> str:
+    return (f"# Kite v2's lists — schema {SCHEMA}\n\n"
+            "PRISM's two lists for Kite v2, published by `ui/v2_lists_job.py` on `main`. Every list of every session "
+            "comes from ONE commit, named in each manifest as `engine_commit`. Per session:\n\n"
+            "- `sessions/<YYYY-MM-DD>.csv`: the 🚀 Playbook list, exactly the bytes the Playbook feed builds;\n"
+            "- `rank/<YYYY-MM-DD>.csv`: the rank list, one row per stock PRISM scored that session;\n"
+            "- `sessions/<YYYY-MM-DD>.json`: the manifest, written LAST. It carries the session (from the sheet's own "
+            "name); each list's `rows`, `columns` and `csv_sha256`; the recipe fingerprint; the engine commit; the "
+            "source workbook's sha256; whether the session was `recorded` as it closed or `backfilled` later; the "
+            "checks; the Playbook recipe's `blanks` (as the Playbook feed's schema 2 states them); the rank list's "
+            "counts; and `carried_from`, the earlier session whose `last_result_date` values were carried.\n\n"
+            "Every file is written once, never modified, never deleted. A session is valid only when its manifest "
+            "exists and both files match its hashes; a missing or invalid session means UNKNOWN.\n\n"
+            "## The Playbook list\n\nOnly members are listed: for a valid session, absence means \"not in the list "
+            f"today\".\n\n{_table(F.COLUMNS)}\n\n"
+            f"## The rank list\n\nEvery scored stock, members or not.\n\n{_table(RANK_COLUMNS)}\n\n"
+            f"`shariah_status`: {', '.join(SHARIAH_STATUSES)} or empty. "
+            f"`cap`: {' '.join(sorted(set(F.CAP_CODES.values())))} or empty. `stage`: Weinstein 1 2 3 4 or empty. "
+            "`momentum_pct`: the stock's momentum percentile over the WHOLE scored market, exactly as the 🚀 recipe "
+            "reads it, written as the shortest text that reads back to the same number.\n\n"
+            "The result dates come from the vendor's `days_from_result` (negative = days since the last result). "
+            "`next_result_date` is the session plus it when it is 0 or more. `last_result_date` is the session plus "
+            "it when it is 0 or less, otherwise that stock's `last_result_date` on the newest earlier session of this "
+            "branch (`carried_from`), or empty. A blank or non-whole `days_from_result` is unknown.\n\n"
+            f"Both lists: rows sorted by `symbol`; UTF-8, `\\n`; numbers `{F.FLOAT_FORMAT}`; dates `YYYY-MM-DD`; "
+            "empty = not known.\n")
+
+
+def _paths(lists: Path, session: str) -> tuple[Path, Path, Path]:
+    """(the Playbook list, the rank list, the manifest) of `session`."""
+    sessions = Path(lists) / F.SESSIONS
+    return sessions / f"{session}.csv", Path(lists) / RANK_DIR / f"{session}.csv", sessions / f"{session}.json"
+
+
+def write_pair(lists: Path, session: str, playbook: bytes, rank: bytes, meta: dict) -> bool:
+    """True when written; False when exactly this session is already there. A file already on the branch with other
+    bytes raises: nothing is ever rewritten. The rank list goes first, then the Playbook list (the file the feed's
+    session rules count), and the manifest LAST, only once both files read back with its hashes: a session with a
+    manifest is always whole. Files a stopped run left without their manifest are completed."""
+    pb_path, rank_path, m_path = _paths(lists, session)
+    files = (("rank", rank_path, rank), ("playbook", pb_path, playbook))
+    for what, path, data in files:
+        if path.exists() and path.read_bytes() != data:
+            raise F.FeedError(f"{session}'s {what} list is already on the branch with different content — a "
+                              "session's files are written once, never rewritten")
+    if m_path.exists():
+        return False
+    for _, path, data in files:
+        if not path.exists():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+    for what, path, _ in files:
+        if F.sha256(path.read_bytes()) != meta[what]["csv_sha256"]:
+            raise F.FeedError(f"{session}: the written {what} list does not match its manifest's checksum")
+    m_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
+    readme = Path(lists) / "README.md"
+    if not readme.exists() or readme.read_text(encoding="utf-8") != readme_text():
+        readme.write_text(readme_text(), encoding="utf-8", newline="\n")
+    attrs = Path(lists) / ".gitattributes"             # a CRLF checkout would break every hash
+    if not attrs.exists() or attrs.read_bytes() != F.GITATTRIBUTES:
+        attrs.write_bytes(F.GITATTRIBUTES)
+    return True
+
+
+def read_rank(lists: Path, session: str) -> pd.DataFrame:
+    """A published rank list as text: every value exactly as written, a blank as ''."""
+    return pd.read_csv(_paths(lists, session)[1], dtype=str, keep_default_na=False)
