@@ -44,8 +44,10 @@ jobs:
     env:
       # ONE COMMIT MAKES EVERY LIST ON v2-lists (Kite-v2 addendum A5 and its dated record): the code checkout below is
       # this commit and every manifest names it. A change that would change a list waits for a new freeze; moving this
-      # pin is a deliberate edit (tests/test_v2_lists_workflow.py holds it to the job's own code).
-      V2_CODE_SHA: bfae0709075b50a70d7572030727eb12c5d401c5
+      # pin is a deliberate edit (tests/test_v2_lists_workflow.py holds it to the job's own code). The one exception
+      # is a scholar's ruling (A5): bfae070 until 2026-10-16; from 2026-10-19, dc81c85, the operator's ruling of
+      # 17 Oct clearing Aerospace & Defence (its Playbook lists equal P's on 29 of 29 saved sheets).
+      V2_CODE_SHA: dc81c85d5468448b6b003bb40f0f1958b969c105
     steps:
       - uses: actions/checkout@v7
         with:
