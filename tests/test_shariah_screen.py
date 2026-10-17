@@ -18,7 +18,9 @@ so a missing figure must never read as a pass (CLAUDE.md §5 "Unverifiable is no
 
 The operator's answers of 2026-10-16 (measured on the 15 Oct sheet before they were given):
   * the 'Aerospace & Defence' SECTOR goes to review — 18 of its 20 stocks outside the defence industry
-    describe themselves as defence suppliers (warships, missile propellants, "defence-focused");
+    describe themselves as defence suppliers (warships, missile propellants, "defence-focused"). The operator's
+    ruling of 2026-10-17 then cleared the sector and its "Aerospace & Defence - Equipments" industry: they are
+    screened by the six rules like any business (15 stocks Review -> Shariah on the 16 Oct sheet);
   * a company-level prohibited list, each entry with its business-activity reason (Delta Corp: casinos,
     filed by the vendor under "Miscellaneous");
   * Rule 6's receivables use the BALANCE SHEET's own revenue year: the vendor's balance sheet trails its
@@ -139,14 +141,14 @@ def test_rule1_each_review_industry_awaits_a_scholars_ruling():
     assert (out["shariah_reason"] == out["industry"] + " — awaiting a scholar's ruling").all()
 
 
-def test_rule1_the_review_sector_awaits_a_ruling_and_its_prohibited_industry_still_fails():
-    s = _screen(industry="Industrial Explosives", sector="Aerospace & Defence")
-    assert (s["shariah_business"], s["shariah_status"]) == ("review", "Review")
-    assert s["shariah_reason"] == "Aerospace & Defence sector — awaiting a scholar's ruling"
-    s = _screen(industry="Aerospace & Defence - Equipments", sector="Aerospace & Defence")
-    assert (s["shariah_business"], s["shariah_status"]) == ("review", "Review")   # the operator, 2026-10-17
+def test_rule1_aerospace_and_defence_is_screened_like_any_business_and_its_prohibited_industry_still_fails():
+    """The operator's ruling, 2026-10-17: the sector and its Equipments industry no longer await a ruling."""
+    for industry in ("Industrial Explosives", "Aerospace & Defence - Equipments"):
+        s = _screen(industry=industry, sector="Aerospace & Defence")
+        assert (s["shariah_business"], s["shariah_status"]) == ("pass", "Shariah"), industry
+        assert s["shariah_reason"] == SHARIAH_PASS_REASON
     s = _screen(industry="Alcoholic Beverages", sector="Aerospace & Defence")
-    assert (s["shariah_business"], s["shariah_status"]) == ("fail", "Non-Shariah"), "a fail beats a review"
+    assert (s["shariah_business"], s["shariah_status"]) == ("fail", "Non-Shariah"), "a prohibited industry fails"
 
 
 def test_rule1_a_listed_company_is_non_shariah_with_its_written_reason():
@@ -654,14 +656,14 @@ def test_the_lists_are_the_operators_final_lists():
     assert SHARIAH_PROHIBITED_INDUSTRIES == frozenset([
         "Alcoholic Beverages", "Cigarettes & Tobacco Products", "Hotels", "Hotels - Resorts", "Resorts",
         "Entertainment & Media", "Music Licensing"])
+    # The operator's ruling of 2026-10-17: defence equipment and the Aerospace & Defence sector no longer await one.
     assert SHARIAH_REVIEW_INDUSTRIES == frozenset([
         "Restaurants", "Quick Service Restaurant - QSR", "Airport Restaurants and Lounges", "Amusement Parks",
-        "Real Estate Investment Trusts", "Infrastructure Investment Trusts", "Infra/Real Estate Investment Trust",
-        "Aerospace & Defence - Equipments"])
-    assert SHARIAH_REVIEW_SECTORS == frozenset(["Aerospace & Defence"])
+        "Real Estate Investment Trusts", "Infrastructure Investment Trusts", "Infra/Real Estate Investment Trust"])
+    assert SHARIAH_REVIEW_SECTORS == frozenset()
     assert SHARIAH_ALLOWED_NAME_MATCHES == frozenset([
         "Packaging - Films", "Plastics - Sheets/Films", "Detergents/Intermediates", "Dyes - Intermediate",
-        "Chemicals - Organic - Alcohol Based"])
+        "Chemicals - Organic - Alcohol Based", "Aerospace & Defence - Equipments"])
 
 
 # ── One source: config.py ─────────────────────────────────────────────────────────────────────────────
