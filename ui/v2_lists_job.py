@@ -5,7 +5,8 @@
     python -m ui.v2_lists_job --lists <dir> --backfill <folder of "PRISM YYYY-MM-DD.xlsx">
 
 For every session, two files go to the orphan branch `v2-lists`, written once:
-- the 🚀 Playbook list, exactly the bytes the feed builds (ui/playbook_feed_job.py);
+- the 🚀 Playbook list, exactly the bytes the feed's own code (ui/playbook_feed_job.py) builds at this commit — not
+  the `playbook-feed` branch's, whose workflow is pinned to an older commit;
 - the rank list: every scored stock with the columns v2 reads, among them its momentum percentile over the WHOLE
   market, and the dates of its last and next results.
 
@@ -19,18 +20,20 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import subprocess
 import sys
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
 from config import SHARIAH_STATUSES
-from core.sheet_meta import IST
+from core.sheet_meta import IST, _prev_weekday, expected_session
 from ui import data_check_job as D
 from ui import playbook_feed_job as F
 from ui import ui_scans as S
+from ui.archive_copies import _scrub
 from ui.scan_records_job import engine_version, sheet_id_from_secret
 
 # ── The rank list: one row per scored stock (design §3.1) ────────────────────────────────────────────────────────────
@@ -56,6 +59,14 @@ UNKNOWN_STAGE = "❔ Unknown"
 # A SCREEN THAT LABELS EVERYTHING DOUBTFUL STILL FILLS EVERY ROW, so the fill floor cannot see it. The share labelled
 # Shariah ran 20.98% (29 Jun) to 30.91% (3 Sep) on the 29 sheets; less and plus 8 points, rounded outward to 0.05.
 SHARIAH_SHARE_MIN, SHARIAH_SHARE_MAX = 0.10, 0.40
+# A FIGURE THAT CANNOT BE REAL IS A MISSING ONE IN DISGUISE (review M2, 2026-10-17): a close or stop of 0 or less, or no
+# shares, is written empty, never a number an exit could act on (anti-goal: a sale caused by a blank or missing figure).
+# Never seen on the 29 sheets; the floors count only what is written.
+POSITIVE = ("close_price", "vstop_value", "equity_shares")
+# days_from_result ran about -660 (the oldest last result, 27 Dec 2024) to +30 on the 24 sessions 11 Sep - 16 Oct 2026.
+# Past 1,000 days it is unknown: an Excel serial date in the wrong column (~46,000) would be a date in 2152, and past
+# ~86,000 days pandas overflows, which would stop the day's publish (review M3).
+MAX_RESULT_DAYS = 1000
 
 
 def build_rank(scored: pd.DataFrame, session: str, previous: pd.DataFrame | None) -> tuple[pd.DataFrame, dict]:
@@ -81,14 +92,15 @@ def build_rank(scored: pd.DataFrame, session: str, previous: pd.DataFrame | None
     out["shariah_status"] = status.astype(str).where(named, "")
     out["cap"] = F._codes(scored["market_category"], F.CAP_CODES, "market_category")
     for c in RANK_NUMBERS:
-        out[c] = pd.to_numeric(scored[c], errors="coerce")
+        x = pd.to_numeric(scored[c], errors="coerce")
+        out[c] = x.where(x > 0) if c in POSITIVE else x
     pct = S._pct(scored, "momentum_score")                     # the WHOLE market, as the recipe ranks it
     out["momentum_pct"] = pct.astype(str).where(pct.notna(), "")   # str(float) is its shortest exact repr
     out["sector"] = scored["sector"].where(scored["sector"].notna(), "").astype(str)
     out["stage"] = F._codes(scored["weinstein_stage"], F.STAGE_CODES, "weinstein_stage")
 
     raw = pd.to_numeric(scored["days_from_result"], errors="coerce")
-    integral = raw.notna() & np.isclose(raw, np.round(raw))
+    integral = raw.notna() & (raw.abs() <= MAX_RESULT_DAYS) & np.isclose(raw, np.round(raw))
     days = np.round(raw).where(integral)                       # NaN = unknown
     when = (pd.Timestamp(session) + pd.to_timedelta(days, unit="D")).dt.strftime("%Y-%m-%d")
     out["next_result_date"] = when.where(days >= 0, "")
@@ -97,7 +109,8 @@ def build_rank(scored: pd.DataFrame, session: str, previous: pd.DataFrame | None
     else:
         carried = out["symbol"].map(previous.set_index("symbol")["last_result_date"]).replace("", np.nan)
     out["last_result_date"] = when.where(days <= 0, carried).fillna("")
-    out["equity_shares"] = pd.to_numeric(scored["equity_shares"], errors="coerce").round().astype("Int64")
+    shares = pd.to_numeric(scored["equity_shares"], errors="coerce")
+    out["equity_shares"] = shares.where(shares > 0).round().astype("Int64")
     stats = {"carried": int((~(days <= 0) & carried.notna()).sum()), "unknown_days": int((~integral).sum())}
     frame = out[list(RANK_COLUMNS)].sort_values("symbol", kind="mergesort").reset_index(drop=True)
     return frame, stats
@@ -127,7 +140,7 @@ def _share(scored: pd.DataFrame, col: str) -> float:
     s = scored[col]
     if col in TEXT_FLOORS:
         ok = D._filled(s)
-    elif col == "close_price":
+    elif col in POSITIVE:
         ok = pd.to_numeric(s, errors="coerce") > 0
     elif col == "weinstein_stage":
         ok = D._filled(s) & (s.astype(str) != UNKNOWN_STAGE)
@@ -162,7 +175,8 @@ def readme_text() -> str:
     return (f"# Kite v2's lists — schema {SCHEMA}\n\n"
             "PRISM's two lists for Kite v2, published by `ui/v2_lists_job.py` on `main`. Every list of every session "
             "comes from ONE commit, named in each manifest as `engine_commit`. Per session:\n\n"
-            "- `sessions/<YYYY-MM-DD>.csv`: the 🚀 Playbook list, exactly the bytes the Playbook feed builds;\n"
+            "- `sessions/<YYYY-MM-DD>.csv`: the 🚀 Playbook list, exactly the bytes the Playbook feed's code builds at "
+            "the manifest's `engine_commit` (not the `playbook-feed` branch, which is pinned to an older commit);\n"
             "- `rank/<YYYY-MM-DD>.csv`: the rank list, one row per stock PRISM scored that session;\n"
             "- `sessions/<YYYY-MM-DD>.json`: the manifest, written LAST. It carries the session (from the sheet's own "
             "name); each list's `rows`, `columns` and `csv_sha256`; the recipe fingerprint; the engine commit; the "
@@ -192,11 +206,20 @@ def _paths(lists: Path, session: str) -> tuple[Path, Path, Path]:
     return sessions / f"{session}.csv", Path(lists) / RANK_DIR / f"{session}.csv", sessions / f"{session}.json"
 
 
+def _write_whole(path: Path, data: bytes) -> None:
+    """All of `data` at `path`, or nothing there: written beside it, then moved into place in one step."""
+    part = path.with_name(path.name + ".part")
+    part.write_bytes(data)
+    os.replace(part, path)
+
+
 def write_pair(lists: Path, session: str, playbook: bytes, rank: bytes, meta: dict) -> bool:
-    """True when written; False when exactly this session is already there. A file already on the branch with other
-    bytes raises: nothing is ever rewritten. The rank list goes first, then the Playbook list (the file the feed's
-    session rules count), and the manifest LAST, only once both files read back with its hashes: a session with a
-    manifest is always whole. Files a stopped run left without their manifest are completed."""
+    """True when written; False when exactly this session is already there: both files present with the bytes given
+    AND with its manifest's own hashes. A file already on the branch with other bytes raises, and so does a manifest
+    that does not match its files: nothing is ever rewritten. Each file is written whole or not at all; the rank list
+    goes first, then the Playbook list (the file the feed's session rules count), and the manifest LAST, only once both
+    files read back with its hashes: a session with a manifest is always whole. Files a stopped run left without their
+    manifest are completed."""
     pb_path, rank_path, m_path = _paths(lists, session)
     files = (("rank", rank_path, rank), ("playbook", pb_path, playbook))
     for what, path, data in files:
@@ -204,15 +227,20 @@ def write_pair(lists: Path, session: str, playbook: bytes, rank: bytes, meta: di
             raise F.FeedError(f"{session}'s {what} list is already on the branch with different content — a "
                               "session's files are written once, never rewritten")
     if m_path.exists():
+        sealed = json.loads(m_path.read_text(encoding="utf-8"))
+        for what, path, _ in files:
+            if not path.exists() or F.sha256(path.read_bytes()) != sealed[what]["csv_sha256"]:
+                raise F.FeedError(f"{session}: its manifest does not match its {what} list on the branch — a session "
+                                  "with a manifest is never completed or rewritten")
         return False
     for _, path, data in files:
         if not path.exists():
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(data)
+            _write_whole(path, data)
     for what, path, _ in files:
         if F.sha256(path.read_bytes()) != meta[what]["csv_sha256"]:
             raise F.FeedError(f"{session}: the written {what} list does not match its manifest's checksum")
-    m_path.write_text(json.dumps(meta, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
+    _write_whole(m_path, (json.dumps(meta, indent=2, ensure_ascii=False) + "\n").encode("utf-8"))
     readme = Path(lists) / "README.md"
     if not readme.exists() or readme.read_text(encoding="utf-8") != readme_text():
         readme.write_text(readme_text(), encoding="utf-8", newline="\n")
@@ -314,6 +342,39 @@ def backfill(folder: Path, lists: Path, *, now: datetime | None = None) -> tuple
 
 
 # ── The run ──────────────────────────────────────────────────────────────────────────────────────────────────────────
+_REPO = Path(__file__).resolve().parent.parent
+
+
+def _git(*args: str) -> str:
+    try:
+        return subprocess.run(["git", "-C", str(_REPO), *args], capture_output=True, text=True,
+                              timeout=30).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+
+def _pinned_code_problem(git=None, env=None) -> str:
+    """Why this run's code is not the ONE commit every manifest it writes will name (A5), or ''. On CI the checkout IS
+    V2_CODE_SHA; on the PC a back-fill must run from a clean checkout of it. Untracked files (lists, copies) do not
+    count: they are not code."""
+    git, env = git or _git, os.environ if env is None else env
+    want, head = env.get("V2_CODE_SHA", ""), git("rev-parse", "HEAD")
+    if not head or head != want:           # rev-parse gives all 40 characters: a short, empty or other pin never equals it
+        return (f"the checkout is {head[:12] or 'not a git checkout'}, but V2_CODE_SHA names "
+                f"{want[:12] or 'nothing'}")
+    if git("status", "--porcelain", "--untracked-files=no"):
+        return "the checkout has uncommitted changes, so its lists would not be the pinned commit's"
+    return ""
+
+
+def _gap(carried_from: str, session: str) -> str:
+    """' · ⚠ no session on the branch since X' when the session before this one is older than the weekday before it:
+    a weekday holiday, or sessions lost for good (a live run publishes across a gap; no back-fill goes behind it)."""
+    if not carried_from or carried_from >= _prev_weekday(date.fromisoformat(session)).isoformat():
+        return ""
+    return f" · ⚠ no session on the branch since {carried_from}"
+
+
 def _github_output(path: str, session: str, message: str) -> None:
     """What the workflow commits when something was written: the session, and its message."""
     with open(path, "a", encoding="utf-8", newline="\n") as f:
@@ -325,6 +386,9 @@ def main(argv=None) -> int:
     ap.add_argument("--lists", required=True, type=Path, help="a checkout of the v2-lists branch")
     ap.add_argument("--backfill", type=Path, help="a folder of archived 'PRISM YYYY-MM-DD.xlsx' copies")
     args = ap.parse_args(argv)
+    problem = _pinned_code_problem()
+    if problem:
+        raise SystemExit(f"refused: {problem}")
     out = os.environ.get("GITHUB_OUTPUT")
     if args.backfill:
         done, refused = backfill(args.backfill, args.lists)
@@ -349,14 +413,21 @@ def main(argv=None) -> int:
         raise SystemExit(f"V2_TRIGGER {trigger!r} is not one of {TRIGGERS}")
     try:
         session = F.run_live(sheet_id, args.lists, trigger=trigger, publish_fn=publish)
-    except F.FeedError as exc:
-        print(f"❌ nothing published: {exc}")
+    except Exception as exc:           # ANY failure: a download error names its URL, and the URL holds the sheet's id
+        kind = "" if isinstance(exc, F.FeedError) else f"{type(exc).__name__}: "
+        print(f"❌ nothing published: {kind}{_scrub(str(exc))}")
+        print(f"   if {expected_session(datetime.now(IST)).isoformat()} is not on v2-lists before the next session is "
+              "published, it can never be added: dispatch this workflow with backfill_from = backfill_to = that day")
         return 1
-    if session and out:
-        meta = json.loads(_paths(args.lists, session)[2].read_text(encoding="utf-8"))
+    if not session:
+        print("nothing new to publish")
+        return 0
+    meta = json.loads(_paths(args.lists, session)[2].read_text(encoding="utf-8"))
+    gap = _gap(meta["carried_from"], session)
+    if out:
         _github_output(out, session, f"{session} · {meta['playbook']['rows']} Playbook · {meta['rank']['rows']} "
-                                     f"ranked · recorded ({trigger})")
-    print(f"✅ published {session}" if session else "nothing new to publish")
+                                     f"ranked · recorded ({trigger}){gap}")
+    print(f"✅ published {session}{gap}")
     return 0
 
 

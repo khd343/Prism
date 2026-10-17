@@ -10,6 +10,8 @@ Run with: pytest tests/test_v2_lists.py -v
 """
 import io
 import json
+import re
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -165,6 +167,16 @@ def test_a_non_integral_day_is_unknown():
     assert stats["unknown_days"] == 2
 
 
+def test_an_implausible_day_is_unknown():
+    """Measured on 24 sessions, days_from_result runs about -660 to +30. Past 1,000 days (an Excel serial date in the
+    wrong column, say) it is unknown: never a date in 2152, never an overflow that stops the run and loses the day."""
+    frame, stats = _rank(_with_days([46000.0, 90000.0, 1e9, -999.0, -1001.0]))
+    for s in ("NSE:S00", "NSE:S01", "NSE:S02", "NSE:S04"):
+        assert (_row(frame, s)["last_result_date"], _row(frame, s)["next_result_date"]) == ("", "")
+    assert _row(frame, "NSE:S03")["last_result_date"] == "2024-01-20"           # 999 days back is still a date
+    assert stats["unknown_days"] == 4
+
+
 # ── 4. Labels: codes, never guesses ───────────────────────────────────────────────────────────────
 def test_an_unknown_status_refuses_the_list():
     df = _scored()
@@ -260,6 +272,18 @@ def test_nan_is_written_empty_never_zero():
     assert row["vstop_value"] == "" and row["traded_value_cr"] == ""
 
 
+def test_a_price_or_count_that_cannot_be_real_is_written_empty():
+    """A close or stop of 0 or less, or no shares, is a missing figure in disguise: written empty, never a number an
+    exit could act on (anti-goal: a sale caused by a blank or missing figure). The floor counts what is written."""
+    df = _scored()
+    df.loc[2, ["close_price", "vstop_value", "equity_shares"]] = [0.0, -1.0, 0.0]
+    row = _as_text(_rank(df)[0]).set_index("symbol").loc["NSE:S02"]
+    assert (row["close_price"], row["vstop_value"], row["equity_shares"]) == ("", "", "")
+    zero = _scored()
+    zero.loc[:3, "vstop_value"] = 0.0                            # 26 of 30 written: 86.7%, under the 0.90 floor
+    assert _check(zero)["Rank list inputs"].status == "fail"
+
+
 # ── 7. The branch: both lists of a session, written once ──────────────────────────────────────────
 PB = b"symbol,name\nNSE:S01,Stock 01\n"
 RK = b"symbol,momentum_pct\nNSE:S01,0.5\nNSE:S02,1.0\n"
@@ -328,6 +352,38 @@ def test_a_manifest_is_written_only_when_both_files_match_it(tmp_path):
         assert not _files(tmp_path)[2].exists()
 
 
+def test_a_manifest_vouches_only_for_files_that_match_it(tmp_path):
+    """A session with a manifest is "already on the branch, byte for byte" only when both its files are there with
+    the manifest's own hashes: a lost file or an edited manifest is refused, never reported as a proof."""
+    assert V.write_pair(tmp_path, SESSION, PB, RK, _meta()) is True
+    _files(tmp_path)[1].unlink()                                       # a rank list lost under its manifest
+    with pytest.raises(F.FeedError, match="manifest"):
+        V.write_pair(tmp_path, SESSION, PB, RK, _meta())
+    _files(tmp_path)[1].write_bytes(RK)
+    sealed = json.loads(_files(tmp_path)[2].read_text(encoding="utf-8"))
+    sealed["rank"]["csv_sha256"] = "0" * 64                             # a manifest edited by hand
+    _files(tmp_path)[2].write_text(json.dumps(sealed), encoding="utf-8")
+    with pytest.raises(F.FeedError, match="manifest"):
+        V.write_pair(tmp_path, SESSION, PB, RK, _meta())
+
+
+def test_a_stopped_write_leaves_no_partial_file(tmp_path, monkeypatch):
+    """Each file is written whole or not at all: beside its place, then moved in one step. A run stopped inside a
+    file (a reboot during the one-time PC back-fill) leaves nothing a later run would read as the session's bytes."""
+    real = Path.write_bytes
+
+    def half_then_stop(self, data):
+        real(self, data[: len(data) // 2])
+        raise OSError("the run stopped here")
+    monkeypatch.setattr(Path, "write_bytes", half_then_stop)
+    with pytest.raises(OSError):
+        V.write_pair(tmp_path, SESSION, PB, RK, _meta())
+    monkeypatch.undo()
+    assert not _files(tmp_path)[1].exists()                            # no half rank list in its place
+    assert V.write_pair(tmp_path, SESSION, PB, RK, _meta()) is True    # the next run completes the session
+    assert _files(tmp_path)[1].read_bytes() == RK
+
+
 def test_the_branch_tells_git_never_to_touch_the_bytes(tmp_path):
     """Windows git (core.autocrlf) would check a list out with CRLF, and its hash would stop matching."""
     (tmp_path / ".gitattributes").write_bytes(b"* text=auto\n")
@@ -340,6 +396,7 @@ def test_the_readme_lists_both_contracts(tmp_path):
     V.write_pair(tmp_path, SESSION, PB, RK, _meta())
     text = (tmp_path / "README.md").read_text(encoding="utf-8")
     assert text == V.readme_text() and f"schema {V.SCHEMA}" in text
+    assert "not the `playbook-feed` branch, which is pinned to an older commit" in text
     for columns in (F.COLUMNS, V.RANK_COLUMNS):                        # each list's own table, in order
         assert "\n".join(f"| {i} | `{c}` |" for i, c in enumerate(columns, 1)) in text
     for part in ("sessions/<YYYY-MM-DD>.csv", "rank/<YYYY-MM-DD>.csv", "sessions/<YYYY-MM-DD>.json",
@@ -577,13 +634,23 @@ def test_live_publishes_the_expected_session_through_the_feeds_own_session_rules
 _SECRET = "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcd"
 
 
-def test_main_runs_live_through_v2s_publish_and_never_prints_the_id(monkeypatch, tmp_path, capsys):
+@pytest.fixture
+def pinned(monkeypatch):
+    """main runs only as the pinned commit (A5, tested below); these tests are about what it does once it runs."""
+    monkeypatch.setattr(V, "_pinned_code_problem", lambda: "")
+
+
+def _live_manifest(carried_from=""):
+    return {"playbook": {"rows": 1, "csv_sha256": F.sha256(PB)}, "rank": {"rows": 2, "csv_sha256": F.sha256(RK)},
+            "carried_from": carried_from}
+
+
+def test_main_runs_live_through_v2s_publish_and_never_prints_the_id(monkeypatch, tmp_path, capsys, pinned):
     calls = []
 
     def run_live(sheet_id, lists, *, trigger, publish_fn):
         calls.append((sheet_id, lists, trigger, publish_fn))
-        V.write_pair(lists, SESSION, PB, RK, {"playbook": {"rows": 1, "csv_sha256": F.sha256(PB)},
-                                               "rank": {"rows": 2, "csv_sha256": F.sha256(RK)}})
+        V.write_pair(lists, SESSION, PB, RK, _live_manifest())
         return SESSION
     monkeypatch.setattr(F, "run_live", run_live)
     out = tmp_path / "github_output"
@@ -597,7 +664,45 @@ def test_main_runs_live_through_v2s_publish_and_never_prints_the_id(monkeypatch,
         f"session={SESSION}\nmessage=v2-lists: {SESSION} · 1 Playbook · 2 ranked · recorded (after-feed)\n")
 
 
-def test_main_refuses_a_missing_secret_or_an_unknown_trigger(monkeypatch, tmp_path):
+def test_main_never_prints_the_id_when_the_download_fails(monkeypatch, tmp_path, capsys, pinned):
+    """A download error names its URL, and the URL holds the id: in a public repository's log that is the sheet's
+    key, and GitHub masks only the secret's exact text (SHEET_ID can hold a whole pasted line). Whatever goes wrong
+    live, the run fails with the error's kind and an id-free message."""
+    def fail(*a, **k):
+        raise RuntimeError("503 Server Error: Service Unavailable for url: "
+                           f"https://docs.google.com/spreadsheets/d/{_SECRET}/export?format=xlsx")
+    monkeypatch.setattr(F, "run_live", fail)
+    monkeypatch.setenv("SHEET_ID", f'SHEET_ID = "{_SECRET}"')
+    monkeypatch.setenv("V2_TRIGGER", "schedule")
+    assert V.main(["--lists", str(tmp_path)]) == 1
+    out = capsys.readouterr().out
+    assert _SECRET not in out and "RuntimeError" in out and "503 Server Error" in out
+
+
+def test_a_live_session_after_a_gap_says_so_in_its_commit(monkeypatch, tmp_path, pinned):
+    """A live run publishes the expected session across any gap (it has no calendar), and the sessions skipped can
+    never be added after it: the commit says so, to be seen while a back-fill can still help. A weekday holiday
+    reads the same way; a weekend does not."""
+    monkeypatch.setenv("SHEET_ID", _SECRET)
+    monkeypatch.setenv("V2_TRIGGER", "after-feed")
+    messages = {}
+    for k, (session, carried_from) in enumerate((("2026-10-16", "2026-10-15"), ("2026-10-16", "2026-10-13"),
+                                                 ("2026-10-19", "2026-10-16"), ("2026-10-16", ""))):
+        def run_live(sheet_id, lists, *, trigger, publish_fn, _s=session, _c=carried_from):
+            V.write_pair(lists, _s, PB, RK, _live_manifest(_c))
+            return _s
+        monkeypatch.setattr(F, "run_live", run_live)
+        out = tmp_path / f"output{k}"
+        monkeypatch.setenv("GITHUB_OUTPUT", str(out))
+        assert V.main(["--lists", str(tmp_path / f"lists{k}")]) == 0
+        messages[(session, carried_from)] = out.read_text(encoding="utf-8")
+    assert "⚠" not in messages[("2026-10-16", "2026-10-15")]
+    assert "· ⚠ no session on the branch since 2026-10-13\n" in messages[("2026-10-16", "2026-10-13")]
+    assert "⚠" not in messages[("2026-10-19", "2026-10-16")]                    # Friday, then Monday
+    assert "⚠" not in messages[("2026-10-16", "")]                              # the branch's first session
+
+
+def test_main_refuses_a_missing_secret_or_an_unknown_trigger(monkeypatch, tmp_path, pinned):
     monkeypatch.setenv("SHEET_ID", "")
     with pytest.raises(SystemExit, match="SHEET_ID"):
         V.main(["--lists", str(tmp_path)])
@@ -607,17 +712,60 @@ def test_main_refuses_a_missing_secret_or_an_unknown_trigger(monkeypatch, tmp_pa
         V.main(["--lists", str(tmp_path)])
 
 
-def test_main_turns_a_refusal_into_a_failed_run(monkeypatch, tmp_path, capsys):
+def test_main_turns_a_refusal_into_a_failed_run(monkeypatch, tmp_path, capsys, pinned):
+    """A red run also says how the session can still be saved: a back-fill, before the next session publishes."""
     def refuse(*a, **k):
         raise F.FeedError("stale: 90% of the 270 stocks in both lists close exactly as on 2026-10-14")
     monkeypatch.setattr(F, "run_live", refuse)
     monkeypatch.setenv("SHEET_ID", _SECRET)
     monkeypatch.setenv("V2_TRIGGER", "schedule")
     assert V.main(["--lists", str(tmp_path)]) == 1
-    assert "nothing published: stale" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "nothing published: stale" in out and "dispatch this workflow with backfill_from = backfill_to" in out
 
 
-def test_main_backfills_and_names_the_sessions_for_the_commit(monkeypatch, tmp_path):
+def test_main_runs_only_as_the_pinned_commit(monkeypatch, tmp_path):
+    monkeypatch.setattr(V, "_pinned_code_problem", lambda: "the checkout is dddddddddddd, but V2_CODE_SHA names c")
+    for args in (["--lists", str(tmp_path)], ["--lists", str(tmp_path), "--backfill", str(tmp_path)]):
+        with pytest.raises(SystemExit, match="V2_CODE_SHA names"):
+            V.main(args)
+
+
+def test_the_run_refuses_code_that_is_not_the_pinned_commit():
+    """Every manifest names V2_CODE_SHA (A5), so a run must BE that commit: a checkout elsewhere, a dirty tree or no
+    pin would write a permanent record naming code that did not make it. Untracked files (the lists, the copies)
+    do not count."""
+    pin = "c" * 40
+
+    def git(head, dirty=""):
+        return lambda *a: head if a[0] == "rev-parse" else dirty
+    assert "V2_CODE_SHA" in V._pinned_code_problem(git(pin), env={})
+    assert "V2_CODE_SHA" in V._pinned_code_problem(git(pin), env={"V2_CODE_SHA": "c0ffee"})          # not 40 hex
+    assert "dddddddddddd" in V._pinned_code_problem(git("d" * 40), env={"V2_CODE_SHA": pin})
+    assert "uncommitted" in V._pinned_code_problem(git(pin, " M ui/v2_lists_job.py"), env={"V2_CODE_SHA": pin})
+    assert "not a git checkout" in V._pinned_code_problem(git(""), env={})                       # no git, no pin
+    assert V._pinned_code_problem(git(pin), env={"V2_CODE_SHA": pin}) == ""
+
+
+def test_the_pin_guard_reads_real_git_and_ignores_untracked_files(tmp_path):
+    """With real git: the lists and the copies the workflow puts inside the checkout are untracked and never count
+    (else every CI run would be refused); an edited tracked file does."""
+    def run(*a):
+        return subprocess.run(["git", "-C", str(tmp_path), *a], capture_output=True, text=True)
+    run("init", "-q")
+    (tmp_path / "code.py").write_text("x = 1\n", encoding="utf-8")
+    run("add", "code.py")
+    run("-c", "user.name=test", "-c", "user.email=test@example.com", "commit", "-q", "-m", "the pinned code")
+    head = run("rev-parse", "HEAD").stdout.strip()
+    assert re.fullmatch(r"[0-9a-f]{40}", head), "the throwaway repository made no commit"
+    (tmp_path / "lists").mkdir()
+    (tmp_path / "lists" / "x.csv").write_text("y\n", encoding="utf-8")
+    assert V._pinned_code_problem(lambda *a: run(*a).stdout.strip(), env={"V2_CODE_SHA": head}) == ""
+    (tmp_path / "code.py").write_text("x = 2\n", encoding="utf-8")
+    assert "uncommitted" in V._pinned_code_problem(lambda *a: run(*a).stdout.strip(), env={"V2_CODE_SHA": head})
+
+
+def test_main_backfills_and_names_the_sessions_for_the_commit(monkeypatch, tmp_path, pinned):
     results = [(["2026-10-13", "2026-10-15"], ["2026-10-14: stale"]), ([], ["2026-10-16: stale"])]
     seen = []
 
@@ -636,7 +784,7 @@ def test_main_backfills_and_names_the_sessions_for_the_commit(monkeypatch, tmp_p
     assert out.read_text(encoding="utf-8").count("session=") == 1
 
 
-def test_main_fails_a_backfill_when_a_session_on_the_branch_does_not_rebuild(monkeypatch, tmp_path):
+def test_main_fails_a_backfill_when_a_session_on_the_branch_does_not_rebuild(monkeypatch, tmp_path, pinned):
     """A refused copy of a session that IS on the branch means its bytes were not made again — this machine differs, or
     two copies of the day disagree: the run fails and the workflow commits nothing. A refused copy of a session that
     is not on the branch (a holiday, a failed check) is an ordinary back-fill."""
