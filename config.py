@@ -355,12 +355,14 @@ SHARIAH_REJECTED = frozenset([
 SHARIAH_REVIEW_COMPANIES = frozenset([
 ])
 # Industries whose NAME holds a word the classification guard looks for, decided allowed: "film" here is
-# plastic film, and "media" sits inside "intermediate".
+# plastic film, "media" sits inside "intermediate", and industrial alcohol is a chemical, not a drink (the
+# operator cleared it from review on 2026-10-17; the six rules judge it like any other business).
 SHARIAH_ALLOWED_NAME_MATCHES = frozenset([
     "Packaging - Films",
     "Plastics - Sheets/Films",
     "Detergents/Intermediates",
     "Dyes - Intermediate",
+    "Chemicals - Organic - Alcohol Based",
 ])
 
 # ═══════════════════════════════════════════════════════════════
