@@ -37,6 +37,12 @@ S.FALL_CHECK_PCT); and broken data stops the run instead of vanishing with the j
 window: each copy's inputs against the feed's floors (copy_problem), and every window's prices and share counts
 (window_problem). A recipe that matches few stocks, or none, on good data is a real month and raises nothing.
 
+Since 2026-10-18 (the operator's demerger rule, before the first unseen window): the hand checks of the named falls,
+ui/scan_record_checks.json (S.load_checks), decide each one (fall_status). A stock a check shows with a demerger in a
+window leaves it like a split, its kept-in reading recorded beside (as_recorded); a checks file that is missing or
+that cannot be read stops the run, and so does a month about to be written final with a fall not yet checked — the
+stop says what the check must look like.
+
 The file is rewritten only when a measured value changed, so a quiet week makes no commit.
 """
 import contextlib
@@ -258,18 +264,26 @@ def shariah_reading(early: pd.DataFrame, ret: pd.Series, match: pd.Series):
     return out
 
 
-def fall_status(falls, matches, checks, start: str, end: str) -> tuple[list, list, list]:
-    """What the hand checks make of a window (the operator's demerger rule, 2026-10-18): (set_aside, checked, to_check).
-    set_aside: [id, ex-date] of each of `matches` (the ids with a return; every named fall is one) that a check shows
-    with a demerger after the window's start, up to its end (the earliest such), by id — a fact of the stock and the
-    dates, not of how far it fell, so a demerger a rally hid is set aside too; checked: each other named fall a check
-    covers with none (NSE's list read from on or before the start through on or after the end); to_check: the rest,
-    which keep their month from being written final (main)."""
+def demergers(checks, start: str, end: str) -> dict:
+    """{id: [ex-date, subject]} of each stock a check shows with a demerger after the window's start, up to its end
+    (the operator's demerger rule, 2026-10-18): the earliest such, in its list's own words. A fact of the stock and the
+    dates, not of how far it fell, so a demerger a rally hid counts too."""
     dem = {}
     for c in checks:
-        if c["demerger"] and start < c["demerger"] <= end:
-            dem[c["company_id"]] = min(c["demerger"], dem.get(c["company_id"], c["demerger"]))
-    set_aside = [[sid, dem[sid]] for sid in sorted(set(matches) & set(dem))]
+        d = c["demerger"]
+        if d and start < d <= end and (c["company_id"] not in dem or d < dem[c["company_id"]][0]):
+            dem[c["company_id"]] = [d, c["subject"]]
+    return dem
+
+
+def fall_status(falls, matches, checks, start: str, end: str) -> tuple[list, list, list]:
+    """What the hand checks make of a window (the operator's demerger rule, 2026-10-18): (set_aside, checked, to_check).
+    set_aside: [id, ex-date, subject] of each of `matches` (the ids with a return; every named fall is one) with a
+    demerger in the window (demergers), by id; checked: each other named fall a check covers with none (its exchange's
+    list read from on or before the start through on or after the end); to_check: the rest, which keep their month
+    from being written final (main)."""
+    dem = demergers(checks, start, end)
+    set_aside = [[sid, *dem[sid]] for sid in sorted(set(matches) & set(dem))]
     checked, to_check = [], []
     for sid, _ in falls:
         if sid in dem:
@@ -326,16 +340,17 @@ def measure_window(early: pd.DataFrame, late: pd.DataFrame, scan: dict, start: s
     headline is the survivors' record) and dropped_corp_action = matches whose share count moved.
     falls (2026-10-18) = [id, return %] of each match that fell S.FALL_CHECK_PCT or more, as shown to one decimal,
     with its share count unmoved, worst first: a demerger re-bases the price with the count unmoved, exactly like a
-    crash, so each is named for a check against NSE's list; it stays named whatever its check finds. Its bar is
-    recorded beside it (falls_pct), as every reading records its settings: a final window is written once.
+    crash, so each is named for a check against its exchange's list; it stays named whatever its check finds. Its bar
+    is recorded beside it (falls_pct), as every reading records its settings: a final window is written once.
     And net = the same reading on matches trading at least S.NET_MIN_CR a day, each charged
     S.NET_COST_PP; its median and beat rate only when it has MIN_N matches, else just its n.
 
     Hand checks (the operator's demerger rule, 2026-10-18): `checks` (S.load_checks) decide each fall (fall_status). A
-    match a check shows with a demerger inside the window, named fall or not, leaves every reading below, like a split
-    (set_aside: [id, ex-date]), and the readings with them kept in are recorded beside them (as_recorded: the
-    headline, hold and revenue_led, which the registered rules read); a fall checked with none stays (checked); the
-    rest are to_check, and main never writes such a window final.
+    stock a check shows with a demerger inside the window, named fall or not, leaves every reading below like a split:
+    from the matches and from the market's median, so a window reads one market in every scan. The matches among
+    them are named (set_aside: [id, ex-date, subject]) with the headline, hold and revenue_led read with them kept in
+    beside the readings (as_recorded, shown, never what a registered rule reads); a fall checked with none stays
+    (checked); the rest are to_check, and main never writes such a window final.
 
     vs_index (2026-10-08, December plan rule 23), when the two copies' benchmark tables give at least
     one index reading: those same liquid matches as ONE equal-weight portfolio — the mean return, which
@@ -361,9 +376,8 @@ def measure_window(early: pd.DataFrame, late: pd.DataFrame, scan: dict, start: s
                                                checks, start, end)
     head = dict(dropped_no_return=int((in_scan & ret.isna() & ~corp).sum()),
                 dropped_corp_action=int((in_scan & corp).sum()), falls=falls, falls_pct=S.FALL_CHECK_PCT)
-    out_ids = {s for s, _ in set_aside}
-    out = _readings(early, ret.where(~early["company_id"].astype(str).isin(out_ids)), in_scan, scan, start, end,
-                    bench_early, bench_late, head)
+    gone = early["company_id"].astype(str).isin(sorted(demergers(checks, start, end)))   # matches and market alike
+    out = _readings(early, ret.where(~gone), in_scan, scan, start, end, bench_early, bench_late, head)
     if out is None:
         return None
     if set_aside:
@@ -567,9 +581,15 @@ def main() -> int:
             if r is None:                    # too few matches with a return: no evidence, not recorded
                 continue
             if r.get("to_check") and b in done:          # about to be written final, a fall not yet checked
+                # What a check must look like, said where it is first needed (the review, 2026-10-18).
+                example = json.dumps({"company_id": r["to_check"][0], "from": a, "through": b, "demerger": None,
+                                      "subject": "", "checked_on": b})
                 broken.append(f"{scan['key']}: {a} → {b} is about to be written final with falls not yet checked: "
-                              f"{', '.join(r['to_check'])}. Check each against NSE's corporate-action list and "
-                              f"record it in ui/{S.CHECKS_PATH.name}.")
+                              f"{', '.join(r['to_check'])}. For each, read its exchange's corporate-action list "
+                              f"(NSE's, or BSE's for a BSE: id) on {b} or later, for ex-dates from {a} or earlier "
+                              f"through {b} or later, and add one check to ui/{S.CHECKS_PATH.name} — with no "
+                              f"demerger: {example}; with one, its ex-date as demerger and the list's own words for "
+                              f"it as subject.")
             rows.append({**r, "fingerprint": fps[scan["key"]]})
         rows = keep_final(old[scan["key"]], rows, dates, ev)
         updates[scan["key"]] = {"out_of_sample": rows}

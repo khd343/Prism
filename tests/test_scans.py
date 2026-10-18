@@ -1364,8 +1364,8 @@ def test_the_card_says_what_an_earlier_recipe_left_on_file():
 def test_the_card_names_each_fall_to_check_by_hand_and_nothing_without_one(monkeypatch):
     """The scan-records audit (2026-10-18): a demerger books like a crash, so the unseen record names each window's
     unexplained falls (scan_records_job.measure_window `falls`), the stock escaped, its fall and its months, to be
-    checked against NSE's list before the window is read. A window without one, or one measured before the list
-    existed, says nothing."""
+    checked against its exchange's list (2026-10-18: NSE's, or BSE's for a BSE: id) before the window is read. A
+    window without one, or one measured before the list existed, says nothing."""
     import html as _html
     rec = _record()
     rec["out_of_sample"] = [{**_w(), "falls": [["NSE:M&M", -41.0]]},
@@ -1373,7 +1373,7 @@ def test_the_card_names_each_fall_to_check_by_hand_and_nothing_without_one(monke
     raw = S.card_html(S.SCANS[0], 235, "measured", rec, selected=False, latest="03 Oct")
     full = _html.unescape(raw)
     assert "NSE:M&amp;M" in raw, "a company id is escaped"
-    assert "Check by hand" in full and "NSE's corporate-action list" in full
+    assert "Check by hand" in full and "its exchange's corporate-action list (NSE's, or BSE's for a BSE: id)" in full
     assert f"fell {S.FALL_CHECK_PCT:g}%+" in full and "NSE:M&M -41.0% (Oct→Nov)" in full
     assert "NSE:HEG -66.2% (Oct→Dec)" in full
     monkeypatch.setattr(S, "FALL_CHECK_PCT", 25.0)                  # the bar is read, never typed
@@ -1396,21 +1396,31 @@ def test_the_card_says_what_each_named_fall_came_to():
     import html as _html
     rec = _record()
     rec["out_of_sample"] = [{**_w(), "falls": [["NSE:HEG", -66.2], ["NSE:ABC", -40.0]], "falls_pct": 30.0,
-                             "set_aside": [["NSE:DEF", "2026-11-12"], ["NSE:HEG", "2026-11-07"]],
+                             "set_aside": [["BSE:DEF", "2026-11-12", "Scheme of Arrangement"],
+                                           ["NSE:HEG", "2026-11-07", "Demerger"]],
                              "checked": ["NSE:ABC"], "as_recorded": {"median_excess_pp": -0.4, "beat_pct": 49, "n": 121}},
                             {**_w(end="2026-12-04", final=False), "falls": [["NSE:XYZ", -35.0]], "falls_pct": 30.0,
                              "to_check": ["NSE:XYZ"]}]
     full = _html.unescape(S.card_html(S.SCANS[0], 235, "measured", rec, selected=False, latest="03 Oct"))
     assert "NSE:HEG -66.2% (Oct→Nov) set aside: a demerger ·" in full
     assert "NSE:ABC -40.0% (Oct→Nov) checked: no demerger" in full and "NSE:XYZ -35.0% (Oct→Dec) to check" in full
-    assert ("Set aside as a demerger on NSE's list, like a split: NSE:DEF ex 12 Nov, NSE:HEG ex 07 Nov (Oct→Nov; with "
-            "them kept in, the month read -0.4)") in full
-    rec["out_of_sample"][0].update(set_aside=[["NSE:HEG", "2026-11-07"]])
-    assert "NSE:HEG ex 07 Nov (Oct→Nov; with it kept in, the month read -0.4)" in _html.unescape(
-        S.card_html(S.SCANS[0], 235, "measured", rec, selected=False, latest="03 Oct"))
+    assert "Check by hand against its exchange's corporate-action list (NSE's, or BSE's for a BSE: id)" in full
+    assert ("Set aside as a demerger on its exchange's list, like a split: BSE:DEF ex 12 Nov "
+            "\"Scheme of Arrangement\"; NSE:HEG ex 07 Nov \"Demerger\" (Oct→Nov; with them kept in, the month read "
+            "-0.4)") in full
+    # Once nothing is left to check (every final month, by the job's own stop), the card no longer asks for it.
+    done = [rec["out_of_sample"][0]]
+    full = _html.unescape(S.card_html(S.SCANS[0], 235, "measured", {**rec, "out_of_sample": done}, selected=False,
+                                      latest="03 Oct"))
+    assert "Checked by hand against its exchange's corporate-action list" in full and "Check by hand" not in full
+    rec["out_of_sample"][0].update(set_aside=[["NSE:HEG", "2026-11-07", "Demerger <b>"]])
+    raw = S.card_html(S.SCANS[0], 235, "measured", rec, selected=False, latest="03 Oct")
+    assert "Demerger &lt;b&gt;" in raw, "the list's words are typed by hand: escaped"
+    assert "NSE:HEG ex 07 Nov \"Demerger <b>\" (Oct→Nov; with it kept in, the month read -0.4)" in _html.unescape(raw)
     rec["out_of_sample"] = [{**_w(), "falls": [["NSE:OLD", -50.0]], "falls_pct": 30.0}]
     full = _html.unescape(S.card_html(S.SCANS[0], 235, "measured", rec, selected=False, latest="03 Oct"))
     assert "NSE:OLD -50.0% (Oct→Nov) to check" in full and "Set aside as a demerger" not in full
+    assert "Check by hand" in full, "a window recorded before checks existed still asks for its check"
 
 
 def test_a_running_window_reads_so_far_on_both_cards():

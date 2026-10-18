@@ -566,8 +566,9 @@ def general_sections(scans=None) -> list:
             "re-measured, so a record cannot be tuned after the fact.",
             f"- **Checked by hand:** each unseen window names its matches that fell {S.FALL_CHECK_PCT:g}% or more "
             f"while their share count did not move. A crash looks like that, and so does a demerger, which hands "
-            f"holders the new company's shares and is no loss; only NSE's corporate-action list tells them apart, "
-            f"so check each named stock there and record it in {S.CHECKS_PATH.name}. A demerger recorded there is "
+            f"holders the new company's shares and is no loss; only the corporate-action list of its exchange (NSE's, "
+            f"or BSE's for a stock PRISM reads from BSE) tells them apart, so check each named stock there and "
+            f"record it in {S.CHECKS_PATH.name}. A demerger recorded there is "
             f"set aside from its month, like a split, whatever the stock fell, with what the month read with it "
             f"kept in shown beside it; a crash stays in. "
             f"A month is written final only once every fall it names is checked, so no rule counts an unchecked "

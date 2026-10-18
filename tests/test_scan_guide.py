@@ -317,12 +317,14 @@ def test_the_lists_the_guide_explains_are_read_not_typed(monkeypatch):
 
 def test_the_guide_explains_the_hand_check_with_its_own_bar(monkeypatch):
     """The scan-records audit and the operator's demerger rule (2026-10-18): the unseen record names each window's falls
-    to check against NSE's list, and the guide says what they are, why (a demerger books like a crash), where a check
-    is recorded, what a demerger does to its month (set aside, the kept-in reading beside it) and that no month is
-    written final unchecked — its bar read from ui_scans, never typed."""
+    to check against the stock's exchange's list (NSE's, or BSE's for a BSE: id — a fifth to a third of the scans'
+    matches are BSE-coded, and NSE's list cannot show them), and the guide says what they are, why (a demerger books
+    like a crash), where a check is recorded, what a demerger does to its month (set aside, the kept-in reading beside
+    it) and that no month is written final unchecked — its bar read from ui_scans, never typed."""
     t = " ".join(map(str, dict(G.general_sections())["How every scan is measured"]))
     assert "**Checked by hand:**" in t and f"fell {S.FALL_CHECK_PCT:g}% or more" in t
-    assert "demerger" in t and "NSE's corporate-action list" in t and S.CHECKS_PATH.name in t
+    assert "demerger" in t and S.CHECKS_PATH.name in t
+    assert "the corporate-action list of its exchange (NSE's, or BSE's for a stock PRISM reads from BSE)" in t
     assert "set aside from its month, like a split, whatever the stock fell" in t
     assert "written final only once every fall it names" in t
     from pathlib import Path

@@ -3,8 +3,9 @@
 # changed; a failed run (missing secret, unreadable archive, a recipe changed since its design-period
 # record, an archive whose newest copy is over 10 days old, a recipe changed after unseen windows were
 # recorded without moving its design date past them, and since 2026-10-18 a copy whose inputs fail the feed's
-# floors, a window where most of the market's share counts moved or most of a scan's matches lost a price)
-# fails visibly, writes nothing, and GitHub emails the repository owner.
+# floors, a window where most of the market's share counts moved or most of a scan's matches lost a price, a
+# missing or unreadable ui/scan_record_checks.json, and a month about to be written final with a named fall not
+# yet checked by hand) fails visibly, writes nothing, and GitHub emails the repository owner.
 name: Scan records
 
 on:
