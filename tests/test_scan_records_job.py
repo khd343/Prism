@@ -176,9 +176,10 @@ def test_the_checks_file_reads_none_when_absent_and_refuses_a_broken_one(tmp_pat
         f.write_text(text, encoding="utf-8")
         with pytest.raises(ValueError, match=word):                     # None: not JSON, json's own message
             S.load_checks(f)
+    one_day = {**good, "from": "2026-09-07", "through": "2026-09-07"}                  # its own ex-date, read alone
     f = tmp_path / "good.json"
-    f.write_text(json.dumps({"checks": [good]}), encoding="utf-8")
-    assert S.load_checks(f) == [good]
+    f.write_text(json.dumps({"checks": [good, one_day]}), encoding="utf-8")
+    assert S.load_checks(f) == [good, one_day]
 
 
 def test_the_committed_checks_file_reads():
@@ -216,7 +217,8 @@ def test_a_recorded_demerger_is_set_aside_whatever_the_stock_fell():
     late.loc[late["company_id"] == "S06", "close_price"] = 90.0
     checks = [_check("S05", "2026-10-31", "2026-11-28", "2026-11-07"),
               _check("S06", "2026-10-31", "2026-11-28", "2026-11-12"),
-              _check("S40", "2026-10-31", "2026-11-28", "2026-11-09")]                    # S40 is not a match
+              _check("S40", "2026-10-31", "2026-11-28", "2026-11-09"),                    # S40 is not a match
+              _check("S00", "2026-10-31", "2026-11-28", "2026-11-10")]                    # out already: it split
     r = J.measure_window(early, late, _SCAN, "2026-10-31", "2026-11-28", checks=checks)
     assert r["set_aside"] == [["S05", "2026-11-07"], ["S06", "2026-11-12"]] and r["falls"] == [["S05", -66.2]]
     assert (r["n"], r["beat_pct"], r["as_recorded"]["n"], r["as_recorded"]["beat_pct"]) == (30, 100, 32, 94)
