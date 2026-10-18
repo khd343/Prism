@@ -95,6 +95,31 @@ def test_measure_window_counts_what_the_headline_leaves_out():
     assert r["n"] == 30 and r["dropped_no_return"] == 2 and r["dropped_corp_action"] == 1
 
 
+def test_a_fall_the_share_count_does_not_explain_is_named_for_a_hand_check():
+    """The scan-records audit (2026-10-18): a demerger lowers the price while the share count stays, so
+    forward_returns cannot flag it and the window books the holder's new shares as a loss — NSE's own list showed
+    HEG -66.2% (7 Sep) and Triveni -33.6% (22 Jul), neither flagged, and nothing in PRISM's data tells one from a
+    crash. So each window names its matches that fell S.FALL_CHECK_PCT or more (as shown, to one decimal) with the
+    share count unmoved, worst first, to be checked against NSE's list. Not named: a split (already left out), a
+    fall short of the bar, a stock outside the scan."""
+    early, late = _frames(80)
+    early = pd.concat([early, early.iloc[[1]].assign(company_id="S99")], ignore_index=True)
+    late = pd.concat([late, late.iloc[[1]].assign(company_id="S99")], ignore_index=True)
+    price = dict(S01=33.8, S02=70.0, S03=70.1, S40=40.0, S00=20.0)   # S00 splits x5: re-based, left out
+    late["close_price"] = late["company_id"].map(price).fillna(late["close_price"])
+    r = J.measure_window(early, late, _SCAN, "2026-10-31", "2026-11-28")
+    assert S.FALL_CHECK_PCT == 30.0
+    assert r["falls"] == [["S01", -66.2], ["S02", -30.0]], "S03 fell 29.9%; S40 is not a match; S00 split"
+    assert r["dropped_corp_action"] == 1 and r["n"] == 30, "named, never removed: the reading is unchanged"
+
+
+def test_a_window_with_no_such_fall_names_none():
+    early, late = _frames(80)
+    early = pd.concat([early, early.iloc[[1]].assign(company_id="S99")], ignore_index=True)
+    late = pd.concat([late, late.iloc[[1]].assign(company_id="S99")], ignore_index=True)
+    assert J.measure_window(early, late, _SCAN, "2026-10-31", "2026-11-28")["falls"] == []
+
+
 def test_the_net_record_keeps_only_liquid_matches_and_charges_the_round_trip():
     early, late = _frames(80)
     early["vol_sma_20d"] = 100_000.0                          # x ₹100 = ₹1 Cr a day: under the floor
@@ -691,10 +716,12 @@ def test_the_job_reads_the_indices_beside_each_copy_and_records_the_comparison(m
 # the cards read the current recipe's windows only (ui_scans.record_state). A new recipe's own unseen record
 # may only start after the windows it replaces — its designer has seen them. And an archive that stops taking
 # copies used to leave the job green every Monday while the record silently stopped growing.
-def _job_on_fake_archive(monkeypatch, records, today=date(2026, 12, 7), fp="fp", designed_on="2026-10-06"):
-    """main() on a fake archive (DATES) with one toy scan; returns (written, windows measured)."""
+def _job_on_fake_archive(monkeypatch, records, today=date(2026, 12, 7), fp="fp", designed_on="2026-10-06",
+                         frames=None):
+    """main() on a fake archive (DATES) with one toy scan; returns (written, windows measured). `frames` replaces
+    the (month-end, later) copies."""
     import ui.ui_movers as M
-    early, late = _liquid_frames()
+    early, late = frames or _liquid_frames()
     stocks = {"2026-09-30": early, "2026-10-31": early, "2026-11-28": late, "2026-12-04": late}
     monkeypatch.setattr(J, "load_market", lambda source, files, sid: (stocks[sid.removeprefix("id-")].copy(),
                                                                        _bench({"NSE:NIF500MO50": 100.0})))
@@ -763,6 +790,50 @@ def test_the_archive_is_current_up_to_ten_days_and_stalled_after():
 def test_the_job_stops_loudly_when_the_archive_stalled(monkeypatch):
     with pytest.raises(SystemExit, match="stopped"):
         _job_on_fake_archive(monkeypatch, _records([]), today=date(2026, 12, 20))
+
+
+# ── A window the data cannot measure stops the run (2026-10-18, the scan-records audit) ───────────────────────
+# Before, measure_window's None (fewer than MIN_N matches with a return) dropped the window and the job stayed green:
+# a renamed column or a half-saved copy would have stopped a scan's record with nobody told. A recipe that matched
+# too few stocks in a real month (a crash can shrink 🚀) is no evidence and stays unrecorded, as designed — no alarm.
+def test_a_recipe_matching_nothing_or_most_matches_unpriced_points_at_the_data():
+    early, late = _frames(80)
+    nothing = early.assign(flag=0)
+    assert "matches no stock on the 2026-10-31 copy" in J.unmeasured_problem(nothing, late, _SCAN, "2026-10-31",
+                                                                             "2026-11-28")
+    half_gone = late[~late["company_id"].isin([f"S{i:02d}" for i in range(16)])]      # 14 of 30 matches priced
+    msg = J.unmeasured_problem(early, half_gone, _SCAN, "2026-10-31", "2026-11-28")
+    assert "only 14 of its 30 matches" in msg and "2026-11-28" in msg
+    assert J.unmeasured_problem(early, late[~late["company_id"].isin(["S01"])], _SCAN, "2026-10-31", "2026-11-28") == "", (
+        "29 of 30 priced: too few for evidence, and the data is fine")
+    few = early.assign(flag=[1] * 20 + [0] * 60)
+    assert J.unmeasured_problem(few, late, _SCAN, "2026-10-31", "2026-11-28") == "", "a real month with 20 matches"
+
+
+def test_a_copy_the_recipe_finds_nothing_on_stops_the_run(monkeypatch):
+    early, late = _liquid_frames()
+    with pytest.raises(SystemExit, match="toy: its recipe matches no stock on the 2026-10-31 copy"):
+        _job_on_fake_archive(monkeypatch, _records([]), frames=(early.assign(flag=0), late))
+
+
+def test_a_copy_that_lost_most_prices_stops_the_run(monkeypatch):
+    early, late = _liquid_frames()
+    gone = late[~late["company_id"].isin([f"S{i:02d}" for i in range(20)])]
+    with pytest.raises(SystemExit, match="toy: only 11 of its 31 matches"):
+        _job_on_fake_archive(monkeypatch, _records([]), frames=(early, gone))
+
+
+def test_a_baseline_copy_the_recipe_finds_nothing_on_stops_the_run(monkeypatch):
+    early, late = _liquid_frames()
+    with pytest.raises(SystemExit, match="toy: its recipe matches no stock on the 2026-11-28 copy"):
+        _job_on_fake_archive(monkeypatch, _records([]), frames=(early, late.assign(flag=0)))
+
+
+def test_a_month_with_too_few_matches_stays_unrecorded_with_no_alarm(monkeypatch):
+    early, late = _liquid_frames()
+    few = early.assign(flag=[1] * 20 + [0] * (len(early) - 20))
+    written, measured = _job_on_fake_archive(monkeypatch, _records([]), frames=(few, late))
+    assert measured and written["scans"]["toy"]["out_of_sample"] == [], "no evidence, not recorded, the run green"
 
 
 def test_a_design_date_on_the_last_old_windows_end_is_enough(monkeypatch):
@@ -868,10 +939,26 @@ def test_the_slice_holds_twenty_from_its_own_matches():
     assert r["shariah"]["hold"]["median_pp"] == pytest.approx(30.0 - S.NET_COST_PP)
 
 
+def test_the_slice_reads_only_stocks_kite_v2_can_buy_a_crore_a_day_or_more():
+    """The slice is Kite v2's universe (2026-10-18, its §4.1: Shariah, the four caps, traded value of ₹1 Cr a day or
+    more, `>=` as kite_v2/engine/select.py reads it), so the reading is about stocks the operator can buy. A match
+    trading ₹0.99 Cr a day leaves the slice AND the market it is measured against; one at exactly ₹1.00 Cr stays.
+    SME stocks cannot be told apart in PRISM's data (no lot size), and the reading says so."""
+    early, late = _slice_frames([(35, "Shariah", "Small Cap", 1, 130.0), (5, "Shariah", "Small Cap", 1, 50.0),
+                                 (40, "Shariah", "Mid Cap", 0, 110.0), (3, "Shariah", "Mid Cap", 0, 200.0)])
+    early.loc[35:39, "vol_sma_20d"] = 99_000.0                 # x ₹100 = ₹0.99 Cr a day: five matches out
+    early.loc[80:82, "vol_sma_20d"] = 99_000.0                 # three thin non-matches leave the market too
+    early.loc[0, "vol_sma_20d"] = 100_000.0                    # ₹1.00 Cr a day exactly: in
+    cut = J.measure_window(early, late, _SCAN, "2026-10-31", "2026-11-28")["shariah"]
+    assert (cut["min_cr"], cut["sme_excluded"]) == (S.SHARIAH_MIN_CR, False) and S.SHARIAH_MIN_CR == 1.0
+    assert (cut["n"], cut["pool"]) == (35, 75), "35 matches and 40 Mid caps; the eight thin stocks are out"
+    assert cut["median_excess_pp"] == pytest.approx(20.0), "30 - 10: the thin -50% matches never pull it down"
+
+
 @pytest.mark.parametrize("seed", [1, 2, 3])
 def test_the_slice_agrees_with_an_independent_recalculation(seed):
     rng = np.random.default_rng(seed)
-    n = 400
+    n = 800                     # 400 until the ₹1 Cr floor (2026-10-18) left some seeds' slices under MIN_N
     early = pd.DataFrame({
         "company_id": [f"R{i:03d}" for i in range(n)], "close_price": 100.0, "equity_shares": 10.0,
         "vol_sma_20d": rng.choice([10_000.0, 1_000_000.0], n),
@@ -881,8 +968,9 @@ def test_the_slice_agrees_with_an_independent_recalculation(seed):
     late = early[["company_id", "equity_shares"]].assign(close_price=100.0 * (1 + rng.normal(0.02, 0.15, n)))
     cut = J.measure_window(early, late, _SCAN, "2026-10-31", "2026-11-28")["shariah"]
     ret = (late["close_price"] / 100.0 - 1) * 100
-    pool = (early["shariah_status"] == "Shariah") & early["market_category"].isin(
+    pool = ((early["shariah_status"] == "Shariah") & early["market_category"].isin(
         ["Mega Cap", "Large Cap", "Mid Cap", "Small Cap"])
+            & (early["vol_sma_20d"] * early["close_price"] / 1e7 >= 1.0))     # Kite v2's ₹1 Cr a day (2026-10-18)
     sub = pool & (early["flag"] == 1)
     ex = ret - ret[pool].median()
     assert (cut["n"], cut["pool"]) == (int(sub.sum()), int(pool.sum()))
