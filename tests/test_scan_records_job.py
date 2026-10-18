@@ -726,7 +726,7 @@ def test_the_job_reads_the_indices_beside_each_copy_and_records_the_comparison(m
 # may only start after the windows it replaces — its designer has seen them. And an archive that stops taking
 # copies used to leave the job green every Monday while the record silently stopped growing.
 def _job_on_fake_archive(monkeypatch, records, today=date(2026, 12, 7), fp="fp", designed_on="2026-10-06",
-                         frames=None, copy_problem=None, written=None, measured=None):
+                         frames=None, copy_problem=None, written=None, measured=None, also=()):
     """main() on a fake archive (DATES) with one toy scan; returns (written, windows measured). `frames` replaces
     the (month-end, later) copies; `copy_problem` the input check (its own tests use a real-shaped copy: these
     toy copies carry none of the vendor's columns); `written` and `measured` may be passed in, to read after a
@@ -744,7 +744,9 @@ def _job_on_fake_archive(monkeypatch, records, today=date(2026, 12, 7), fp="fp",
         {"vintage_date": DATES, "spreadsheet_id": [f"id-{d}" for d in DATES]}))
     toy = {"key": "toy", "emoji": "T", "name": "Toy", "mask": lambda d: d["flag"] == 1,
            "benchmark": "NSE:NIF500MO50", "designed_on": designed_on}
-    monkeypatch.setattr(S, "SCANS", (toy,))
+    monkeypatch.setattr(S, "SCANS", (toy, *({**toy, "key": k, "name": k} for k in also)))     # `also`: more toys
+    for k in also:
+        records["scans"].setdefault(k, {"fingerprint": fp, "windows": [], "out_of_sample": []})
     monkeypatch.setattr(S, "recipe_fingerprint", lambda scan: fp)
     monkeypatch.setattr(S, "load_records", lambda: records)
     measured = [] if measured is None else measured
@@ -892,9 +894,11 @@ def test_share_counts_moved_across_the_market_stop_the_run(monkeypatch):
     moved = late.index % 5 < 3
     late.loc[moved, "equity_shares"] = late.loc[moved, "equity_shares"] * 100
     written = {}
-    with pytest.raises(SystemExit, match="60% of the market's share counts moved"):
-        _job_on_fake_archive(monkeypatch, _records([]), frames=(early, late), written=written)
+    with pytest.raises(SystemExit, match="60% of the market's share counts moved") as stop:
+        _job_on_fake_archive(monkeypatch, _records([]), frames=(early, late), written=written, also=("twin",))
     assert written == {}
+    assert str(stop.value).count("share counts moved") == 2, (
+        "one line per problem: two windows (to 28 Nov and to 4 Dec), not one per scan as well (two scans here)")
 
 
 def test_a_month_the_recipe_matches_nothing_on_good_data_stays_green(monkeypatch):
