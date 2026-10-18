@@ -29,6 +29,7 @@ import hashlib
 import html
 import inspect
 import json
+import re
 import textwrap
 from datetime import date, timedelta
 from pathlib import Path
@@ -49,6 +50,13 @@ from ui.ui_liquidity import (HEADER as LIQUIDITY_HEADER, LIQUIDITY_STEPS, ORDER_
                              order_guide, order_size_lakh, step_label)
 
 RECORDS_PATH = Path(__file__).with_name("scan_records.json")
+# The hand checks of the falls the records name (2026-10-18, the operator's demerger rule): each one the corporate-
+# action list of a stock's exchange (NSE's, or BSE's for a BSE: id, which NSE's cannot show) read over a span of
+# ex-dates, and the demerger found there, if any, in the list's own words (subject). Kept by hand; the job only reads
+# it (load_checks), and a month is written final only once every fall it names is covered by one.
+CHECKS_PATH = Path(__file__).with_name("scan_record_checks.json")
+CHECK_FIELDS = ("company_id", "from", "through", "demerger", "subject", "checked_on")
+CHECK_ID = re.compile(r"(NSE|BSE):[^\s:]+")       # a company_id as the job spells it: every id on the sheet is one
 # The net record (2026-10-07): what a buyer could have kept. Only matches trading at least NET_MIN_CR
 # a day count, and each is charged NET_COST_PP for the round trip (0.5% in + 0.5% out: taxes, spread,
 # impact). The benchmark (the market median) is charged nothing, so the cost side errs conservative.
@@ -87,9 +95,10 @@ SHARIAH_MIN_CR = 1.0
 # core.forward_returns cannot flag it, and a window books the holder's new shares as a loss: NSE's own list showed
 # HEG -66.2% (ex 7 Sep) and Triveni -33.6% (ex 22 Jul), neither flagged, and the vendor's own returns fell with them,
 # so nothing in PRISM's data tells a demerger from a crash. Each unseen window names its matches that fell
-# FALL_CHECK_PCT or more with the share count unmoved, to be checked against NSE's list before the window is read.
-# Named, never removed: a real crash is evidence too. HEG was a 🌱 match on 17 Jun: a window across its demerger
-# books -56.4% (543.40 -> 237.05 by 19 Sep, 192,977,530 shares at both ends).
+# FALL_CHECK_PCT or more with the share count unmoved, to be checked against its exchange's list (NSE's, or BSE's for
+# a BSE: id) before the window is read. Every fall stays named: a real crash stays in, as evidence, and a demerger its
+# check confirms is set aside (the operator's rule, CHECKS_PATH). HEG was a 🌱 match on 17 Jun: a window across its
+# demerger books -56.4% (543.40 -> 237.05 by 19 Sep, 192,977,530 shares at both ends).
 FALL_CHECK_PCT = 30.0
 HOLD_K = 20
 HOLD_MAX_PRICE = 5000.0
@@ -118,6 +127,10 @@ ORDER_RULE = dict(scans=("playbook", "leaders"), windows=4, min_avg_pct=70.0, mi
 # itself: nothing reaches the list, the feed or Kite; a hold makes it a candidate for Kite's next design, tested in
 # that design's own windows.
 REVENUE_LED_RULE = dict(scans=("playbook",), windows=3, min_gap_pp=1.0, min_n=30)
+# Both checks read months whose named falls were all checked by hand (the operator, 2026-10-18, before any unseen
+# window): a demerger confirmed on its exchange's list is set aside from its month, like a split (the kept-in reading
+# is recorded beside it, but the rules read the month without it), and a month is written final only once every fall
+# it names is checked (scan_records_job), so neither rule ever decides on a month with an unchecked named fall.
 RECORD_VERSION = 2
 # The day the recipes were chosen. Every window that STARTS on or after it is out of sample: data
 # nobody looked at while choosing. Windows before it are the design-period record (in sample).
@@ -550,6 +563,53 @@ def load_records(path: Path = RECORDS_PATH) -> dict:
     if not isinstance(data, dict) or data.get("version") != RECORD_VERSION or "scans" not in data:
         return {}
     return data
+
+
+def load_checks(path: Path = CHECKS_PATH) -> list:
+    """The hand checks (CHECKS_PATH). Anything it cannot read raises — a misread check would hold a month for ever or
+    let an unchecked one through, so the job stops instead (main): a missing file (OSError: unverifiable, not "no
+    checks", or every recorded demerger of a stock that fell less than the bar would be dropped), and ValueError for
+    a check without every field of CHECK_FIELDS, a company_id not spelled as the job spells it (CHECK_ID), a date
+    that is not a real YYYY-MM-DD, `from` after `through`, `through` after the day the list was read (checked_on: a
+    check vouches only for dates its list could show then), a demerger (or null) outside them, or a demerger without
+    the list's own words for it (subject). A BOM, as PowerShell writes one, is read."""
+    doc = json.loads(Path(path).read_text(encoding="utf-8-sig"))
+    checks = doc.get("checks") if isinstance(doc, dict) else None
+    if not isinstance(checks, list):
+        raise ValueError("no list of checks under 'checks'")
+    for c in checks:
+        if not isinstance(c, dict):
+            raise ValueError(f"a check is not an object: {c!r}")
+        missing = [f for f in CHECK_FIELDS if f not in c]
+        if missing:
+            raise ValueError(f"a check misses {missing}: {c}")
+        if not isinstance(c["company_id"], str) or not CHECK_ID.fullmatch(c["company_id"]):
+            raise ValueError(f"a check's company_id is not an id as the job spells it (NSE:… or BSE:…): {c}")
+        frm, through, read = _check_date(c, "from"), _check_date(c, "through"), _check_date(c, "checked_on")
+        if frm > through:
+            raise ValueError(f"a check's from is after its through: {c}")
+        if through > read:
+            raise ValueError(f"a check's through is after the day it was read (checked_on): {c}")
+        if c["demerger"] is not None and not frm <= _check_date(c, "demerger") <= through:
+            raise ValueError(f"a check's demerger is outside the dates it read: {c}")
+        if not isinstance(c["subject"], str):
+            raise ValueError(f"a check's subject is not text: {c}")
+        if c["demerger"] is not None and not c["subject"].strip():
+            raise ValueError(f"a check's demerger needs its subject, the list's own words for it: {c}")
+    return checks
+
+
+def _check_date(c: dict, field: str) -> date:
+    """A check's date, in the one form the job compares as text (YYYY-MM-DD): fromisoformat alone also reads 20260907
+    or a week date, which would sort wrongly against the window's dates."""
+    v = c[field]
+    try:
+        d = date.fromisoformat(v) if isinstance(v, str) else None
+    except ValueError:
+        d = None
+    if d is None or d.isoformat() != v:
+        raise ValueError(f"a check's {field} is not a YYYY-MM-DD date: {c}")
+    return d
 
 
 def record_state(records: dict, scan: dict):
@@ -995,7 +1055,8 @@ def _bars(ws, c, esc, out_of_sample: bool = False) -> str:
 def _unseen_notes(rec: dict, ws, c: dict, esc) -> str:
     """Under the unseen record (2026-10-15): what "so far" means when a window is still running, how many windows
     an earlier recipe left on file, not counted here, and (2026-10-18) each window's falls to check by hand against
-    NSE's list, since a demerger books like a crash (FALL_CHECK_PCT). Nothing when none applies."""
+    its exchange's list, since a demerger books like a crash (FALL_CHECK_PCT), with what each check found and every
+    stock set aside. Nothing when none applies."""
     muted = f'font-size:0.66rem;color:{c["text_muted"]};margin-top:2px;'
     out = ""
     if any(not w.get("final") for w in ws):
@@ -1006,14 +1067,42 @@ def _unseen_notes(rec: dict, ws, c: dict, esc) -> str:
         out += (f'<div style="{muted}">{k} unseen window{"s" if k != 1 else ""} measured with an earlier recipe '
                 f'{"are" if k != 1 else "is"} kept on file, not counted here: this recipe\'s record starts '
                 f'after it was chosen.</div>')
-    falls = [f"{esc(str(i))} {float(v):+.1f}% ({_month_span(w)})" for w in ws for i, v in (w.get("falls") or [])]
-    if falls:
-        # Each window's own bar (falls_pct); one recorded before the bar was stored reads today's.
+    words = [(f"{esc(str(i))} {float(v):+.1f}% ({_month_span(w)})", _fall_word(w, str(i)))
+             for w in ws for i, v in (w.get("falls") or [])]
+    if words:
+        # Each window's own bar (falls_pct); one recorded before the bar was stored reads today's. "Check" only while
+        # one is left to check: every final month has none (the job's stop), and its card must not ask for one.
         bars = sorted({float(w.get("falls_pct", FALL_CHECK_PCT)) for w in ws if w.get("falls")})
-        out += (f'<div style="{muted}">Check by hand against NSE\'s corporate-action list before reading these '
-                f'windows: fell {" or ".join(f"{b:g}%+" for b in bars)} with no change in share count, which a '
-                f'demerger shows as well as a crash: {" · ".join(falls)}</div>')
+        lead = "Check" if any(word == "to check" for _, word in words) else "Checked"
+        out += (f'<div style="{muted}">{lead} by hand against its exchange\'s corporate-action list (NSE\'s, or '
+                f'BSE\'s for a BSE: id): fell {" or ".join(f"{b:g}%+" for b in bars)} with no change in share '
+                f'count, which a demerger shows as well as a crash. A demerger is set aside from its month, like a '
+                f'split; a month is written final only once all its falls are checked: '
+                f'{" · ".join(f"{fell} {word}" for fell, word in words)}</div>')
+    gone = [_set_aside_words(w, esc) for w in ws if w.get("set_aside")]
+    if gone:
+        out += (f'<div style="{muted}">Set aside as a demerger on its exchange\'s list, like a split: '
+                f'{" · ".join(gone)}</div>')
     return out
+
+
+def _set_aside_words(w: dict, esc) -> str:
+    """A month's stocks set aside (the operator's demerger rule, 2026-10-18), named fall or not: each with its ex-date
+    and the list's own words, typed by hand and so escaped, then what the month read with them kept in — one reading a
+    month, never said of one stock when two were set aside."""
+    names = "; ".join(f'{esc(str(i))} ex {date.fromisoformat(d):%d %b} "{esc(str(s))}"' for i, d, s in w["set_aside"])
+    them = "it" if len(w["set_aside"]) == 1 else "them"
+    return (f"{names} ({_month_span(w)}; with {them} kept in, the month read "
+            f"{float(w['as_recorded']['median_excess_pp']):+.1f})")
+
+
+def _fall_word(w: dict, sid: str) -> str:
+    """What a named fall came to (the operator's demerger rule, 2026-10-18): set aside as a demerger (named again
+    below with its ex-date and the list's words), checked with none, or still to check — also for a window recorded
+    before checks."""
+    if sid in {s for s, *_ in (w.get("set_aside") or [])}:
+        return "set aside: a demerger"
+    return "checked: no demerger" if sid in (w.get("checked") or []) else "to check"
 
 
 def _first_unseen_due(scan: dict = None) -> str:

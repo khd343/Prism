@@ -125,6 +125,171 @@ def test_a_window_with_no_such_fall_names_none():
     assert J.measure_window(early, late, _SCAN, "2026-10-31", "2026-11-28")["falls"] == []
 
 
+# ── A demerger confirmed on its exchange's list is set aside (the operator, 2026-10-18) ───────────────────────────
+# Approved before any unseen window: a stock the hand check finds with a demerger leaves the month's readings, like a
+# split, with the readings it would have given kept beside them; a fall checked with no demerger stays; one not yet
+# checked is named to check, and the job never writes such a month final (its stop is tested with main(), below).
+def _check(sid, frm, through, demerger=None, subject=None):
+    """One hand check, read on its last day (checked_on = through)."""
+    return {"company_id": sid, "from": frm, "through": through, "demerger": demerger,
+            "subject": subject if subject is not None else ("Demerger" if demerger else ""), "checked_on": through}
+
+
+def test_each_fall_is_set_aside_checked_or_to_check():
+    falls = [["A", -60.0], ["B", -40.0], ["C", -35.0], ["D", -31.0], ["E", -30.0], ["F", -30.0]]
+    matches = ["A", "B", "C", "D", "E", "F", "G", "H"]                     # every fall is a match with a return
+    checks = [_check("A", "2026-10-31", "2026-11-28", "2026-11-28"),       # ex-date on the window's last day: in
+              _check("B", "2026-10-31", "2026-11-28", "2026-10-31"),       # ex-date on its first: before the window
+              _check("C", "2026-09-30", "2026-12-31"),                     # read across the window: no demerger
+              _check("D", "2026-11-01", "2026-11-28"),                     # read from a day after the start: not all
+              _check("F", "2026-09-30", "2026-11-27"),                     # read to a day before the end: not all
+              _check("G", "2026-10-31", "2026-11-28", "2026-11-03"),       # a match that fell less: set aside too
+              _check("H", "2026-11-29", "2026-12-31", "2026-12-02"),       # a match's demerger after the window
+              _check("Z", "2026-10-31", "2026-11-28", "2026-11-04")]       # not a match: nothing to set aside
+    assert J.fall_status(falls, matches, checks, "2026-10-31", "2026-11-28") == (
+        [["A", "2026-11-28", "Demerger"], ["G", "2026-11-03", "Demerger"]], ["B", "C"], ["D", "E", "F"])
+    twice = checks + [_check("A", "2026-11-01", "2026-11-20", "2026-11-05", "Scheme of Arrangement")]   # the earliest
+    assert J.fall_status(falls, matches, twice, "2026-10-31", "2026-11-28")[0][0] == [
+        "A", "2026-11-05", "Scheme of Arrangement"], "the earliest demerger, named in the list's own words"
+    assert J.fall_status([], matches[6:], checks, "2026-10-31", "2026-11-28") == (
+        [["G", "2026-11-03", "Demerger"]], [], [])
+
+
+def test_the_checks_file_must_be_there_and_anything_it_cannot_read_stops_the_job(tmp_path):
+    """ui/scan_record_checks.json, kept by hand: a check the job misread would hold a month for ever or let an
+    unchecked one through, so anything it cannot read stops it (main turns the error into a stop, tested below). A
+    missing file is unverifiable, not "no checks": it would drop every recorded demerger of a stock that fell less
+    than the bar (CLAUDE.md, unverifiable is not passed)."""
+    with pytest.raises(OSError):
+        S.load_checks(tmp_path / "none.json")
+    good = _check("NSE:HEG", "2026-08-22", "2026-09-19", "2026-09-07")
+    renamed = {**{k: v for k, v in good.items() if k != "subject"}, "nse": "Demerger"}      # the field's old name
+    cases = {"{not json": None,
+             # A check vouches only for dates its exchange's list could show when it was read: a later `through`
+             # would pass a demerger announced after the read as "no demerger", in a month written once.
+             json.dumps({"checks": [{**good, "through": "2026-09-25"}]}): "through is after the day it was read",
+             json.dumps({"checks": [{**good, "checked_on": "yesterday"}]}): "checked_on is not a YYYY-MM-DD",
+             json.dumps({"checks": [{**good, "checked_on": None}]}): "checked_on is not a YYYY-MM-DD",
+             # The set-aside is recorded with the list's own words, so a dividend's date typed as a demerger shows.
+             json.dumps({"checks": [{**good, "subject": " "}]}): "demerger needs its subject",
+             json.dumps({"checks": [{**good, "subject": None}]}): "subject is not text",
+             json.dumps({"checks": [renamed]}): r"misses \['subject'\]",
+             # An id as the job spells it, the exchange first: a bare or padded one would never match its stock.
+             json.dumps({"checks": [{**good, "company_id": "HEG"}]}): "company_id is not an id",
+             json.dumps({"checks": [{**good, "company_id": "NSE:HEG "}]}): "company_id is not an id",
+             json.dumps({"checks": [{**good, "company_id": "MCX:HEG"}]}): "company_id is not an id",
+             json.dumps({"rows": [good]}): "no list of checks",
+             json.dumps({"checks": {"NSE:HEG": good}}): "no list of checks",                 # a map, not a list
+             json.dumps({"checks": [["NSE:HEG"]]}): "not an object",
+             json.dumps({"checks": [{"company_id": "NSE:HEG", "from": "2026-08-22"}]}): r"misses \['through'",
+             json.dumps({"checks": [{**good, "through": "2026-09-31"}]}): "through is not a YYYY-MM-DD",  # no such day
+             json.dumps({"checks": [{**good, "from": "2026-09-20"}]}): "from is after its through",     # backwards
+             json.dumps({"checks": [{**good, "demerger": "2026-10-01"}]}): "demerger is outside",       # not read
+             # The job compares the dates as text, so only YYYY-MM-DD is read: Python also takes 20260907 or a
+             # week date, and a demerger so written would sort outside its month and pass as "no demerger".
+             json.dumps({"checks": [{**good, "demerger": "20260907"}]}): "demerger is not a YYYY-MM-DD",
+             json.dumps({"checks": [{**good, "from": "2026-W34-6"}]}): "from is not a YYYY-MM-DD",
+             json.dumps({"checks": [{**good, "from": 20260822}]}): "from is not a YYYY-MM-DD",
+             json.dumps({"checks": [{**good, "company_id": 500003}]}): "company_id is not an id",       # ids are text
+             json.dumps({"checks": [{**good, "company_id": ""}]}): "company_id is not an id"}
+    for i, (text, word) in enumerate(cases.items()):
+        f = tmp_path / f"bad{i}.json"
+        f.write_text(text, encoding="utf-8")
+        with pytest.raises(ValueError, match=word):                     # None: not JSON, json's own message
+            S.load_checks(f)
+    one_day = {**good, "from": "2026-09-07", "through": "2026-09-07", "checked_on": "2026-09-07"}  # its own day
+    none = _check("BSE:AVL", "2026-08-22", "2026-09-19")                               # BSE's list, no demerger
+    later = {**good, "checked_on": "2026-10-02"}                                       # read after its span
+    f = tmp_path / "good.json"
+    f.write_text("﻿" + json.dumps({"checks": [good, one_day, none, later]}), encoding="utf-8")  # PowerShell's BOM
+    assert S.load_checks(f) == [good, one_day, none, later]
+
+
+def test_the_committed_checks_file_reads_and_its_template_is_a_check(tmp_path):
+    """The file says how to write a check: its template, copied, must read — a first entry written from it is never
+    refused for a field the description forgot."""
+    assert S.CHECKS_PATH.name == "scan_record_checks.json" and S.CHECKS_PATH.exists()
+    assert isinstance(S.load_checks(), list)
+    doc = json.loads(S.CHECKS_PATH.read_text(encoding="utf-8"))
+    assert set(doc["template"]) == set(S.CHECK_FIELDS) and all(f in doc["about"] for f in S.CHECK_FIELDS)
+    f = tmp_path / "copied.json"
+    f.write_text(json.dumps({"checks": [doc["template"]]}), encoding="utf-8")
+    assert S.load_checks(f) == [doc["template"]]
+
+
+def _demerged_frames():
+    """31 matches rise 20% (S00 splits out; S98 and S99 stand in), S05 among them drops to 33.80; the rest stay flat."""
+    early, late = _frames(80)
+    extra = ["S98", "S99"]
+    early = pd.concat([early, early.iloc[[1, 1]].assign(company_id=extra)], ignore_index=True)
+    late = pd.concat([late, late.iloc[[1, 1]].assign(company_id=extra)], ignore_index=True)
+    late.loc[late["company_id"] == "S05", "close_price"] = 33.8
+    return early, late
+
+
+def test_a_confirmed_demerger_leaves_the_readings_and_stays_named():
+    early, late = _demerged_frames()
+    r = J.measure_window(early, late, _SCAN, "2026-10-31", "2026-11-28",
+                         checks=[_check("S05", "2026-10-31", "2026-11-28", "2026-11-07")])
+    assert r["set_aside"] == [["S05", "2026-11-07", "Demerger"]] and r["falls"] == [["S05", -66.2]], (
+        "named, in the list's own words, with its raw fall")
+    assert (r["n"], r["beat_pct"], r["dropped_no_return"]) == (30, 100, 0), "out of the readings, not 'no price'"
+    assert (r["as_recorded"]["n"], r["as_recorded"]["beat_pct"]) == (31, 97), "the reading with it kept, beside"
+    assert {"median_excess_pp", "hold"} <= set(r["as_recorded"]) and "to_check" not in r
+
+
+def test_a_recorded_demerger_is_set_aside_whatever_the_stock_fell():
+    """A demerger is a fact of the stock and the dates, not of how far it fell: one a check records inside the window
+    leaves the readings, named fall or not (S06 fell 10%, a rally can hide a demerger), as Kite v2's (22) sets aside
+    every stock NSE's list shows; one outside the scan is no match to set aside."""
+    early, late = _demerged_frames()
+    early = pd.concat([early, early.iloc[[1]].assign(company_id="S97")], ignore_index=True)
+    late = pd.concat([late, late.iloc[[1]].assign(company_id="S97")], ignore_index=True)    # 32 matches
+    late.loc[late["company_id"] == "S06", "close_price"] = 90.0
+    checks = [_check("S05", "2026-10-31", "2026-11-28", "2026-11-07"),
+              _check("S06", "2026-10-31", "2026-11-28", "2026-11-12"),
+              _check("S40", "2026-10-31", "2026-11-28", "2026-11-09"),                    # S40 is not a match
+              _check("S00", "2026-10-31", "2026-11-28", "2026-11-10")]                    # out already: it split
+    r = J.measure_window(early, late, _SCAN, "2026-10-31", "2026-11-28", checks=checks)
+    assert r["set_aside"] == [["S05", "2026-11-07", "Demerger"], ["S06", "2026-11-12", "Demerger"]]
+    assert r["falls"] == [["S05", -66.2]]
+    assert (r["n"], r["beat_pct"], r["as_recorded"]["n"], r["as_recorded"]["beat_pct"]) == (30, 100, 32, 94)
+    assert "to_check" not in r and "checked" not in r
+
+
+def test_a_demerger_leaves_the_market_too_like_a_split():
+    """A split's return leaves the market median of every scan; so does a demerger's (the review, 2026-10-18), or one
+    window would read against a different benchmark in each scan, depending on whether the stock is a match there.
+    31 matches rise 20%, 30 others stay flat and X, a demerger, falls 50%: with X in the market the median is 10,
+    without it 20 — and both scans, X a match in one, read the same market."""
+    ids = [f"M{i:02d}" for i in range(31)] + [f"N{i:02d}" for i in range(30)] + ["X"]
+    early = pd.DataFrame({"company_id": ids, "close_price": 100.0, "equity_shares": 10.0,
+                          "flag": [1] * 31 + [0] * 31})
+    late = early.assign(close_price=[120.0] * 31 + [100.0] * 30 + [50.0])
+    without_x = {"key": "toy", "mask": lambda d: d["flag"] == 1}
+    with_x = {"key": "toy2", "mask": lambda d: (d["flag"] == 1) | (d["company_id"] == "X")}
+    dem = [_check("X", "2026-10-31", "2026-11-28", "2026-11-09")]
+    kept = J.measure_window(early, late, without_x, "2026-10-31", "2026-11-28")
+    assert (kept["median_excess_pp"], kept["beat_pct"]) == (10.0, 100), "X in the market: a median of 10"
+    for scan in (without_x, with_x):
+        r = J.measure_window(early, late, scan, "2026-10-31", "2026-11-28", checks=dem)
+        assert (r["median_excess_pp"], r["beat_pct"], r["n"]) == (0.0, 0, 31), scan["key"]
+    assert "set_aside" not in J.measure_window(early, late, without_x, "2026-10-31", "2026-11-28", checks=dem), (
+        "only a match is named set aside; another stock leaves the market unnamed, as a split does")
+
+
+def test_a_fall_checked_with_no_demerger_stays_and_an_unchecked_one_is_named():
+    early, late = _demerged_frames()
+    for covering in (_check("S05", "2026-10-30", "2026-11-28"),                     # read across it: none
+                     _check("S05", "2026-10-31", "2026-12-31", "2026-12-15")):     # one, but after the window
+        clean = J.measure_window(early, late, _SCAN, "2026-10-31", "2026-11-28", checks=[covering])
+        assert (clean["n"], clean["beat_pct"]) == (31, 97) and clean["checked"] == ["S05"]
+        assert not {"set_aside", "as_recorded", "to_check"} & set(clean)
+    for checks in ([], [_check("S05", "2026-11-01", "2026-12-31", "2026-12-15")]):    # none, or not across it
+        r = J.measure_window(early, late, _SCAN, "2026-10-31", "2026-11-28", checks=checks)
+        assert r["to_check"] == ["S05"] and r["n"] == 31 and "set_aside" not in r
+
+
 def test_the_net_record_keeps_only_liquid_matches_and_charges_the_round_trip():
     early, late = _frames(80)
     early["vol_sma_20d"] = 100_000.0                          # x ₹100 = ₹1 Cr a day: under the floor
@@ -726,15 +891,19 @@ def test_the_job_reads_the_indices_beside_each_copy_and_records_the_comparison(m
 # may only start after the windows it replaces — its designer has seen them. And an archive that stops taking
 # copies used to leave the job green every Monday while the record silently stopped growing.
 def _job_on_fake_archive(monkeypatch, records, today=date(2026, 12, 7), fp="fp", designed_on="2026-10-06",
-                         frames=None, copy_problem=None, written=None, measured=None, also=()):
+                         frames=None, copy_problem=None, written=None, measured=None, also=(), latest=None,
+                         checks=()):
     """main() on a fake archive (DATES) with one toy scan; returns (written, windows measured). `frames` replaces
-    the (month-end, later) copies; `copy_problem` the input check (its own tests use a real-shaped copy: these
-    toy copies carry none of the vendor's columns); `written` and `measured` may be passed in, to read after a
-    stop."""
+    the (month-end, later) copies and `latest` the 4 Dec copy (else the later one); `copy_problem` the input check
+    (its own tests use a real-shaped copy: these toy copies carry none of the vendor's columns); `checks` the hand
+    checks the job reads (a list, or a function standing in for S.load_checks); `written` and `measured` may be
+    passed in, to read after a stop."""
     import ui.ui_movers as M
     early, late = frames or _liquid_frames()
     monkeypatch.setattr(J, "copy_problem", copy_problem or (lambda frame, day: ""))
-    stocks = {"2026-09-30": early, "2026-10-31": early, "2026-11-28": late, "2026-12-04": late}
+    monkeypatch.setattr(S, "load_checks", checks if callable(checks) else (lambda: list(checks)))
+    stocks = {"2026-09-30": early, "2026-10-31": early, "2026-11-28": late,
+              "2026-12-04": late if latest is None else latest}
     monkeypatch.setattr(J, "load_market", lambda source, files, sid: (stocks[sid.removeprefix("id-")].copy(),
                                                                        _bench({"NSE:NIF500MO50": 100.0})))
     monkeypatch.setattr(J, "run_scoring_pipeline", lambda df: df)
@@ -911,6 +1080,73 @@ def test_an_empty_baseline_on_good_data_stays_green(monkeypatch):
     early, late = _liquid_frames()
     written, _ = _job_on_fake_archive(monkeypatch, _records([]), frames=(early, late.assign(flag=0)))
     assert written["scans"]["toy"]["members_at_latest"] == [] and written["scans"]["toy"]["out_of_sample"]
+
+
+def _falling_frames():
+    """_liquid_frames and one more liquid match (S98), with S07 falling 70% by the later copy: 31 matches, so the
+    month still has 30 with S07 set aside."""
+    early, late = _liquid_frames()
+    early = pd.concat([early, early.iloc[[1]].assign(company_id="S98")], ignore_index=True)
+    late = pd.concat([late, late.iloc[[1]].assign(company_id="S98")], ignore_index=True)
+    late.loc[late["company_id"] == "S07", "close_price"] = 30.0
+    return early, late
+
+
+def test_a_month_is_never_written_final_with_a_fall_not_yet_checked(monkeypatch):
+    """The demerger rule's guard (the operator, 2026-10-18): a month about to be written final (its end copy's month is
+    over) that names a fall no check covers stops the run, naming the stock and the file, and nothing is written —
+    so no registered rule ever counts a month whose fall might be a demerger, and no later month is counted first."""
+    written = {}
+    with pytest.raises(SystemExit, match=r"toy: 2026-10-31 → 2026-11-28 is about to be written final.*S07.*"
+                                         r"scan_record_checks\.json") as stop:
+        _job_on_fake_archive(monkeypatch, _records([]), frames=_falling_frames(), written=written)
+    assert written == {}
+    # The stop says what a check must look like (the review, 2026-10-18): this is the first time anyone fills the file.
+    said = str(stop.value)
+    assert "its exchange's corporate-action list (NSE's, or BSE's for a BSE: id)" in said
+    assert "on 2026-11-28 or later, for ex-dates from 2026-10-31 or earlier through 2026-11-28 or later" in said
+    example = json.loads(said[said.index("{"):said.index("}") + 1])
+    assert example == {"company_id": "S07", "from": "2026-10-31", "through": "2026-11-28", "demerger": None,
+                       "subject": "", "checked_on": "2026-11-28"} and set(example) == set(S.CHECK_FIELDS)
+
+
+def test_a_checked_fall_lets_the_month_be_written_set_aside_or_kept(monkeypatch):
+    dem = [_check("S07", "2026-10-31", "2026-12-04", "2026-11-16")]
+    written, _ = _job_on_fake_archive(monkeypatch, _records([]), frames=_falling_frames(), checks=dem)
+    final = next(w for w in written["scans"]["toy"]["out_of_sample"] if w["final"])
+    assert final["set_aside"] == [["S07", "2026-11-16", "Demerger"]] and final["as_recorded"]["n"] == final["n"] + 1
+    written, _ = _job_on_fake_archive(monkeypatch, _records([]), frames=_falling_frames(),
+                                      checks=[_check("S07", "2026-10-31", "2026-12-04")])
+    final = next(w for w in written["scans"]["toy"]["out_of_sample"] if w["final"])
+    assert final["checked"] == ["S07"] and ["S07", -70.0] in final["falls"]
+    assert "set_aside" not in final and "to_check" not in final
+
+
+def test_a_running_month_with_a_fall_to_check_is_written_running(monkeypatch):
+    """Only a final month waits for its check: one still running is re-measured each week, so it is written as it
+    stands, its fall named to check."""
+    early, late = _liquid_frames()
+    newest = late.copy()
+    newest.loc[newest["company_id"] == "S07", "close_price"] = 30.0
+    written, _ = _job_on_fake_archive(monkeypatch, _records([]), frames=(early, late), latest=newest)
+    oos = {w["end"]: w for w in written["scans"]["toy"]["out_of_sample"]}
+    assert oos["2026-12-04"]["to_check"] == ["S07"] and not oos["2026-12-04"]["final"]
+    assert "to_check" not in oos["2026-11-28"] and oos["2026-11-28"]["final"]
+
+
+def test_a_checks_file_the_job_cannot_read_stops_the_run(monkeypatch, tmp_path):
+    real = S.load_checks                                      # before the fake archive stands in for it
+
+    def unreadable():
+        raise ValueError("Expecting value: line 1 column 1 (char 0)")
+    written = {}
+    with pytest.raises(SystemExit, match=r"scan_record_checks\.json cannot be read"):
+        _job_on_fake_archive(monkeypatch, _records([]), written=written, checks=unreadable)
+    assert written == {}
+    # A missing file: unverifiable, so the run stops too (it read as "no checks" before the review, 2026-10-18).
+    with pytest.raises(SystemExit, match=r"scan_record_checks\.json cannot be read"):
+        _job_on_fake_archive(monkeypatch, _records([]), written=written, checks=lambda: real(tmp_path / "gone.json"))
+    assert written == {}
 
 
 def test_a_month_with_too_few_matches_stays_unrecorded_with_no_alarm(monkeypatch):
