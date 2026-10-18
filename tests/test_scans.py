@@ -1361,6 +1361,33 @@ def test_the_card_says_what_an_earlier_recipe_left_on_file():
     assert "1 unseen window measured with an earlier recipe" in full
 
 
+def test_the_card_names_each_fall_to_check_by_hand_and_nothing_without_one(monkeypatch):
+    """The scan-records audit (2026-10-18): a demerger books like a crash, so the unseen record names each window's
+    unexplained falls (scan_records_job.measure_window `falls`), the stock escaped, its fall and its months, to be
+    checked against NSE's list before the window is read. A window without one, or one measured before the list
+    existed, says nothing."""
+    import html as _html
+    rec = _record()
+    rec["out_of_sample"] = [{**_w(), "falls": [["NSE:M&M", -41.0]]},
+                            {**_w(end="2026-12-04", final=False), "falls": [["NSE:HEG", -66.2]]}]
+    raw = S.card_html(S.SCANS[0], 235, "measured", rec, selected=False, latest="03 Oct")
+    full = _html.unescape(raw)
+    assert "NSE:M&amp;M" in raw, "a company id is escaped"
+    assert "Check by hand" in full and "NSE's corporate-action list" in full
+    assert f"fell {S.FALL_CHECK_PCT:g}%+" in full and "NSE:M&M -41.0% (Oct→Nov)" in full
+    assert "NSE:HEG -66.2% (Oct→Dec)" in full
+    monkeypatch.setattr(S, "FALL_CHECK_PCT", 25.0)                  # the bar is read, never typed
+    assert "fell 25%+" in _html.unescape(S.card_html(S.SCANS[0], 235, "measured", rec, selected=False,
+                                                     latest="03 Oct"))
+    monkeypatch.setattr(S, "FALL_CHECK_PCT", 30.0)
+    rec["out_of_sample"] = [{**_w(), "falls": [["NSE:HEG", -66.2]], "falls_pct": 20.0}]
+    own = _html.unescape(S.card_html(S.SCANS[0], 235, "measured", rec, selected=False, latest="03 Oct"))
+    assert "fell 20%+" in own and "fell 30%+" not in own, "a window is read with the bar it was measured with"
+    for quiet in ([{**_w(), "falls": []}], [_w()]):
+        rec["out_of_sample"] = quiet
+        assert "Check by hand" not in S.card_html(S.SCANS[0], 235, "measured", rec, selected=False, latest="03 Oct")
+
+
 def test_a_running_window_reads_so_far_on_both_cards():
     import html as _html
     rec = _record()

@@ -31,6 +31,12 @@ MAX_ARCHIVE_AGE_DAYS fails the run (archive_problem) — before, it stayed green
 Since 2026-10-17 every unseen window is also read on the stocks the operator buys: the scan's Shariah matches
 among Mega, Large, Mid and Small caps, against the same slice of the market (shariah_reading).
 
+Since 2026-10-18 (an audit before the first unseen window): that slice is Kite v2's universe, ₹1 Cr a day or more
+(S.SHARIAH_MIN_CR); each window names its falls to check by hand, since a demerger books like a crash (`falls`,
+S.FALL_CHECK_PCT); and broken data stops the run instead of vanishing with the job green or being frozen as a final
+window: each copy's inputs against the feed's floors (copy_problem), and every window's prices and share counts
+(window_problem). A recipe that matches few stocks, or none, on good data is a real month and raises nothing.
+
 The file is rewritten only when a measured value changed, so a quiet week makes no commit.
 """
 import contextlib
@@ -217,21 +223,25 @@ def revenue_led_reading(early: pd.DataFrame, excess: pd.Series, match: pd.Series
 
 
 def shariah_reading(early: pd.DataFrame, ret: pd.Series, match: pd.Series):
-    """The window read on the stocks the operator buys (2026-10-17): the scan's matches that are Shariah and a Mega,
-    Large, Mid or Small cap (S.HOLD_CAPS, the caps "Holding 20" uses), measured against the SAME slice of the
-    market — every Shariah stock of those caps with a return — so a month that lifts Shariah stocks as a group
-    never reads as scan skill. The label is matched by equality ("Shariah" sits inside "Non-Shariah"); Review and
-    Doubtful never count. Its size and the slice's; once it has MIN_N matches, its median excess and beat rate,
-    the liquid reading after the round trip (with those matches as one equal-weight portfolio, to set beside the
-    window's index readings) and holding S.HOLD_K of them. None when the copy carries no label: a reading on
-    absent evidence would be invented. The job re-scores every archive copy with today's engine, which writes
-    the label; the design-period snapshots predate it, so the slice starts with the first unseen window."""
+    """The window read on the stocks the operator buys (2026-10-17): the scan's matches in Kite v2's universe —
+    Shariah, a Mega, Large, Mid or Small cap (S.HOLD_CAPS, the caps "Holding 20" uses) and trading S.SHARIAH_MIN_CR
+    a day or more (its §4.1 floor, 2026-10-18) — measured against the SAME slice of the market, every such stock with
+    a return, so a month that lifts Shariah stocks as a group never reads as scan skill. The label is matched by
+    equality ("Shariah" sits inside "Non-Shariah"); Review and Doubtful never count. SME stocks stay in, as the
+    reading says (sme_excluded): PRISM's data has no lot size to tell them apart. Its size and the slice's; once it
+    has MIN_N matches, its median excess and beat rate, the liquid reading after the round trip (with those matches
+    as one equal-weight portfolio, to set beside the window's index readings) and holding S.HOLD_K of them. None
+    when the copy carries no label: a reading on absent evidence would be invented. The job re-scores every archive
+    copy with today's engine, which writes the label; the design-period snapshots predate it, so the slice starts
+    with the first unseen window."""
     if "shariah_status" not in early.columns:
         return None
     cap = early["market_category"] if "market_category" in early.columns else pd.Series(np.nan, index=early.index)
-    pool = early["shariah_status"].eq(SHARIAH_STATUSES[0]) & cap.isin(S.HOLD_CAPS) & ret.notna()
+    pool = (early["shariah_status"].eq(SHARIAH_STATUSES[0]) & cap.isin(S.HOLD_CAPS)
+            & (S.traded_value_cr(early) >= S.SHARIAH_MIN_CR) & ret.notna())
     sub = match & pool
-    out = dict(caps=list(S.HOLD_CAPS), n=int(sub.sum()), pool=int(pool.sum()))
+    out = dict(caps=list(S.HOLD_CAPS), min_cr=S.SHARIAH_MIN_CR, sme_excluded=False, n=int(sub.sum()),
+               pool=int(pool.sum()))
     if out["n"] < MIN_N:
         return out
     excess = ret - ret[pool].median()
@@ -257,6 +267,10 @@ def measure_window(early: pd.DataFrame, late: pd.DataFrame, scan: dict, start: s
     Beside the headline (2026-10-07), what it leaves out: dropped_no_return = matches with no price at
     the end (delisted, suspended or missing: their fate is unknown, so they cannot be scored and the
     headline is the survivors' record) and dropped_corp_action = matches whose share count moved.
+    falls (2026-10-18) = [id, return %] of each match that fell S.FALL_CHECK_PCT or more, as shown to one decimal,
+    with its share count unmoved, worst first: a demerger re-bases the price with the count unmoved, exactly like a
+    crash, so each is named for a check against NSE's list. Named, never removed: the readings are unchanged. Its
+    bar is recorded beside it (falls_pct), as every reading records its settings: a final window is written once.
     And net = the same reading on matches trading at least S.NET_MIN_CR a day, each charged
     S.NET_COST_PP; its median and beat rate only when it has MIN_N matches, else just its n.
 
@@ -286,12 +300,16 @@ def measure_window(early: pd.DataFrame, late: pd.DataFrame, scan: dict, start: s
         kept = excess[liquid] - S.NET_COST_PP
         net.update(median_excess_pp=round(float(kept.median()), 1),
                    beat_pct=int(round(float((kept > 0).mean() * 100))))
+    fell = match & (ret.round(1) <= -S.FALL_CHECK_PCT)
+    falls = (pd.DataFrame({"id": early["company_id"].astype(str), "ret": ret.round(1)})[fell]
+             .sort_values(["ret", "id"]).to_numpy().tolist())
     out = dict(start=start, end=end, days=_days(start, end),
                median_excess_pp=round(float(excess[match].median()), 1),
                beat_pct=int(round(float((excess[match] > 0).mean() * 100))),
                n=int(match.sum()),
                dropped_no_return=int((in_scan & ret.isna() & ~corp).sum()),
                dropped_corp_action=int((in_scan & corp).sum()),
+               falls=[[str(i), float(v)] for i, v in falls], falls_pct=S.FALL_CHECK_PCT,
                net=net)
     out["hold"] = hold_reading(early, ret, match)
     cut = shariah_reading(early, ret, match)
@@ -307,6 +325,39 @@ def measure_window(early: pd.DataFrame, late: pd.DataFrame, scan: dict, start: s
             vs["portfolio_pp"] = round(float(ret[liquid].mean()) - S.NET_COST_PP, 2)
         out["vs_index"] = vs
     return out
+
+
+def copy_problem(frame: pd.DataFrame, day: str) -> str:
+    """Why a downloaded copy cannot be measured, in words for the failure email; '' when it can (2026-10-18). The feed's
+    own check of every input the three scans read (ui.playbook_feed_job.check_recipe_inputs: a floor under the lowest
+    share of each input on all 24 archive copies, and the two scores that must vary), so a renamed or thinned column
+    stops the run instead of quietly shrinking a scan. The INPUTS are tested, never the outcome: a recipe that matches
+    no stock on good data is a real month (🚀's stop is absolute, so a crash can empty it). Imported here, not at the
+    top: that module imports this one."""
+    from ui.playbook_feed_job import check_recipe_inputs
+    bad = [f"{r.name}: {r.detail}" for r in check_recipe_inputs(frame) if r.status == "fail"]
+    return f"the {day} copy fails its input check — {'; '.join(bad)}" if bad else ""
+
+
+def window_problem(early: pd.DataFrame, late: pd.DataFrame, scan: dict, start: str, end: str) -> str:
+    """Why a window's DATA cannot be trusted, in words for the failure email; '' when it can (2026-10-18). Read on every
+    window, measured or not, so a broken copy can neither vanish (measure_window's None) nor be frozen as a final
+    window on the stocks it kept: most of the market's share counts moved between the two copies (a unit or column
+    change, not corporate actions — the most in-sample was 7% over 108 days — and forward_returns would set those
+    stocks aside), or most of the scan's matches have no price at one end (a copy lost rows or prices). A recipe that
+    matches few stocks, or none, is no data problem: copy_problem tests each copy's inputs instead."""
+    fr = forward_returns(early, late, "company_id")
+    moved = float(fr["corp_action"].mean()) if len(fr) else 0.0
+    if moved > 0.5:
+        return (f"{start} → {end}: {moved:.0%} of the market's share counts moved between the two copies — a unit or "
+                f"column change, not corporate actions. Check both copies.")
+    in_scan = scan["mask"](early)
+    n = int(in_scan.sum())
+    priced = int((in_scan & early["company_id"].isin(set(fr["company_id"]))).sum())
+    if priced * 2 < n:
+        return (f"{scan['key']}: only {priced} of its {n} matches on the {start} copy have a price on both it and the "
+                f"{end} copy, so a copy lost rows or prices — check them.")
+    return ""
 
 
 def _window_key(w: dict) -> tuple:
@@ -447,10 +498,19 @@ def main() -> int:
         stocks, benches[d] = load_market("sheet", None, ids[d])
         frames[d] = run_scoring_pipeline(stocks)
         print(f"  scored {d}: {len(frames[d])} stocks, {len(benches[d])} benchmark indices")
+    # A copy whose inputs fail the feed's floors stops the run before anything is measured (2026-10-18).
+    broken = [p for d in need if (p := copy_problem(frames[d], d))]
+    if broken:
+        raise SystemExit("\n".join(broken))
     updates = {}
     for scan in S.SCANS:
-        rows = [{**r, "fingerprint": fps[scan["key"]]} for a, b in windows[scan["key"]]
-                if (r := measure_window(frames[a], frames[b], scan, a, b, benches[a], benches[b]))]
+        rows = []
+        for a, b in windows[scan["key"]]:
+            broken.append(window_problem(frames[a], frames[b], scan, a, b))      # every window, measured or not
+            r = measure_window(frames[a], frames[b], scan, a, b, benches[a], benches[b])
+            if r is None:                    # too few matches with a return: no evidence, not recorded
+                continue
+            rows.append({**r, "fingerprint": fps[scan["key"]]})
         rows = keep_final(old[scan["key"]], rows, dates, ev)
         updates[scan["key"]] = {"out_of_sample": rows}
         if base:
@@ -462,6 +522,9 @@ def main() -> int:
             tail = (f" · vs {BENCHMARK_INDICES[code]} {vs['portfolio_pp'] - idx:+.1f}pp after costs"
                     if idx is not None and "portfolio_pp" in vs else "")
             print(f"   {r['start']} -> {r['end']} {r['median_excess_pp']:+.1f}pp beat {r['beat_pct']}% n {r['n']}{tail}")
+    broken = list(dict.fromkeys(p for p in broken if p))      # one line per problem, not one per scan
+    if broken:                               # nothing written: next week's run measures the same windows again
+        raise SystemExit("\n".join(broken))
     top = {"generated": date.today().isoformat(), "engine_version": ev}
     if base:
         top["members_date"] = base

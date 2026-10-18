@@ -315,6 +315,17 @@ def test_the_lists_the_guide_explains_are_read_not_typed(monkeypatch):
     assert "a new reason" in _guide("compounder") and "a new reason" not in _guide("playbook")
 
 
+def test_the_guide_explains_the_hand_check_with_its_own_bar(monkeypatch):
+    """The scan-records audit (2026-10-18): the unseen record names each window's falls to check against NSE's list,
+    and the guide says what they are, why (a demerger books like a crash) and that they are named, never removed —
+    its bar read from ui_scans, never typed."""
+    t = " ".join(map(str, dict(G.general_sections())["How every scan is measured"]))
+    assert "**Checked by hand:**" in t and f"fell {S.FALL_CHECK_PCT:g}% or more" in t
+    assert "demerger" in t and "NSE's corporate-action list" in t and "Named, never removed." in t
+    monkeypatch.setattr(S, "FALL_CHECK_PCT", 25.0)
+    assert "fell 25% or more" in " ".join(map(str, dict(G.general_sections())["How every scan is measured"]))
+
+
 def test_every_table_view_and_every_measured_flag_is_explained():
     assert sorted(G.VIEW_WHAT) == sorted(S.SCAN_VIEWS), "a new or renamed view needs its words here"
     assert sorted(G.FLAG_WHAT) == sorted(S.MEASURED_FLAGS), "a new measured flag needs its plain words here"
