@@ -159,6 +159,7 @@ def test_the_checks_file_reads_none_when_absent_and_refuses_a_broken_one(tmp_pat
     good = _check("NSE:HEG", "2026-08-22", "2026-09-19", "2026-09-07")
     cases = {"{not json": None,
              json.dumps({"rows": [good]}): "no list of checks",
+             json.dumps({"checks": {"NSE:HEG": good}}): "no list of checks",                 # a map, not a list
              json.dumps({"checks": [["NSE:HEG"]]}): "not an object",
              json.dumps({"checks": [{"company_id": "NSE:HEG", "from": "2026-08-22"}]}): r"misses \['through'",
              json.dumps({"checks": [{**good, "through": "2026-09-31"}]}): "through is not a YYYY-MM-DD",  # no such day
