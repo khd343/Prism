@@ -567,7 +567,7 @@ def general_sections(scans=None) -> list:
             f"- **Checked by hand:** each unseen window names its matches that fell {S.FALL_CHECK_PCT:g}% or more "
             f"while their share count did not move. A crash looks like that, and so does a demerger, which hands "
             f"holders the new company's shares and is no loss; only NSE's corporate-action list tells them apart, "
-            f"so each named stock is checked there before the window is read. Named, never removed.",
+            f"so check each named stock there before reading the window. Named, never removed.",
             f"- **After costs:** only matches trading ₹{S.NET_MIN_CR:g} Cr+ a day, less a {S.NET_COST_PP:g}-point "
             f"round trip for brokerage, taxes and slippage. Each unseen window also compares those stocks, held "
             f"as one equal-weight portfolio, with the scan's index fund after the fund's "

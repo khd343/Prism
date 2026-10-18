@@ -112,6 +112,9 @@ def test_a_fall_the_share_count_does_not_explain_is_named_for_a_hand_check():
     assert r["falls"] == [["S05", -66.2], ["S02", -30.0], ["S04", -30.0]], (
         "worst first, a tie by id; S04's -29.96% shows as -30.0%, so it is named; S03 fell 29.9%; S40 is not a "
         "match; S00 split")
+    assert r["falls_pct"] == S.FALL_CHECK_PCT, ("the window records its own bar, as every other reading records its "
+                                                "settings: a final window is written once, and a later bar must "
+                                                "never be read back into it")
     assert r["dropped_corp_action"] == 1 and r["n"] == 30, "named, never removed: the reading is unchanged"
 
 
@@ -190,10 +193,12 @@ def test_the_committed_records_carry_the_baseline_and_the_unseen_section():
         for w in r["out_of_sample"]:
             assert w["start"] > S.scan_designed_on(scan) and w["days"] >= S.scan_horizon(scan)
             assert w["n"] >= J.MIN_N
-            assert {"net", "dropped_no_return", "dropped_corp_action"} <= set(w), (
-                "the job records what each unseen window leaves out")
+            assert {"net", "dropped_no_return", "dropped_corp_action", "falls", "falls_pct"} <= set(w), (
+                "the job records what each unseen window leaves out, and the falls it names with their bar")
         if "study" not in r:                   # 🌱's baseline arrives with the job's first run
-            assert r["members_at_latest"], f"{scan['key']}: no 🆕 baseline"
+            # A list, possibly empty since 2026-10-18: a recipe can match nothing on a good copy (a crash empties 🚀,
+            # whose stop is absolute); a broken copy is stopped by its inputs (scan_records_job.copy_problem).
+            assert isinstance(r.get("members_at_latest"), list), f"{scan['key']}: no 🆕 baseline"
 
 
 # ── 4b. The secret is read however it was pasted ───────────────────────────────────────────────────
@@ -645,6 +650,7 @@ def test_the_job_never_remeasures_a_final_window(monkeypatch, on_file):
     monkeypatch.setattr(J, "load_market", lambda source, files, sid: (stocks[sid.removeprefix("id-")].copy(),
                                                                        _bench({"NSE:NIF500MO50": 100.0})))
     monkeypatch.setattr(J, "run_scoring_pipeline", lambda df: df)
+    monkeypatch.setattr(J, "copy_problem", lambda frame, day: "")      # toy copies: the input check has its own tests
     monkeypatch.setattr(J, "engine_version", lambda: "new-engine")
     monkeypatch.setattr(M, "load_index", lambda _id: pd.DataFrame(
         {"vintage_date": DATES, "spreadsheet_id": [f"id-{d}" for d in DATES]}))
@@ -689,6 +695,7 @@ def test_the_job_reads_the_indices_beside_each_copy_and_records_the_comparison(m
 
     monkeypatch.setattr(J, "load_market", fake_load)
     monkeypatch.setattr(J, "run_scoring_pipeline", lambda df: df)
+    monkeypatch.setattr(J, "copy_problem", lambda frame, day: "")      # toy copies: the input check has its own tests
     monkeypatch.setattr(M, "load_index", lambda _id: pd.DataFrame(
         {"vintage_date": dates, "spreadsheet_id": [f"id-{d}" for d in dates]}))
     toy = {"key": "toy", "emoji": "T", "name": "Toy", "mask": lambda d: d["flag"] == 1,
@@ -719,11 +726,14 @@ def test_the_job_reads_the_indices_beside_each_copy_and_records_the_comparison(m
 # may only start after the windows it replaces — its designer has seen them. And an archive that stops taking
 # copies used to leave the job green every Monday while the record silently stopped growing.
 def _job_on_fake_archive(monkeypatch, records, today=date(2026, 12, 7), fp="fp", designed_on="2026-10-06",
-                         frames=None):
+                         frames=None, copy_problem=None, written=None, measured=None):
     """main() on a fake archive (DATES) with one toy scan; returns (written, windows measured). `frames` replaces
-    the (month-end, later) copies."""
+    the (month-end, later) copies; `copy_problem` the input check (its own tests use a real-shaped copy: these
+    toy copies carry none of the vendor's columns); `written` and `measured` may be passed in, to read after a
+    stop."""
     import ui.ui_movers as M
     early, late = frames or _liquid_frames()
+    monkeypatch.setattr(J, "copy_problem", copy_problem or (lambda frame, day: ""))
     stocks = {"2026-09-30": early, "2026-10-31": early, "2026-11-28": late, "2026-12-04": late}
     monkeypatch.setattr(J, "load_market", lambda source, files, sid: (stocks[sid.removeprefix("id-")].copy(),
                                                                        _bench({"NSE:NIF500MO50": 100.0})))
@@ -737,7 +747,8 @@ def _job_on_fake_archive(monkeypatch, records, today=date(2026, 12, 7), fp="fp",
     monkeypatch.setattr(S, "SCANS", (toy,))
     monkeypatch.setattr(S, "recipe_fingerprint", lambda scan: fp)
     monkeypatch.setattr(S, "load_records", lambda: records)
-    measured, written = [], {}
+    measured = [] if measured is None else measured
+    written = {} if written is None else written
     real = J.measure_window
     monkeypatch.setattr(J, "measure_window", lambda *a, **k: measured.append((a[3], a[4])) or real(*a, **k))
     monkeypatch.setattr(J, "write", lambda rec: written.update(rec))
@@ -794,41 +805,108 @@ def test_the_job_stops_loudly_when_the_archive_stalled(monkeypatch):
         _job_on_fake_archive(monkeypatch, _records([]), today=date(2026, 12, 20))
 
 
-# ── A window the data cannot measure stops the run (2026-10-18, the scan-records audit) ───────────────────────
-# Before, measure_window's None (fewer than MIN_N matches with a return) dropped the window and the job stayed green:
-# a renamed column or a half-saved copy would have stopped a scan's record with nobody told. A recipe that matched
-# too few stocks in a real month (a crash can shrink 🚀) is no evidence and stays unrecorded, as designed — no alarm.
-def test_a_recipe_matching_nothing_or_most_matches_unpriced_points_at_the_data():
+# ── Broken data stops the run; a thin month does not (2026-10-18, the scan-records audit and its review) ──────
+# Before, measure_window's None (fewer than MIN_N matches with a return) dropped the window and the job stayed green,
+# and a copy that lost most of a big scan's prices was measured on the survivors, then frozen as final. The DATA is
+# tested now, never the outcome: each copy's inputs against the feed's measured floors, and on every window, measured
+# or not, whether most of the scan's matches lost a price or most of the market's share counts moved. A recipe that
+# matches few stocks, or none, on good data is a real month: 🚀's stop is absolute, so a crash can empty it.
+def _big_frames(n=200, matches=100):
+    """`matches` stocks match the toy recipe and rise 20%, the rest stay flat; all trade ₹10 Cr a day."""
+    early = pd.DataFrame({"company_id": [f"B{i:03d}" for i in range(n)], "close_price": 100.0, "equity_shares": 10.0,
+                          "vol_sma_20d": 1_000_000.0, "flag": [1] * matches + [0] * (n - matches)})
+    late = early.copy()
+    late["close_price"] = np.r_[np.full(matches, 120.0), np.full(n - matches, 100.0)]
+    return early, late
+
+
+def test_a_window_whose_data_cannot_be_trusted_is_named_and_a_thin_month_is_not():
     early, late = _frames(80)
-    nothing = early.assign(flag=0)
-    assert "matches no stock on the 2026-10-31 copy" in J.unmeasured_problem(nothing, late, _SCAN, "2026-10-31",
-                                                                             "2026-11-28")
     half_gone = late[~late["company_id"].isin([f"S{i:02d}" for i in range(16)])]      # 14 of 30 matches priced
-    msg = J.unmeasured_problem(early, half_gone, _SCAN, "2026-10-31", "2026-11-28")
+    msg = J.window_problem(early, half_gone, _SCAN, "2026-10-31", "2026-11-28")
     assert "only 14 of its 30 matches" in msg and "2026-11-28" in msg
-    assert J.unmeasured_problem(early, late[~late["company_id"].isin(["S01"])], _SCAN, "2026-10-31", "2026-11-28") == "", (
-        "29 of 30 priced: too few for evidence, and the data is fine")
-    few = early.assign(flag=[1] * 20 + [0] * 60)
-    assert J.unmeasured_problem(few, late, _SCAN, "2026-10-31", "2026-11-28") == "", "a real month with 20 matches"
+    units = late.assign(equity_shares=late["equity_shares"] * 100)                   # a unit change, every stock
+    assert "100% of the market's share counts moved" in J.window_problem(early, units, _SCAN, "2026-10-31",
+                                                                         "2026-11-28")
+    for thin in (early.assign(flag=0), early.assign(flag=[1] * 20 + [0] * 60)):       # none, or 20: a real month
+        assert J.window_problem(thin, late, _SCAN, "2026-10-31", "2026-11-28") == ""
+    assert J.window_problem(early, late[~late["company_id"].isin(["S01"])], _SCAN, "2026-10-31", "2026-11-28") == "", (
+        "29 of 30 priced and one split in 80 stocks: the data is fine")
 
 
-def test_a_copy_the_recipe_finds_nothing_on_stops_the_run(monkeypatch):
-    early, late = _liquid_frames()
-    with pytest.raises(SystemExit, match="toy: its recipe matches no stock on the 2026-10-31 copy"):
-        _job_on_fake_archive(monkeypatch, _records([]), frames=(early.assign(flag=0), late))
+def _healthy_copy(n=200) -> pd.DataFrame:
+    """A copy carrying every input the feed's floors guard, each on every stock, and two scores that vary."""
+    from ui.playbook_feed_job import RECIPE_FLOORS
+    df = pd.DataFrame({c: np.arange(n, dtype=float) + 1 for c in RECIPE_FLOORS})
+    df["sector"] = "Banks"
+    df["breakout_score"] = df["improvement_score"] = np.arange(n) * 0.5
+    return df
+
+
+def test_every_input_check_failure_of_a_copy_is_named():
+    """The feed's own check of every input the scans read (playbook_feed_job.check_recipe_inputs: floors under the
+    lowest share on all 24 archive copies, and the two scores that must vary): a renamed or thinned column stops the
+    run instead of quietly shrinking a scan."""
+    ok = _healthy_copy()
+    assert J.copy_problem(ok, "2026-10-30") == ""
+    thin = ok.assign(sector=[None] * 40 + ["Banks"] * 160)                   # 80% filled, under its 90% floor
+    msg = J.copy_problem(thin, "2026-10-30")
+    assert msg.startswith("the 2026-10-30 copy fails its input check") and "sector 80.0%" in msg
+    assert "improvement_score" in J.copy_problem(ok.assign(improvement_score=50.0), "2026-10-30"), "a flat score"
+    assert "pat 0.0%" in J.copy_problem(ok.drop(columns="pat"), "2026-10-30"), "a column gone is empty, not skipped"
+
+
+def test_a_copy_that_fails_its_input_check_stops_the_run_before_anything_is_measured(monkeypatch):
+    written, measured = {}, []
+    bad = lambda frame, day: "the 2026-11-28 copy fails its input check — sector 0.0%" if day == "2026-11-28" else ""  # noqa
+    with pytest.raises(SystemExit, match="the 2026-11-28 copy fails its input check"):
+        _job_on_fake_archive(monkeypatch, _records([]), copy_problem=bad, written=written, measured=measured)
+    assert (written, measured) == ({}, []), "nothing measured, nothing written: next week tries again"
 
 
 def test_a_copy_that_lost_most_prices_stops_the_run(monkeypatch):
     early, late = _liquid_frames()
     gone = late[~late["company_id"].isin([f"S{i:02d}" for i in range(20)])]
+    written = {}
     with pytest.raises(SystemExit, match="toy: only 11 of its 31 matches"):
-        _job_on_fake_archive(monkeypatch, _records([]), frames=(early, gone))
+        _job_on_fake_archive(monkeypatch, _records([]), frames=(early, gone), written=written)
+    assert written == {}
 
 
-def test_a_baseline_copy_the_recipe_finds_nothing_on_stops_the_run(monkeypatch):
+def test_a_measured_window_that_lost_most_prices_stops_the_run(monkeypatch):
+    """The review's case: 40 of 100 matches survive, enough to measure, so before this the run stayed green and the
+    window was frozen as final on the survivors."""
+    early, late = _big_frames()
+    gone = late[~late["company_id"].isin([f"B{i:03d}" for i in range(40, 100)])]
+    written = {}
+    with pytest.raises(SystemExit, match="toy: only 40 of its 100 matches"):
+        _job_on_fake_archive(monkeypatch, _records([]), frames=(early, gone), written=written)
+    assert written == {}
+
+
+def test_share_counts_moved_across_the_market_stop_the_run(monkeypatch):
+    """A unit or column change in the share count makes most of the market a 'corporate action': before this, the
+    window vanished (every match set aside) or was measured on the stocks left over. 60% moved here; the most
+    measured in-sample was 7% over 108 days."""
+    early, late = _big_frames()
+    moved = late.index % 5 < 3
+    late.loc[moved, "equity_shares"] = late.loc[moved, "equity_shares"] * 100
+    written = {}
+    with pytest.raises(SystemExit, match="60% of the market's share counts moved"):
+        _job_on_fake_archive(monkeypatch, _records([]), frames=(early, late), written=written)
+    assert written == {}
+
+
+def test_a_month_the_recipe_matches_nothing_on_good_data_stays_green(monkeypatch):
     early, late = _liquid_frames()
-    with pytest.raises(SystemExit, match="toy: its recipe matches no stock on the 2026-11-28 copy"):
-        _job_on_fake_archive(monkeypatch, _records([]), frames=(early, late.assign(flag=0)))
+    written, measured = _job_on_fake_archive(monkeypatch, _records([]), frames=(early.assign(flag=0), late))
+    assert measured and written["scans"]["toy"]["out_of_sample"] == [], "no evidence, not recorded, no alarm"
+
+
+def test_an_empty_baseline_on_good_data_stays_green(monkeypatch):
+    early, late = _liquid_frames()
+    written, _ = _job_on_fake_archive(monkeypatch, _records([]), frames=(early, late.assign(flag=0)))
+    assert written["scans"]["toy"]["members_at_latest"] == [] and written["scans"]["toy"]["out_of_sample"]
 
 
 def test_a_month_with_too_few_matches_stays_unrecorded_with_no_alarm(monkeypatch):
@@ -954,7 +1032,8 @@ def test_the_slice_reads_only_stocks_kite_v2_can_buy_a_crore_a_day_or_more():
     cut = J.measure_window(early, late, _SCAN, "2026-10-31", "2026-11-28")["shariah"]
     assert (cut["min_cr"], cut["sme_excluded"]) == (S.SHARIAH_MIN_CR, False) and S.SHARIAH_MIN_CR == 1.0
     assert (cut["n"], cut["pool"]) == (35, 75), "35 matches and 40 Mid caps; the eight thin stocks are out"
-    assert cut["median_excess_pp"] == pytest.approx(20.0), "30 - 10: the thin -50% matches never pull it down"
+    assert cut["median_excess_pp"] == pytest.approx(20.0) and cut["beat_pct"] == 100, (
+        "30 - 10, and every match beats it: the thin -50% matches are out (with them, 88% would beat it)")
 
 
 @pytest.mark.parametrize("seed", [1, 2, 3])

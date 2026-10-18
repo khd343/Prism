@@ -79,8 +79,8 @@ FUND_FEE_PCT_YR = 0.2
 # floor; a Rs 1 Cr floor still leaves 20) — a real fix needs a lot-size column, which the data lacks.
 # The Shariah reading (scan_records_job.shariah_reading) is read on Kite v2's universe (2026-10-18, before any unseen
 # window): its §4.1 floor, traded value of SHARIAH_MIN_CR a day or more, as kite_v2/engine/select.py reads the same
-# core.data_engine.traded_value_cr (`>=`; an unknown value never passes). Measured on the June-October snapshots,
-# 8-13% of the Playbook's Mega-to-Small matches trade under it: stocks Kite v2 never buys. Its SME stocks (A15) stay
+# core.data_engine.traded_value_cr (`>=`; an unknown value never passes). Measured on the four snapshots of 17 Jun -
+# 3 Oct, 6-13% of the Playbook's Mega-to-Small matches trade under it: stocks Kite v2 never buys. Its SME stocks (A15) stay
 # in: PRISM's data has no lot size, so they cannot be told apart, and each reading says so (sme_excluded).
 SHARIAH_MIN_CR = 1.0
 # The hand check (2026-10-18, before any unseen window). A demerger lowers the price while the share count stays, so
@@ -88,7 +88,8 @@ SHARIAH_MIN_CR = 1.0
 # HEG -66.2% (ex 7 Sep) and Triveni -33.6% (ex 22 Jul), neither flagged, and the vendor's own returns fell with them,
 # so nothing in PRISM's data tells a demerger from a crash. Each unseen window names its matches that fell
 # FALL_CHECK_PCT or more with the share count unmoved, to be checked against NSE's list before the window is read.
-# Named, never removed: a real crash is evidence too. None of the June-October demergers was a scan match.
+# Named, never removed: a real crash is evidence too. HEG was a 🌱 match on 17 Jun: a window across its demerger
+# books -56.4% (543.40 -> 237.05 by 19 Sep, 192,977,530 shares at both ends).
 FALL_CHECK_PCT = 30.0
 HOLD_K = 20
 HOLD_MAX_PRICE = 5000.0
@@ -1007,9 +1008,11 @@ def _unseen_notes(rec: dict, ws, c: dict, esc) -> str:
                 f'after it was chosen.</div>')
     falls = [f"{esc(str(i))} {float(v):+.1f}% ({_month_span(w)})" for w in ws for i, v in (w.get("falls") or [])]
     if falls:
+        # Each window's own bar (falls_pct); one recorded before the bar was stored reads today's.
+        bars = sorted({float(w.get("falls_pct", FALL_CHECK_PCT)) for w in ws if w.get("falls")})
         out += (f'<div style="{muted}">Check by hand against NSE\'s corporate-action list before reading these '
-                f'windows: fell {FALL_CHECK_PCT:g}%+ with no change in share count, which a demerger shows as well '
-                f'as a crash: {" · ".join(falls)}</div>')
+                f'windows: fell {" or ".join(f"{b:g}%+" for b in bars)} with no change in share count, which a '
+                f'demerger shows as well as a crash: {" · ".join(falls)}</div>')
     return out
 
 

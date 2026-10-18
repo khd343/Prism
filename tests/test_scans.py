@@ -1379,6 +1379,10 @@ def test_the_card_names_each_fall_to_check_by_hand_and_nothing_without_one(monke
     monkeypatch.setattr(S, "FALL_CHECK_PCT", 25.0)                  # the bar is read, never typed
     assert "fell 25%+" in _html.unescape(S.card_html(S.SCANS[0], 235, "measured", rec, selected=False,
                                                      latest="03 Oct"))
+    monkeypatch.setattr(S, "FALL_CHECK_PCT", 30.0)
+    rec["out_of_sample"] = [{**_w(), "falls": [["NSE:HEG", -66.2]], "falls_pct": 20.0}]
+    own = _html.unescape(S.card_html(S.SCANS[0], 235, "measured", rec, selected=False, latest="03 Oct"))
+    assert "fell 20%+" in own and "fell 30%+" not in own, "a window is read with the bar it was measured with"
     for quiet in ([{**_w(), "falls": []}], [_w()]):
         rec["out_of_sample"] = quiet
         assert "Check by hand" not in S.card_html(S.SCANS[0], 235, "measured", rec, selected=False, latest="03 Oct")
