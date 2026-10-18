@@ -1389,22 +1389,28 @@ def test_the_card_names_each_fall_to_check_by_hand_and_nothing_without_one(monke
 
 
 def test_the_card_says_what_each_named_fall_came_to():
-    """The demerger rule (the operator, 2026-10-18): each named fall says whether its check set it aside as a demerger
-    (with its ex-date, and what the month read with it kept in), found no demerger, or is still to check — the last
-    also for a window recorded before checks existed."""
+    """The demerger rule (the operator, 2026-10-18): each named fall says whether its check set it aside as a demerger,
+    found no demerger, or is still to check — the last also for a window recorded before checks existed. And every
+    stock set aside is named once with its month — a named fall or one that fell less — with its ex-date and what that
+    month read with them all kept in (one reading a month, so never said of one stock when two were set aside)."""
     import html as _html
     rec = _record()
     rec["out_of_sample"] = [{**_w(), "falls": [["NSE:HEG", -66.2], ["NSE:ABC", -40.0]], "falls_pct": 30.0,
-                             "set_aside": [["NSE:HEG", "2026-11-07"]], "checked": ["NSE:ABC"],
-                             "as_recorded": {"median_excess_pp": -0.4, "beat_pct": 49, "n": 121}},
+                             "set_aside": [["NSE:DEF", "2026-11-12"], ["NSE:HEG", "2026-11-07"]],
+                             "checked": ["NSE:ABC"], "as_recorded": {"median_excess_pp": -0.4, "beat_pct": 49, "n": 121}},
                             {**_w(end="2026-12-04", final=False), "falls": [["NSE:XYZ", -35.0]], "falls_pct": 30.0,
                              "to_check": ["NSE:XYZ"]}]
     full = _html.unescape(S.card_html(S.SCANS[0], 235, "measured", rec, selected=False, latest="03 Oct"))
-    assert "NSE:HEG -66.2% (Oct→Nov) set aside: a demerger, ex 07 Nov; kept in, the month read -0.4" in full
+    assert "NSE:HEG -66.2% (Oct→Nov) set aside: a demerger ·" in full
     assert "NSE:ABC -40.0% (Oct→Nov) checked: no demerger" in full and "NSE:XYZ -35.0% (Oct→Dec) to check" in full
-    rec["out_of_sample"] = [{**_w(), "falls": [["NSE:OLD", -50.0]], "falls_pct": 30.0}]
-    assert "NSE:OLD -50.0% (Oct→Nov) to check" in _html.unescape(
+    assert ("Set aside as a demerger on NSE's list, like a split: NSE:DEF ex 12 Nov, NSE:HEG ex 07 Nov (Oct→Nov; with "
+            "them kept in, the month read -0.4)") in full
+    rec["out_of_sample"][0].update(set_aside=[["NSE:HEG", "2026-11-07"]])
+    assert "NSE:HEG ex 07 Nov (Oct→Nov; with it kept in, the month read -0.4)" in _html.unescape(
         S.card_html(S.SCANS[0], 235, "measured", rec, selected=False, latest="03 Oct"))
+    rec["out_of_sample"] = [{**_w(), "falls": [["NSE:OLD", -50.0]], "falls_pct": 30.0}]
+    full = _html.unescape(S.card_html(S.SCANS[0], 235, "measured", rec, selected=False, latest="03 Oct"))
+    assert "NSE:OLD -50.0% (Oct→Nov) to check" in full and "Set aside as a demerger" not in full
 
 
 def test_a_running_window_reads_so_far_on_both_cards():

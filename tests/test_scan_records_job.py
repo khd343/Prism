@@ -136,14 +136,20 @@ def _check(sid, frm, through, demerger=None):
 
 def test_each_fall_is_set_aside_checked_or_to_check():
     falls = [["A", -60.0], ["B", -40.0], ["C", -35.0], ["D", -31.0], ["E", -30.0], ["F", -30.0]]
+    matches = ["A", "B", "C", "D", "E", "F", "G", "H"]                     # every fall is a match with a return
     checks = [_check("A", "2026-10-31", "2026-11-28", "2026-11-28"),       # ex-date on the window's last day: in
               _check("B", "2026-10-31", "2026-11-28", "2026-10-31"),       # ex-date on its first: before the window
               _check("C", "2026-09-30", "2026-12-31"),                     # read across the window: no demerger
               _check("D", "2026-11-01", "2026-11-28"),                     # read from a day after the start: not all
-              _check("F", "2026-09-30", "2026-11-27")]                     # read to a day before the end: not all
-    assert J.fall_status(falls, checks, "2026-10-31", "2026-11-28") == (
-        [["A", "2026-11-28"]], ["B", "C"], ["D", "E", "F"])
-    assert J.fall_status([], checks, "2026-10-31", "2026-11-28") == ([], [], [])
+              _check("F", "2026-09-30", "2026-11-27"),                     # read to a day before the end: not all
+              _check("G", "2026-10-31", "2026-11-28", "2026-11-03"),       # a match that fell less: set aside too
+              _check("H", "2026-11-29", "2026-12-31", "2026-12-02"),       # a match's demerger after the window
+              _check("Z", "2026-10-31", "2026-11-28", "2026-11-04")]       # not a match: nothing to set aside
+    assert J.fall_status(falls, matches, checks, "2026-10-31", "2026-11-28") == (
+        [["A", "2026-11-28"], ["G", "2026-11-03"]], ["B", "C"], ["D", "E", "F"])
+    twice = checks + [_check("A", "2026-11-01", "2026-11-20", "2026-11-05")]   # two in the window: the earliest
+    assert J.fall_status(falls, matches, twice, "2026-10-31", "2026-11-28")[0][0] == ["A", "2026-11-05"]
+    assert J.fall_status([], matches[6:], checks, "2026-10-31", "2026-11-28") == ([["G", "2026-11-03"]], [], [])
 
 
 def test_the_checks_file_reads_none_when_absent_and_refuses_a_broken_one(tmp_path):
@@ -152,14 +158,23 @@ def test_the_checks_file_reads_none_when_absent_and_refuses_a_broken_one(tmp_pat
     assert S.load_checks(tmp_path / "none.json") == []
     good = _check("NSE:HEG", "2026-08-22", "2026-09-19", "2026-09-07")
     cases = {"{not json": None,
-             json.dumps({"checks": [{"company_id": "NSE:HEG", "from": "2026-08-22"}]}): "through",
-             json.dumps({"checks": [{**good, "through": "2026-09-31"}]}): None,                 # no such day
-             json.dumps({"checks": [{**good, "from": "2026-09-20"}]}): "from",                  # read backwards
-             json.dumps({"checks": [{**good, "demerger": "2026-10-01"}]}): "demerger"}          # outside its dates
+             json.dumps({"rows": [good]}): "no list of checks",
+             json.dumps({"checks": [["NSE:HEG"]]}): "not an object",
+             json.dumps({"checks": [{"company_id": "NSE:HEG", "from": "2026-08-22"}]}): r"misses \['through'",
+             json.dumps({"checks": [{**good, "through": "2026-09-31"}]}): "through is not a YYYY-MM-DD",  # no such day
+             json.dumps({"checks": [{**good, "from": "2026-09-20"}]}): "from is after its through",     # backwards
+             json.dumps({"checks": [{**good, "demerger": "2026-10-01"}]}): "demerger is outside",       # not read
+             # The job compares the dates as text, so only YYYY-MM-DD is read: Python also takes 20260907 or a
+             # week date, and a demerger so written would sort outside its month and pass as "no demerger".
+             json.dumps({"checks": [{**good, "demerger": "20260907"}]}): "demerger is not a YYYY-MM-DD",
+             json.dumps({"checks": [{**good, "from": "2026-W34-6"}]}): "from is not a YYYY-MM-DD",
+             json.dumps({"checks": [{**good, "from": 20260822}]}): "from is not a YYYY-MM-DD",
+             json.dumps({"checks": [{**good, "company_id": 500003}]}): "company_id is not an id",       # ids are text
+             json.dumps({"checks": [{**good, "company_id": ""}]}): "company_id is not an id"}
     for i, (text, word) in enumerate(cases.items()):
         f = tmp_path / f"bad{i}.json"
         f.write_text(text, encoding="utf-8")
-        with pytest.raises(ValueError, match=word or ""):
+        with pytest.raises(ValueError, match=word):                     # None: not JSON, json's own message
             S.load_checks(f)
     f = tmp_path / "good.json"
     f.write_text(json.dumps({"checks": [good]}), encoding="utf-8")
@@ -189,6 +204,23 @@ def test_a_confirmed_demerger_leaves_the_readings_and_stays_named():
     assert (r["n"], r["beat_pct"], r["dropped_no_return"]) == (30, 100, 0), "out of the readings, not 'no price'"
     assert (r["as_recorded"]["n"], r["as_recorded"]["beat_pct"]) == (31, 97), "the reading with it kept, beside"
     assert {"median_excess_pp", "hold"} <= set(r["as_recorded"]) and "to_check" not in r
+
+
+def test_a_recorded_demerger_is_set_aside_whatever_the_stock_fell():
+    """A demerger is a fact of the stock and the dates, not of how far it fell: one a check records inside the window
+    leaves the readings, named fall or not (S06 fell 10%, a rally can hide a demerger), as Kite v2's (22) sets aside
+    every stock NSE's list shows; one outside the scan is no match to set aside."""
+    early, late = _demerged_frames()
+    early = pd.concat([early, early.iloc[[1]].assign(company_id="S97")], ignore_index=True)
+    late = pd.concat([late, late.iloc[[1]].assign(company_id="S97")], ignore_index=True)    # 32 matches
+    late.loc[late["company_id"] == "S06", "close_price"] = 90.0
+    checks = [_check("S05", "2026-10-31", "2026-11-28", "2026-11-07"),
+              _check("S06", "2026-10-31", "2026-11-28", "2026-11-12"),
+              _check("S40", "2026-10-31", "2026-11-28", "2026-11-09")]                    # S40 is not a match
+    r = J.measure_window(early, late, _SCAN, "2026-10-31", "2026-11-28", checks=checks)
+    assert r["set_aside"] == [["S05", "2026-11-07"], ["S06", "2026-11-12"]] and r["falls"] == [["S05", -66.2]]
+    assert (r["n"], r["beat_pct"], r["as_recorded"]["n"], r["as_recorded"]["beat_pct"]) == (30, 100, 32, 94)
+    assert "to_check" not in r and "checked" not in r
 
 
 def test_a_fall_checked_with_no_demerger_stays_and_an_unchecked_one_is_named():

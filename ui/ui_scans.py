@@ -564,7 +564,8 @@ def load_records(path: Path = RECORDS_PATH) -> dict:
 def load_checks(path: Path = CHECKS_PATH) -> list:
     """The hand checks (CHECKS_PATH): [] without the file. Anything it cannot read raises ValueError — a misread
     check would hold a month for ever or let an unchecked one through, so the job stops instead: a check needs every
-    field of CHECK_FIELDS, real dates, `from` on or before `through`, and a demerger (or null) inside them."""
+    field of CHECK_FIELDS, a company_id that is text, real YYYY-MM-DD dates, `from` on or before `through`, and a
+    demerger (or null) inside them."""
     if not Path(path).exists():
         return []
     doc = json.loads(Path(path).read_text(encoding="utf-8"))
@@ -577,12 +578,27 @@ def load_checks(path: Path = CHECKS_PATH) -> list:
         missing = [f for f in CHECK_FIELDS if f not in c]
         if missing:
             raise ValueError(f"a check misses {missing}: {c}")
-        frm, through = date.fromisoformat(c["from"]), date.fromisoformat(c["through"])
+        if not isinstance(c["company_id"], str) or not c["company_id"]:
+            raise ValueError(f"a check's company_id is not an id: {c}")
+        frm, through = _check_date(c, "from"), _check_date(c, "through")
         if frm > through:
             raise ValueError(f"a check's from is after its through: {c}")
-        if c["demerger"] is not None and not frm <= date.fromisoformat(c["demerger"]) <= through:
+        if c["demerger"] is not None and not frm <= _check_date(c, "demerger") <= through:
             raise ValueError(f"a check's demerger is outside the dates it read: {c}")
     return checks
+
+
+def _check_date(c: dict, field: str) -> date:
+    """A check's date, in the one form the job compares as text (YYYY-MM-DD): fromisoformat alone also reads 20260907
+    or a week date, which would sort wrongly against the window's dates."""
+    v = c[field]
+    try:
+        d = date.fromisoformat(v) if isinstance(v, str) else None
+    except ValueError:
+        d = None
+    if d is None or d.isoformat() != v:
+        raise ValueError(f"a check's {field} is not a YYYY-MM-DD date: {c}")
+    return d
 
 
 def record_state(records: dict, scan: dict):
@@ -1048,17 +1064,21 @@ def _unseen_notes(rec: dict, ws, c: dict, esc) -> str:
                 f'{" or ".join(f"{b:g}%+" for b in bars)} with no change in share count, which a demerger shows as '
                 f'well as a crash. A demerger is set aside from its month, like a split; a month is written final '
                 f'only once all its falls are checked: {" · ".join(falls)}</div>')
+    # Every stock set aside, named fall or not, once with its month: the kept-in reading is the month's, not a stock's.
+    gone = [f'{", ".join(f"{esc(str(i))} ex {date.fromisoformat(d):%d %b}" for i, d in w["set_aside"])} '
+            f'({_month_span(w)}; with {"it" if len(w["set_aside"]) == 1 else "them"} kept in, the month read '
+            f'{float(w["as_recorded"]["median_excess_pp"]):+.1f})' for w in ws if w.get("set_aside")]
+    if gone:
+        out += (f'<div style="{muted}">Set aside as a demerger on NSE\'s list, like a split: '
+                f'{" · ".join(gone)}</div>')
     return out
 
 
 def _fall_word(w: dict, sid: str) -> str:
-    """What a named fall came to (the operator's demerger rule, 2026-10-18): set aside as a demerger, with what the
-    month read with it kept in; checked with none; or still to check — also for a window recorded before checks."""
-    ex = {s: d for s, d in (w.get("set_aside") or [])}.get(sid)
-    if ex:
-        kept = (w.get("as_recorded") or {}).get("median_excess_pp")
-        tail = f"; kept in, the month read {float(kept):+.1f}" if kept is not None else ""
-        return f"set aside: a demerger, ex {date.fromisoformat(ex):%d %b}{tail}"
+    """What a named fall came to (the operator's demerger rule, 2026-10-18): set aside as a demerger (named again
+    below with its ex-date), checked with none, or still to check — also for a window recorded before checks."""
+    if sid in {s for s, _ in (w.get("set_aside") or [])}:
+        return "set aside: a demerger"
     return "checked: no demerger" if sid in (w.get("checked") or []) else "to check"
 
 

@@ -323,7 +323,8 @@ def test_the_guide_explains_the_hand_check_with_its_own_bar(monkeypatch):
     t = " ".join(map(str, dict(G.general_sections())["How every scan is measured"]))
     assert "**Checked by hand:**" in t and f"fell {S.FALL_CHECK_PCT:g}% or more" in t
     assert "demerger" in t and "NSE's corporate-action list" in t and S.CHECKS_PATH.name in t
-    assert "set aside from its month, like a split" in t and "written final only once every fall it names" in t
+    assert "set aside from its month, like a split, whatever the stock fell" in t
+    assert "written final only once every fall it names" in t
     from pathlib import Path
     monkeypatch.setattr(S, "CHECKS_PATH", Path("elsewhere_checks.json"))           # the file's name is read too
     assert "elsewhere_checks.json" in " ".join(map(str, dict(G.general_sections())["How every scan is measured"]))

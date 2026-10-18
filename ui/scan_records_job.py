@@ -258,18 +258,23 @@ def shariah_reading(early: pd.DataFrame, ret: pd.Series, match: pd.Series):
     return out
 
 
-def fall_status(falls, checks, start: str, end: str) -> tuple[list, list, list]:
-    """What each named fall comes to (the operator's demerger rule, 2026-10-18): (set_aside, checked, to_check).
-    set_aside: [id, ex-date] of each fall whose stock a check shows with a demerger after the window's start, up to its
-    end (the earliest such); checked: the ids a check covers with none (NSE's list read from on or before the start
-    through on or after the end); to_check: the rest, which keep their month from being written final (main)."""
-    set_aside, checked, to_check = [], [], []
+def fall_status(falls, matches, checks, start: str, end: str) -> tuple[list, list, list]:
+    """What the hand checks make of a window (the operator's demerger rule, 2026-10-18): (set_aside, checked, to_check).
+    set_aside: [id, ex-date] of each of `matches` (the ids with a return; every named fall is one) that a check shows
+    with a demerger after the window's start, up to its end (the earliest such), by id — a fact of the stock and the
+    dates, not of how far it fell, so a demerger a rally hid is set aside too; checked: each other named fall a check
+    covers with none (NSE's list read from on or before the start through on or after the end); to_check: the rest,
+    which keep their month from being written final (main)."""
+    dem = {}
+    for c in checks:
+        if c["demerger"] and start < c["demerger"] <= end:
+            dem[c["company_id"]] = min(c["demerger"], dem.get(c["company_id"], c["demerger"]))
+    set_aside = [[sid, dem[sid]] for sid in sorted(set(matches) & set(dem))]
+    checked, to_check = [], []
     for sid, _ in falls:
-        mine = [c for c in checks if c["company_id"] == sid]
-        dem = sorted(c["demerger"] for c in mine if c["demerger"] and start < c["demerger"] <= end)
-        if dem:
-            set_aside.append([sid, dem[0]])
-        elif any(c["from"] <= start and c["through"] >= end for c in mine):
+        if sid in dem:
+            continue
+        if any(c["company_id"] == sid and c["from"] <= start and c["through"] >= end for c in checks):
             checked.append(sid)
         else:
             to_check.append(sid)
@@ -327,9 +332,10 @@ def measure_window(early: pd.DataFrame, late: pd.DataFrame, scan: dict, start: s
     S.NET_COST_PP; its median and beat rate only when it has MIN_N matches, else just its n.
 
     Hand checks (the operator's demerger rule, 2026-10-18): `checks` (S.load_checks) decide each fall (fall_status). A
-    demerger leaves every reading below, like a split (set_aside: [id, ex-date]), and the readings with it kept in are
-    recorded beside them (as_recorded: the headline, hold and revenue_led, which the registered rules read); a fall
-    checked with none stays (checked); the rest are to_check, and main never writes such a window final.
+    match a check shows with a demerger inside the window, named fall or not, leaves every reading below, like a split
+    (set_aside: [id, ex-date]), and the readings with them kept in are recorded beside them (as_recorded: the
+    headline, hold and revenue_led, which the registered rules read); a fall checked with none stays (checked); the
+    rest are to_check, and main never writes such a window final.
 
     vs_index (2026-10-08, December plan rule 23), when the two copies' benchmark tables give at least
     one index reading: those same liquid matches as ONE equal-weight portfolio — the mean return, which
@@ -351,7 +357,8 @@ def measure_window(early: pd.DataFrame, late: pd.DataFrame, scan: dict, start: s
     falls = [[str(i), float(v)] for i, v in
              pd.DataFrame({"id": early["company_id"].astype(str), "ret": ret.round(1)})[fell]
              .sort_values(["ret", "id"]).to_numpy().tolist()]
-    set_aside, checked, to_check = fall_status(falls, checks, start, end)
+    set_aside, checked, to_check = fall_status(falls, early.loc[in_scan & ret.notna(), "company_id"].astype(str),
+                                               checks, start, end)
     head = dict(dropped_no_return=int((in_scan & ret.isna() & ~corp).sum()),
                 dropped_corp_action=int((in_scan & corp).sum()), falls=falls, falls_pct=S.FALL_CHECK_PCT)
     out_ids = {s for s, _ in set_aside}
