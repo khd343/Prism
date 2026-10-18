@@ -105,11 +105,13 @@ def test_a_fall_the_share_count_does_not_explain_is_named_for_a_hand_check():
     early, late = _frames(80)
     early = pd.concat([early, early.iloc[[1]].assign(company_id="S99")], ignore_index=True)
     late = pd.concat([late, late.iloc[[1]].assign(company_id="S99")], ignore_index=True)
-    price = dict(S01=33.8, S02=70.0, S03=70.1, S40=40.0, S00=20.0)   # S00 splits x5: re-based, left out
+    price = dict(S05=33.8, S02=70.0, S04=70.04, S03=70.1, S40=40.0, S00=20.0)   # S00 splits x5: left out
     late["close_price"] = late["company_id"].map(price).fillna(late["close_price"])
     r = J.measure_window(early, late, _SCAN, "2026-10-31", "2026-11-28")
     assert S.FALL_CHECK_PCT == 30.0
-    assert r["falls"] == [["S01", -66.2], ["S02", -30.0]], "S03 fell 29.9%; S40 is not a match; S00 split"
+    assert r["falls"] == [["S05", -66.2], ["S02", -30.0], ["S04", -30.0]], (
+        "worst first, a tie by id; S04's -29.96% shows as -30.0%, so it is named; S03 fell 29.9%; S40 is not a "
+        "match; S00 split")
     assert r["dropped_corp_action"] == 1 and r["n"] == 30, "named, never removed: the reading is unchanged"
 
 
