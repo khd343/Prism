@@ -135,12 +135,14 @@ def _check(sid, frm, through, demerger=None):
 
 
 def test_each_fall_is_set_aside_checked_or_to_check():
-    falls = [["A", -60.0], ["B", -40.0], ["C", -35.0], ["D", -31.0], ["E", -30.0]]
+    falls = [["A", -60.0], ["B", -40.0], ["C", -35.0], ["D", -31.0], ["E", -30.0], ["F", -30.0]]
     checks = [_check("A", "2026-10-31", "2026-11-28", "2026-11-28"),       # ex-date on the window's last day: in
               _check("B", "2026-10-31", "2026-11-28", "2026-10-31"),       # ex-date on its first: before the window
               _check("C", "2026-09-30", "2026-12-31"),                     # read across the window: no demerger
-              _check("D", "2026-11-01", "2026-11-28")]                     # read from a day after the start: not all
-    assert J.fall_status(falls, checks, "2026-10-31", "2026-11-28") == ([["A", "2026-11-28"]], ["B", "C"], ["D", "E"])
+              _check("D", "2026-11-01", "2026-11-28"),                     # read from a day after the start: not all
+              _check("F", "2026-09-30", "2026-11-27")]                     # read to a day before the end: not all
+    assert J.fall_status(falls, checks, "2026-10-31", "2026-11-28") == (
+        [["A", "2026-11-28"]], ["B", "C"], ["D", "E", "F"])
     assert J.fall_status([], checks, "2026-10-31", "2026-11-28") == ([], [], [])
 
 
