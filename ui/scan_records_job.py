@@ -258,8 +258,60 @@ def shariah_reading(early: pd.DataFrame, ret: pd.Series, match: pd.Series):
     return out
 
 
+def fall_status(falls, checks, start: str, end: str) -> tuple[list, list, list]:
+    """What each named fall comes to (the operator's demerger rule, 2026-10-18): (set_aside, checked, to_check).
+    set_aside: [id, ex-date] of each fall whose stock a check shows with a demerger after the window's start, up to its
+    end (the earliest such); checked: the ids a check covers with none (NSE's list read from on or before the start
+    through on or after the end); to_check: the rest, which keep their month from being written final (main)."""
+    set_aside, checked, to_check = [], [], []
+    for sid, _ in falls:
+        mine = [c for c in checks if c["company_id"] == sid]
+        dem = sorted(c["demerger"] for c in mine if c["demerger"] and start < c["demerger"] <= end)
+        if dem:
+            set_aside.append([sid, dem[0]])
+        elif any(c["from"] <= start and c["through"] >= end for c in mine):
+            checked.append(sid)
+        else:
+            to_check.append(sid)
+    return set_aside, checked, to_check
+
+
+def _readings(early: pd.DataFrame, ret: pd.Series, in_scan: pd.Series, scan: dict, start: str, end: str,
+              bench_early, bench_late, head: dict):
+    """The window's readings on `ret` (a stock set aside already has none); None under MIN_N matches with a return.
+    `head` carries what describes the window itself, the same with or without a set-aside."""
+    match = in_scan & ret.notna()
+    if int(match.sum()) < MIN_N:
+        return None
+    excess = ret - ret.median()
+    liquid = match & (S.traded_value_cr(early) >= S.NET_MIN_CR)
+    net = dict(min_cr=S.NET_MIN_CR, cost_pp=S.NET_COST_PP, n=int(liquid.sum()))
+    if net["n"] >= MIN_N:
+        kept = excess[liquid] - S.NET_COST_PP
+        net.update(median_excess_pp=round(float(kept.median()), 1),
+                   beat_pct=int(round(float((kept > 0).mean() * 100))))
+    out = dict(start=start, end=end, days=_days(start, end),
+               median_excess_pp=round(float(excess[match].median()), 1),
+               beat_pct=int(round(float((excess[match] > 0).mean() * 100))),
+               n=int(match.sum()), **head, net=net)
+    out["hold"] = hold_reading(early, ret, match)
+    cut = shariah_reading(early, ret, match)
+    if cut is not None:
+        out["shariah"] = cut
+    if scan.get("key") in S.REVENUE_LED_RULE["scans"]:
+        out["revenue_led"] = revenue_led_reading(early, excess, match)
+    indices = index_returns(bench_early, bench_late, _days(start, end))
+    if indices:
+        vs = dict(fee_pct_yr=S.FUND_FEE_PCT_YR, cost_pp=S.NET_COST_PP, min_cr=S.NET_MIN_CR, n=net["n"],
+                  indices=indices)
+        if vs["n"] >= MIN_N:
+            vs["portfolio_pp"] = round(float(ret[liquid].mean()) - S.NET_COST_PP, 2)
+        out["vs_index"] = vs
+    return out
+
+
 def measure_window(early: pd.DataFrame, late: pd.DataFrame, scan: dict, start: str, end: str,
-                   bench_early=None, bench_late=None):
+                   bench_early=None, bench_late=None, checks=()):
     """The scan's record over one window. The recipe runs on the WHOLE early frame (as the tab runs it
     on the whole market); returns exclude corporate actions; excess = a match's return minus the
     median of every stock measured. None when fewer than MIN_N matches have a return.
@@ -269,10 +321,15 @@ def measure_window(early: pd.DataFrame, late: pd.DataFrame, scan: dict, start: s
     headline is the survivors' record) and dropped_corp_action = matches whose share count moved.
     falls (2026-10-18) = [id, return %] of each match that fell S.FALL_CHECK_PCT or more, as shown to one decimal,
     with its share count unmoved, worst first: a demerger re-bases the price with the count unmoved, exactly like a
-    crash, so each is named for a check against NSE's list. Named, never removed: the readings are unchanged. Its
-    bar is recorded beside it (falls_pct), as every reading records its settings: a final window is written once.
+    crash, so each is named for a check against NSE's list; it stays named whatever its check finds. Its bar is
+    recorded beside it (falls_pct), as every reading records its settings: a final window is written once.
     And net = the same reading on matches trading at least S.NET_MIN_CR a day, each charged
     S.NET_COST_PP; its median and beat rate only when it has MIN_N matches, else just its n.
+
+    Hand checks (the operator's demerger rule, 2026-10-18): `checks` (S.load_checks) decide each fall (fall_status). A
+    demerger leaves every reading below, like a split (set_aside: [id, ex-date]), and the readings with it kept in are
+    recorded beside them (as_recorded: the headline, hold and revenue_led, which the registered rules read); a fall
+    checked with none stays (checked); the rest are to_check, and main never writes such a window final.
 
     vs_index (2026-10-08, December plan rule 23), when the two copies' benchmark tables give at least
     one index reading: those same liquid matches as ONE equal-weight portfolio — the mean return, which
@@ -290,40 +347,27 @@ def measure_window(early: pd.DataFrame, late: pd.DataFrame, scan: dict, start: s
     ret = early[["company_id"]].merge(m, on="company_id", how="left")["fwd_return"].to_numpy() * 100
     ret = pd.Series(ret, index=early.index)
     in_scan = scan["mask"](early)
-    match = in_scan & ret.notna()
-    if int(match.sum()) < MIN_N:
+    fell = in_scan & ret.notna() & (ret.round(1) <= -S.FALL_CHECK_PCT)
+    falls = [[str(i), float(v)] for i, v in
+             pd.DataFrame({"id": early["company_id"].astype(str), "ret": ret.round(1)})[fell]
+             .sort_values(["ret", "id"]).to_numpy().tolist()]
+    set_aside, checked, to_check = fall_status(falls, checks, start, end)
+    head = dict(dropped_no_return=int((in_scan & ret.isna() & ~corp).sum()),
+                dropped_corp_action=int((in_scan & corp).sum()), falls=falls, falls_pct=S.FALL_CHECK_PCT)
+    out_ids = {s for s, _ in set_aside}
+    out = _readings(early, ret.where(~early["company_id"].astype(str).isin(out_ids)), in_scan, scan, start, end,
+                    bench_early, bench_late, head)
+    if out is None:
         return None
-    excess = ret - ret.median()
-    liquid = match & (S.traded_value_cr(early) >= S.NET_MIN_CR)
-    net = dict(min_cr=S.NET_MIN_CR, cost_pp=S.NET_COST_PP, n=int(liquid.sum()))
-    if net["n"] >= MIN_N:
-        kept = excess[liquid] - S.NET_COST_PP
-        net.update(median_excess_pp=round(float(kept.median()), 1),
-                   beat_pct=int(round(float((kept > 0).mean() * 100))))
-    fell = match & (ret.round(1) <= -S.FALL_CHECK_PCT)
-    falls = (pd.DataFrame({"id": early["company_id"].astype(str), "ret": ret.round(1)})[fell]
-             .sort_values(["ret", "id"]).to_numpy().tolist())
-    out = dict(start=start, end=end, days=_days(start, end),
-               median_excess_pp=round(float(excess[match].median()), 1),
-               beat_pct=int(round(float((excess[match] > 0).mean() * 100))),
-               n=int(match.sum()),
-               dropped_no_return=int((in_scan & ret.isna() & ~corp).sum()),
-               dropped_corp_action=int((in_scan & corp).sum()),
-               falls=[[str(i), float(v)] for i, v in falls], falls_pct=S.FALL_CHECK_PCT,
-               net=net)
-    out["hold"] = hold_reading(early, ret, match)
-    cut = shariah_reading(early, ret, match)
-    if cut is not None:
-        out["shariah"] = cut
-    if scan.get("key") in S.REVENUE_LED_RULE["scans"]:
-        out["revenue_led"] = revenue_led_reading(early, excess, match)
-    indices = index_returns(bench_early, bench_late, _days(start, end))
-    if indices:
-        vs = dict(fee_pct_yr=S.FUND_FEE_PCT_YR, cost_pp=S.NET_COST_PP, min_cr=S.NET_MIN_CR, n=net["n"],
-                  indices=indices)
-        if vs["n"] >= MIN_N:
-            vs["portfolio_pp"] = round(float(ret[liquid].mean()) - S.NET_COST_PP, 2)
-        out["vs_index"] = vs
+    if set_aside:
+        out["set_aside"] = set_aside
+        seen = _readings(early, ret, in_scan, scan, start, end, bench_early, bench_late, head)
+        out["as_recorded"] = {k: seen[k] for k in ("median_excess_pp", "beat_pct", "n", "hold", "revenue_led")
+                              if k in seen}
+    if checked:
+        out["checked"] = checked
+    if to_check:
+        out["to_check"] = to_check
     return out
 
 
@@ -474,6 +518,10 @@ def main() -> int:
     # The recipe each window is measured with (2026-10-15): stamped on every window, final per recipe.
     fps = {s["key"]: S.recipe_fingerprint(s) for s in S.SCANS}
     check_recipe_dates(existing, fps)
+    try:                                     # the hand checks of the named falls (the operator, 2026-10-18)
+        checks = S.load_checks()
+    except (OSError, ValueError) as e:
+        raise SystemExit(f"{S.CHECKS_PATH.name} cannot be read — {e}. Fix it by hand; nothing was measured.")
     idx = load_index(index_id)                                     # status 'ok' rows only
     ids = dict(zip(idx["vintage_date"], idx["spreadsheet_id"]))
     dates = sorted(ids)
@@ -502,14 +550,19 @@ def main() -> int:
     broken = [p for d in need if (p := copy_problem(frames[d], d))]
     if broken:
         raise SystemExit("\n".join(broken))
+    done = set(frozen(dates))                # a window ending on a finished month is written final (keep_final)
     updates = {}
     for scan in S.SCANS:
         rows = []
         for a, b in windows[scan["key"]]:
             broken.append(window_problem(frames[a], frames[b], scan, a, b))      # every window, measured or not
-            r = measure_window(frames[a], frames[b], scan, a, b, benches[a], benches[b])
+            r = measure_window(frames[a], frames[b], scan, a, b, benches[a], benches[b], checks)
             if r is None:                    # too few matches with a return: no evidence, not recorded
                 continue
+            if r.get("to_check") and b in done:          # about to be written final, a fall not yet checked
+                broken.append(f"{scan['key']}: {a} → {b} is about to be written final with falls not yet checked: "
+                              f"{', '.join(r['to_check'])}. Check each against NSE's corporate-action list and "
+                              f"record it in ui/{S.CHECKS_PATH.name}.")
             rows.append({**r, "fingerprint": fps[scan["key"]]})
         rows = keep_final(old[scan["key"]], rows, dates, ev)
         updates[scan["key"]] = {"out_of_sample": rows}

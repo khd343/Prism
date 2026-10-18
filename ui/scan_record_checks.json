@@ -1,0 +1,4 @@
+{
+ "about": "Hand checks of the falls the scan records name (ui/scan_records_job.py: falls). Each is NSE's corporate-action list read for one stock over a span of ex-dates (from, through): demerger is the ex-date of a demerger found there, or null. A demerger is set aside from every month it falls in, like a split; a month is written final only once every fall it names is covered. The operator's rule of 2026-10-18. Kept by hand; the job only reads it.",
+ "checks": []
+}

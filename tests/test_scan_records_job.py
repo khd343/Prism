@@ -125,6 +125,82 @@ def test_a_window_with_no_such_fall_names_none():
     assert J.measure_window(early, late, _SCAN, "2026-10-31", "2026-11-28")["falls"] == []
 
 
+# ── A demerger confirmed on NSE's list is set aside (the operator, 2026-10-18) ──────────────────────────────────
+# Approved before any unseen window: a fall the hand check finds to be a demerger leaves the month's readings, like a
+# split, with the readings it would have given kept beside them; a fall checked with no demerger stays; one not yet
+# checked is named to check, and the job never writes such a month final (its stop is tested with main(), below).
+def _check(sid, frm, through, demerger=None):
+    return {"company_id": sid, "from": frm, "through": through, "demerger": demerger,
+            "nse": "Demerger" if demerger else "", "checked_on": "2026-12-01"}
+
+
+def test_each_fall_is_set_aside_checked_or_to_check():
+    falls = [["A", -60.0], ["B", -40.0], ["C", -35.0], ["D", -31.0], ["E", -30.0]]
+    checks = [_check("A", "2026-10-31", "2026-11-28", "2026-11-28"),       # ex-date on the window's last day: in
+              _check("B", "2026-10-31", "2026-11-28", "2026-10-31"),       # ex-date on its first: before the window
+              _check("C", "2026-09-30", "2026-12-31"),                     # read across the window: no demerger
+              _check("D", "2026-11-01", "2026-11-28")]                     # read from a day after the start: not all
+    assert J.fall_status(falls, checks, "2026-10-31", "2026-11-28") == ([["A", "2026-11-28"]], ["B", "C"], ["D", "E"])
+    assert J.fall_status([], checks, "2026-10-31", "2026-11-28") == ([], [], [])
+
+
+def test_the_checks_file_reads_none_when_absent_and_refuses_a_broken_one(tmp_path):
+    """ui/scan_record_checks.json, kept by hand: a check the job misread would hold a month for ever or let an
+    unchecked one through, so anything it cannot read stops it (main turns the error into a stop, tested above)."""
+    assert S.load_checks(tmp_path / "none.json") == []
+    good = _check("NSE:HEG", "2026-08-22", "2026-09-19", "2026-09-07")
+    cases = {"{not json": None,
+             json.dumps({"checks": [{"company_id": "NSE:HEG", "from": "2026-08-22"}]}): "through",
+             json.dumps({"checks": [{**good, "through": "2026-09-31"}]}): None,                 # no such day
+             json.dumps({"checks": [{**good, "from": "2026-09-20"}]}): "from",                  # read backwards
+             json.dumps({"checks": [{**good, "demerger": "2026-10-01"}]}): "demerger"}          # outside its dates
+    for i, (text, word) in enumerate(cases.items()):
+        f = tmp_path / f"bad{i}.json"
+        f.write_text(text, encoding="utf-8")
+        with pytest.raises(ValueError, match=word or ""):
+            S.load_checks(f)
+    f = tmp_path / "good.json"
+    f.write_text(json.dumps({"checks": [good]}), encoding="utf-8")
+    assert S.load_checks(f) == [good]
+
+
+def test_the_committed_checks_file_reads():
+    assert S.CHECKS_PATH.name == "scan_record_checks.json" and S.CHECKS_PATH.exists()
+    assert isinstance(S.load_checks(), list)
+
+
+def _demerged_frames():
+    """31 matches rise 20% (S00 splits out; S98 and S99 stand in), S05 among them drops to 33.80; the rest stay flat."""
+    early, late = _frames(80)
+    extra = ["S98", "S99"]
+    early = pd.concat([early, early.iloc[[1, 1]].assign(company_id=extra)], ignore_index=True)
+    late = pd.concat([late, late.iloc[[1, 1]].assign(company_id=extra)], ignore_index=True)
+    late.loc[late["company_id"] == "S05", "close_price"] = 33.8
+    return early, late
+
+
+def test_a_confirmed_demerger_leaves_the_readings_and_stays_named():
+    early, late = _demerged_frames()
+    r = J.measure_window(early, late, _SCAN, "2026-10-31", "2026-11-28",
+                         checks=[_check("S05", "2026-10-31", "2026-11-28", "2026-11-07")])
+    assert r["set_aside"] == [["S05", "2026-11-07"]] and r["falls"] == [["S05", -66.2]], "named, with its raw fall"
+    assert (r["n"], r["beat_pct"], r["dropped_no_return"]) == (30, 100, 0), "out of the readings, not 'no price'"
+    assert (r["as_recorded"]["n"], r["as_recorded"]["beat_pct"]) == (31, 97), "the reading with it kept, beside"
+    assert {"median_excess_pp", "hold"} <= set(r["as_recorded"]) and "to_check" not in r
+
+
+def test_a_fall_checked_with_no_demerger_stays_and_an_unchecked_one_is_named():
+    early, late = _demerged_frames()
+    for covering in (_check("S05", "2026-10-30", "2026-11-28"),                     # read across it: none
+                     _check("S05", "2026-10-31", "2026-12-31", "2026-12-15")):     # one, but after the window
+        clean = J.measure_window(early, late, _SCAN, "2026-10-31", "2026-11-28", checks=[covering])
+        assert (clean["n"], clean["beat_pct"]) == (31, 97) and clean["checked"] == ["S05"]
+        assert not {"set_aside", "as_recorded", "to_check"} & set(clean)
+    for checks in ([], [_check("S05", "2026-11-01", "2026-12-31", "2026-12-15")]):    # none, or not across it
+        r = J.measure_window(early, late, _SCAN, "2026-10-31", "2026-11-28", checks=checks)
+        assert r["to_check"] == ["S05"] and r["n"] == 31 and "set_aside" not in r
+
+
 def test_the_net_record_keeps_only_liquid_matches_and_charges_the_round_trip():
     early, late = _frames(80)
     early["vol_sma_20d"] = 100_000.0                          # x ₹100 = ₹1 Cr a day: under the floor
@@ -726,15 +802,19 @@ def test_the_job_reads_the_indices_beside_each_copy_and_records_the_comparison(m
 # may only start after the windows it replaces — its designer has seen them. And an archive that stops taking
 # copies used to leave the job green every Monday while the record silently stopped growing.
 def _job_on_fake_archive(monkeypatch, records, today=date(2026, 12, 7), fp="fp", designed_on="2026-10-06",
-                         frames=None, copy_problem=None, written=None, measured=None, also=()):
+                         frames=None, copy_problem=None, written=None, measured=None, also=(), latest=None,
+                         checks=()):
     """main() on a fake archive (DATES) with one toy scan; returns (written, windows measured). `frames` replaces
-    the (month-end, later) copies; `copy_problem` the input check (its own tests use a real-shaped copy: these
-    toy copies carry none of the vendor's columns); `written` and `measured` may be passed in, to read after a
-    stop."""
+    the (month-end, later) copies and `latest` the 4 Dec copy (else the later one); `copy_problem` the input check
+    (its own tests use a real-shaped copy: these toy copies carry none of the vendor's columns); `checks` the hand
+    checks the job reads (a list, or a function standing in for S.load_checks); `written` and `measured` may be
+    passed in, to read after a stop."""
     import ui.ui_movers as M
     early, late = frames or _liquid_frames()
     monkeypatch.setattr(J, "copy_problem", copy_problem or (lambda frame, day: ""))
-    stocks = {"2026-09-30": early, "2026-10-31": early, "2026-11-28": late, "2026-12-04": late}
+    monkeypatch.setattr(S, "load_checks", checks if callable(checks) else (lambda: list(checks)))
+    stocks = {"2026-09-30": early, "2026-10-31": early, "2026-11-28": late,
+              "2026-12-04": late if latest is None else latest}
     monkeypatch.setattr(J, "load_market", lambda source, files, sid: (stocks[sid.removeprefix("id-")].copy(),
                                                                        _bench({"NSE:NIF500MO50": 100.0})))
     monkeypatch.setattr(J, "run_scoring_pipeline", lambda df: df)
@@ -911,6 +991,60 @@ def test_an_empty_baseline_on_good_data_stays_green(monkeypatch):
     early, late = _liquid_frames()
     written, _ = _job_on_fake_archive(monkeypatch, _records([]), frames=(early, late.assign(flag=0)))
     assert written["scans"]["toy"]["members_at_latest"] == [] and written["scans"]["toy"]["out_of_sample"]
+
+
+def _falling_frames():
+    """_liquid_frames and one more liquid match (S98), with S07 falling 70% by the later copy: 31 matches, so the
+    month still has 30 with S07 set aside."""
+    early, late = _liquid_frames()
+    early = pd.concat([early, early.iloc[[1]].assign(company_id="S98")], ignore_index=True)
+    late = pd.concat([late, late.iloc[[1]].assign(company_id="S98")], ignore_index=True)
+    late.loc[late["company_id"] == "S07", "close_price"] = 30.0
+    return early, late
+
+
+def test_a_month_is_never_written_final_with_a_fall_not_yet_checked(monkeypatch):
+    """The demerger rule's guard (the operator, 2026-10-18): a month about to be written final (its end copy's month is
+    over) that names a fall no check covers stops the run, naming the stock and the file, and nothing is written —
+    so no registered rule ever counts a month whose fall might be a demerger, and no later month is counted first."""
+    written = {}
+    with pytest.raises(SystemExit, match=r"toy: 2026-10-31 → 2026-11-28 is about to be written final.*S07.*"
+                                         r"scan_record_checks\.json"):
+        _job_on_fake_archive(monkeypatch, _records([]), frames=_falling_frames(), written=written)
+    assert written == {}
+
+
+def test_a_checked_fall_lets_the_month_be_written_set_aside_or_kept(monkeypatch):
+    dem = [_check("S07", "2026-10-31", "2026-12-04", "2026-11-16")]
+    written, _ = _job_on_fake_archive(monkeypatch, _records([]), frames=_falling_frames(), checks=dem)
+    final = next(w for w in written["scans"]["toy"]["out_of_sample"] if w["final"])
+    assert final["set_aside"] == [["S07", "2026-11-16"]] and final["as_recorded"]["n"] == final["n"] + 1
+    written, _ = _job_on_fake_archive(monkeypatch, _records([]), frames=_falling_frames(),
+                                      checks=[_check("S07", "2026-10-31", "2026-12-04")])
+    final = next(w for w in written["scans"]["toy"]["out_of_sample"] if w["final"])
+    assert final["checked"] == ["S07"] and ["S07", -70.0] in final["falls"]
+    assert "set_aside" not in final and "to_check" not in final
+
+
+def test_a_running_month_with_a_fall_to_check_is_written_running(monkeypatch):
+    """Only a final month waits for its check: one still running is re-measured each week, so it is written as it
+    stands, its fall named to check."""
+    early, late = _liquid_frames()
+    newest = late.copy()
+    newest.loc[newest["company_id"] == "S07", "close_price"] = 30.0
+    written, _ = _job_on_fake_archive(monkeypatch, _records([]), frames=(early, late), latest=newest)
+    oos = {w["end"]: w for w in written["scans"]["toy"]["out_of_sample"]}
+    assert oos["2026-12-04"]["to_check"] == ["S07"] and not oos["2026-12-04"]["final"]
+    assert "to_check" not in oos["2026-11-28"] and oos["2026-11-28"]["final"]
+
+
+def test_a_checks_file_the_job_cannot_read_stops_the_run(monkeypatch):
+    def unreadable():
+        raise ValueError("Expecting value: line 1 column 1 (char 0)")
+    written = {}
+    with pytest.raises(SystemExit, match=r"scan_record_checks\.json cannot be read"):
+        _job_on_fake_archive(monkeypatch, _records([]), written=written, checks=unreadable)
+    assert written == {}
 
 
 def test_a_month_with_too_few_matches_stays_unrecorded_with_no_alarm(monkeypatch):
