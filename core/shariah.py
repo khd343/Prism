@@ -52,7 +52,11 @@ lists come after the six rules: a stock passing all six on the latest data is Sh
 otherwise the list decides — SHARIAH_APPROVED Shariah (even over a proven fail, which its reason then names, so
 it is never silent), SHARIAH_REJECTED Non-Shariah, SHARIAH_REVIEW_COMPANIES Review. A haram business the data
 cannot see is not one of these but Rule 1 itself (SHARIAH_PROHIBITED_COMPANIES), so no new result clears it.
-Every rule left undecided says what to look up, with its rupee limit (shariah_*_check).
+A narrower tool settles ONE rule (the operator, 2026-10-19: "only because of Rule 6 — if in future an issue comes
+in another rule, PRISM should tell based on that"): a ticker in SHARIAH_INVESTMENTS_CLEARED (Rule 6) or
+SHARIAH_INCOME_CLEARED (Rule 2) means the operator read the real figure and it is within the limit, so that rule
+passes and the other five decide as ever. Every rule left undecided says what to look up, with its rupee limit
+(shariah_*_check).
 
 Called once from compute_derived_signals, right after cyclicality_tier_code. It adds its columns in one
 block and changes none; no scorer, gate, framework or scan recipe reads them (tests/test_shariah_screen.py).
@@ -62,9 +66,10 @@ import re
 import numpy as np
 import pandas as pd
 
-from config import (SHARIAH_APPROVED, SHARIAH_PROHIBITED_COMPANIES, SHARIAH_PROHIBITED_INDUSTRIES,
-                    SHARIAH_REJECTED, SHARIAH_REVIEW_COMPANIES, SHARIAH_REVIEW_INDUSTRIES, SHARIAH_REVIEW_SECTORS,
-                    SHARIAH_RULES, SHARIAH_STATUSES)
+from config import (SHARIAH_APPROVED, SHARIAH_INCOME_CLEARED, SHARIAH_INVESTMENTS_CLEARED,
+                    SHARIAH_PROHIBITED_COMPANIES, SHARIAH_PROHIBITED_INDUSTRIES, SHARIAH_REJECTED,
+                    SHARIAH_REVIEW_COMPANIES, SHARIAH_REVIEW_INDUSTRIES, SHARIAH_REVIEW_SECTORS, SHARIAH_RULES,
+                    SHARIAH_STATUSES)
 
 SHARIAH_PASS_REASON = "Passes every rule PRISM can check (interest income is not in the data — purify)"
 _PURIFY = "interest income is not in the data; purify"
@@ -159,13 +164,18 @@ def compute_shariah(df: pd.DataFrame) -> pd.DataFrame:
          pd.Series("no industry in the data", index=idx)],
         ind + " — not on PRISM's prohibited lists")
 
-    # ── 2 Impermissible income: the sheet shows only the least other income can be ──
+    # ── 2 Impermissible income: the sheet shows only the least other income can be; your check settles it ──
     seen = _share((ebit - ebitda).clip(lower=0.0), rev)
-    income = np.select([seen <= lim["income"], seen > lim["income"]], ["pass", "review"], "unknown")
+    checked_income = cid.isin(SHARIAH_INCOME_CLEARED)
+    income = np.select([checked_income, seen <= lim["income"], seen > lim["income"]], ["pass", "pass", "review"],
+                       "unknown")
     inc_txt, inc_lim = _pct(seen, lim["income"]), _limit(lim["income"])
+    seen_said = pd.Series(np.where(seen.isna(), "the data cannot estimate other income",
+                                   "the data shows other income of at least " + inc_txt + "%"), index=idx)
     income_note = np.select(
-        [seen.isna(), seen > lim["income"], seen <= 0.0],
-        [pd.Series("other income cannot be estimated (no revenue, EBIT or EBITDA figure)", index=idx),
+        [checked_income, seen.isna(), seen > lim["income"], seen <= 0.0],
+        ["impermissible income checked by you: at most " + inc_lim + " of revenue (" + seen_said + ") — " + _PURIFY,
+         pd.Series("other income cannot be estimated (no revenue, EBIT or EBITDA figure)", index=idx),
          "other income is at least " + inc_txt + "% of revenue — may be interest (limit " + inc_lim + ")",
          pd.Series(f"no other income visible in the data (limit {inc_lim}) — {_PURIFY}", index=idx)],
         "other income is at least " + inc_txt + "% of revenue (limit " + inc_lim + ") — " + _PURIFY)
@@ -231,13 +241,18 @@ def compute_shariah(df: pd.DataFrame) -> pd.DataFrame:
     receivables = (rev_bs * dso / 365.0).where((rev_bs > 0.0) & (dso >= 0.0))
     unexplained = ta - (fa.fillna(0.0) + cwip.fillna(0.0) + inv.fillna(0.0) + receivables.fillna(0.0))
     bound_share = _share(pd.Series(np.fmax(unexplained, cash.fillna(0.0)), index=idx), ta)
-    investments = np.select([bound_share < lim["investments"], has_ta], ["pass", "review"], "unknown")
+    checked_investments = cid.isin(SHARIAH_INVESTMENTS_CLEARED)            # your check settles it
+    investments = np.select([checked_investments, bound_share < lim["investments"], has_ta],
+                            ["pass", "pass", "review"], "unknown")
     inv_lim = _limit(lim["investments"])
-    bound = ("cash + unexplained assets are up to " + _pct(bound_share, lim["investments"]) + "% of assets (limit "
-             + inv_lim + ")")
+    bound_txt = _pct(bound_share, lim["investments"])
+    bound = "cash + unexplained assets are up to " + bound_txt + "% of assets (limit " + inv_lim + ")"
+    bound_said = pd.Series(np.where(has_ta, "the data shows only that cash + unexplained assets are up to " + bound_txt
+                                    + "%", _NO_TA), index=idx)
     investments_note = np.select(
-        [~has_ta, bound_share < lim["investments"]],
-        [pd.Series(_NO_TA, index=idx), bound],
+        [checked_investments, ~has_ta, bound_share < lim["investments"]],
+        ["non-compliant investments checked by you: below " + inv_lim + " of assets (" + bound_said + ")",
+         pd.Series(_NO_TA, index=idx), bound],
         "investments are not in the data; " + bound)
 
     states = dict(business=business, income=income, debt=debt_state, illiquid=illiquid, nla=nla,

@@ -352,6 +352,49 @@ SHARIAH_REJECTED = frozenset([
 ])
 SHARIAH_REVIEW_COMPANIES = frozenset([
 ])
+# RULES YOU CHECKED YOURSELF (the operator, 2026-10-19: "only because of Rule 6 — if in future an issue comes in
+# another rule, PRISM should tell based on that"). The data cannot prove Rule 6 (it has no investments line) or
+# Rule 2 (no interest-income line); when you read the real figure (your app, the annual report) and it is within the
+# limit, list the ticker here. That ONE rule then passes; the other five run as ever on every new result, so a fail,
+# a missing figure or another open rule still sets the label. Ticker only, no dates; remove it to be asked again.
+# Rule 6 — non-compliant investments below 33% of total assets:
+SHARIAH_INVESTMENTS_CLEARED = frozenset([
+    "NSE:ELGIEQUIP",      # Elgi Equipments
+    "NSE:GMMPFAUDLR",     # GMM Pfaudler
+    "NSE:CYIENT",         # Cyient
+    "NSE:GARFIBRES",      # Garware Technical Fibres
+    "NSE:MINDACORP",      # Minda Corporation
+    "NSE:GSPL",           # Gujarat State Petronet
+    "NSE:MOREPENLAB",     # Morepen Laboratories
+    "NSE:AKUMS",          # Akums Drugs & Pharmaceuticals
+    "NSE:KIRLPNU",        # Kirloskar Pneumatic
+    "NSE:FCL",            # Fineotex Chemical
+    "NSE:ATUL",           # Atul
+    "NSE:INDGN",          # Indegene
+    "NSE:NEPHROPLUS",     # Nephrocare Health Services
+    "BSE:ASMTEC",         # ASM Technologies
+    "NSE:INOXINDIA",      # Inox India
+    "NSE:LLOYDSENGG",     # Lloyds Engineering Works (your app: 24.33%)
+    "NSE:THYROCARE",      # Thyrocare Technologies
+    "NSE:ELECON",         # Elecon Engineering
+    "NSE:NAVA",           # Nava
+    "NSE:OPTIEMUS",       # Optiemus Infracom
+    "NSE:GPPL",           # Gujarat Pipavav Port
+    "NSE:BBOX",           # Black Box
+    "NSE:TENNIND",        # Tenneco Clean Air India
+    "NSE:SIS",            # SIS
+    "NSE:JSWDULUX",       # JSW Dulux (Rule 6 already passes on the data; its Rule 2 is open)
+    "NSE:KANSAINER",      # Kansai Nerolac Paints
+    "NSE:DODLA",          # Dodla Dairy
+    "NSE:PRSMJOHNSN",     # Prism Johnson
+    "NSE:ETHOSLTD",       # Ethos
+    "NSE:BHARATCOAL",     # Bharat Coking Coal (its Rule 2 is open too)
+    "NSE:RATNAVEER",      # Ratnaveer Precision Engineering (your app: 14.14%)
+    "NSE:HSCL",           # Himadri Speciality Chemical (your app: 25.72%)
+])
+# Rule 2 — impermissible income at most 5% of revenue:
+SHARIAH_INCOME_CLEARED = frozenset([
+])
 # Industries whose NAME holds a word the classification guard looks for, decided allowed: "film" here is
 # plastic film, "media" sits inside "intermediate", and industrial alcohol is a chemical, not a drink (the
 # operator cleared it from review on 2026-10-17; the six rules judge it like any other business).
