@@ -391,6 +391,95 @@ SHARIAH_INVESTMENTS_CLEARED = frozenset([
     "NSE:BHARATCOAL",     # Bharat Coking Coal (its Rule 2 is open too)
     "NSE:RATNAVEER",      # Ratnaveer Precision Engineering (your app: 14.14%)
     "NSE:HSCL",           # Himadri Speciality Chemical (your app: 25.72%)
+    # the operator's second batch, 19 Oct
+    "NSE:SYNGENE",        # Syngene International
+    "NSE:TTKPRESTIG",     # TTK Prestige
+    "NSE:ANANTRAJ",       # Anant Raj
+    "NSE:RAILTEL",        # Railtel Corporation of India
+    "NSE:BLUEJET",        # Blue Jet Healthcare (Rule 6 already passes on the data; its Rule 2 is open)
+    "NSE:BIKAJI",         # Bikaji Foods International
+    "NSE:EMAMILTD",       # Emami
+    "NSE:BORORENEW",      # Borosil Renewables
+    "NSE:EMBDL",          # Embassy Developments (Rule 6 already passes on the data; its Rule 2 is open)
+    "NSE:VIKRAMSOLR",     # Vikram Solar
+    "NSE:ORBTEXP",        # Orbit Exports
+    "NSE:CONFIPET",       # Confidence Petroleum India
+    "NSE:KDDL",           # KDDL
+    "NSE:ONWARDTEC",      # Onward Technologies
+    "NSE:PIXTRANS",       # Pix Transmission
+    "BSE:NITTAGELA",      # Nitta Gelatin India
+    "NSE:MAHLOG",         # Mahindra Logistics
+    "NSE:TALBROAUTO",     # Talbros Automotive Components
+    "NSE:WINDLAS",        # Windlas Biotech
+    "BSE:TRANSPEK",       # Transpek Industry
+    "NSE:CENTENKA",       # Century Enka
+    "NSE:KSL",            # Kalyani Steels
+    "NSE:RPGLIFE",        # RPG Life Sciences
+    "BSE:RNITAI",         # RNIT AI Solutions
+    "NSE:KANORICHEM",     # Kanoria Chemicals & Industries (Rule 6 already passes on the data; its Rule 2 is open)
+    "BSE:WPIL",           # WPIL
+    "NSE:GKSL",           # Gujarat Kidney & Super Speciality
+    "NSE:GPTINFRA",       # GPT Infraprojects
+    "NSE:JINDRILL",       # Jindal Drilling & Industries
+    "NSE:SYNCOMF",        # Syncom Formulations (India) (its Rule 2 is open too)
+    "NSE:NIITLTD",        # NIIT (its Rule 2 is open too)
+    "NSE:DIFFNKG",        # Diffusion Engineers
+    "NSE:HESTERBIO",      # Hester Biosciences (Rule 6 already passes on the data; its Rule 2 is open)
+    "NSE:GANESHCP",       # Ganesh Consumer Products
+    "NSE:MAMATA",         # Mamata Machinery
+    "NSE:MOLDTECH",       # Mold-Tek Technologies
+    "NSE:ANDHRAPAP",      # Andhra Paper
+    "BSE:ADVAIT",         # Advait Energy Transitions
+    "NSE:UNICHEMLAB",     # Unichem Laboratories (Rule 6 already passes on the data; its Rule 2 is open)
+    "NSE:SHANTIGEAR",     # Shanthi Gears
+    "NSE:GREAVESCOT",     # Greaves Cotton
+    "NSE:RAJOOENG",       # Rajoo Engineers
+    "NSE:BETA",           # Beta Drugs
+    "NSE:SASKEN",         # Sasken Technologies
+    "NSE:TEXRAIL",        # Texmaco Rail & Engineering
+    "NSE:INTERARCH",      # Interarch Building Solutions
+    "NSE:KCP",            # K C P
+    "NSE:WALCHANNAG",     # Walchandnagar Industries
+    "NSE:EXCELINDUS",     # Excel Industries
+    "NSE:ROUTE",          # Route Mobile
+    "NSE:SAIPARENT",      # Sai Parenterals
+    "NSE:SPIC",           # Southern Petrochemicals Industries Corporation
+    "NSE:NIITMTS",        # NIIT Learning Systems
+    "NSE:SKMEGGPROD",     # SKM Egg Products Export (India)
+    "NSE:DPSCLTD",        # India Power Corporation
+    "NSE:SUDARCOLOR",     # Sudarshan Colorants India
+    "NSE:SERVOTECH",      # Servotech Renewable Power System
+    "NSE:BAJAJELEC",      # Bajaj Electricals
+    "NSE:MOIL",           # MOIL
+    "NSE:SUBROS",         # Subros
+    "NSE:AWHCL",          # Antony Waste Handling Cell
+    # the operator's third batch, 19 Oct
+    "NSE:IKS",            # Inventurus Knowledge Solutions
+    "NSE:NYKAA",          # FSN E-Commerce Ventures
+    "NSE:LENSKART",       # Lenskart Solutions
+    "NSE:MARICO",         # Marico
+    "NSE:TATATECH",       # Tata Technologies
+    "NSE:POLYCAB",        # Polycab India
+    "NSE:SUNPHARMA",      # Sun Pharmaceutical Industries
+    "NSE:COALINDIA",      # Coal India (its Rule 2 is open too)
+    "NSE:PIDILITIND",     # Pidilite Industries
+    "NSE:FORCEMOT",       # Force Motors
+    "NSE:EXIDEIND",       # Exide Industries
+    "NSE:OIL",            # Oil India
+    "NSE:ASIANPAINT",     # Asian Paints
+    "NSE:CGPOWER",        # CG Power & Industrial Solutions
+    "NSE:HFCL",           # HFCL
+    "NSE:LUPIN",          # Lupin
+    "NSE:CIPLA",          # Cipla
+    "NSE:NATIONALUM",     # National Aluminium Company
+    "NSE:WAAREEENER",     # Waaree Energies
+    "NSE:CONCOR",         # Container Corporation Of India
+    "NSE:LINDEINDIA",     # Linde India
+    "NSE:HINDUNILVR",     # Hindustan Unilever (Rule 6 already passes on the data; its Rule 2 is open)
+    "BSE:GUJENERGY",      # Gujarat Energy
+    "NSE:THERMAX",        # Thermax
+    "NSE:PIIND",          # P I Industries
+    "BSE:ALUFLUOR",       # Alufluoride
 ])
 # Rule 2 — impermissible income at most 5% of revenue:
 SHARIAH_INCOME_CLEARED = frozenset([
