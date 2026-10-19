@@ -578,6 +578,61 @@ def test_every_list_entry_is_well_formed():
         assert not (a & b), f"a company in two lists: {sorted(a & b)}"
 
 
+# ── Rules you checked yourself: that one rule settled, every other rule still applies (the operator, 2026-10-19) ──
+# "Only because of Rule 6 — if in future an issue comes in another rule, PRISM should tell based on that." Rule 6
+# (non-compliant investments) and Rule 2 (impermissible income) are the two rules the data cannot prove; the operator
+# reads the real figure (their app, the annual report) and lists the ticker. That rule then passes, and the five
+# others run as ever, so a fail, a missing figure or another open rule in any later quarter still sets the label.
+def _checked(monkeypatch, name):
+    import core.shariah as sh
+    monkeypatch.setattr(sh, name, frozenset([_ME]))
+
+
+def test_a_rule_6_check_settles_rule_6_and_nothing_else(monkeypatch):
+    assert _screen(cash_equivalents=900.0)["shariah_status"] == "Review"            # Rule 6: up to 90%
+    _checked(monkeypatch, "SHARIAH_INVESTMENTS_CLEARED")
+    s = _screen(cash_equivalents=900.0)
+    assert (s["shariah_investments"], s["shariah_status"]) == ("pass", "Shariah")
+    assert s["shariah_investments_note"] == ("non-compliant investments checked by you: below 33% of assets (the data "
+                                             "shows only that cash + unexplained assets are up to 90%)")
+    assert (s["shariah_investments_check"], s["shariah_your_list"]) == ("", ""), "settled, and not one of your lists"
+    assert _screen(cash_equivalents=900.0, debt=500.0)["shariah_status"] == "Non-Shariah", "a later fail decides"
+    assert _screen(cash_equivalents=900.0, fixed_assets=np.nan)["shariah_status"] == "Doubtful"
+    s = _screen(cash_equivalents=900.0, ebit=900.0)                                    # Rule 2 is still open
+    assert (s["shariah_status"], s["shariah_reason"]) == (
+        "Review", "other income is at least 70% of revenue — may be interest (limit 5%)")
+
+
+def test_a_rule_2_check_settles_rule_2_and_nothing_else(monkeypatch):
+    assert _screen(ebit=900.0)["shariah_status"] == "Review"                        # other income at least 70%
+    _checked(monkeypatch, "SHARIAH_INCOME_CLEARED")
+    s = _screen(ebit=900.0)
+    assert (s["shariah_income"], s["shariah_status"]) == ("pass", "Shariah")
+    assert s["shariah_income_note"] == ("impermissible income checked by you: at most 5% of revenue (the data shows "
+                                        "other income of at least 70%) — interest income is not in the data; purify")
+    assert _screen(ebit=900.0, cash_equivalents=900.0)["shariah_status"] == "Review", "Rule 6 is still open"
+    assert _screen(ebit=900.0, debt=500.0)["shariah_status"] == "Non-Shariah"
+
+
+def test_a_checked_rule_holds_without_its_figure(monkeypatch):
+    _checked(monkeypatch, "SHARIAH_INCOME_CLEARED")
+    s = _screen(ebitda=np.nan)
+    assert s["shariah_income"] == "pass"
+    assert "at most 5% of revenue (the data cannot estimate other income)" in s["shariah_income_note"]
+    _checked(monkeypatch, "SHARIAH_INVESTMENTS_CLEARED")
+    s = _screen(total_assets=np.nan)
+    assert s["shariah_investments"] == "pass"
+    assert s["shariah_investments_note"].endswith("(no total-assets figure in the data)")
+    assert s["shariah_status"] == "Doubtful", "the missing total assets still leave Rules 3 and 4 unread"
+
+
+def test_every_checked_rule_entry_is_well_formed():
+    """Company ids, exchange-prefixed ("NSE:SYMBOL", or "BSE:code"). A company may sit in both, or in one of your
+    lists too: a check settles one rule, a list decides the label."""
+    for cid in sorted(config.SHARIAH_INVESTMENTS_CLEARED | config.SHARIAH_INCOME_CLEARED):
+        assert re.fullmatch(r"(NSE|BSE):\S+", cid), cid
+
+
 # ── What to check: every rule PRISM cannot decide says what to look up, with the rupee limit ────────────
 def test_every_open_rule_says_what_to_check_with_the_rupee_limit():
     """For review (investments, other income, a business ruling) and for a missing figure alike."""
@@ -689,7 +744,8 @@ def test_the_engine_holds_configs_own_objects_not_copies(monkeypatch):
     import core.shariah as sh
     for name in ("SHARIAH_RULES", "SHARIAH_PROHIBITED_INDUSTRIES", "SHARIAH_REVIEW_INDUSTRIES",
                  "SHARIAH_REVIEW_SECTORS", "SHARIAH_PROHIBITED_COMPANIES", "SHARIAH_STATUSES", "SHARIAH_APPROVED",
-                 "SHARIAH_REJECTED", "SHARIAH_REVIEW_COMPANIES"):
+                 "SHARIAH_REJECTED", "SHARIAH_REVIEW_COMPANIES", "SHARIAH_INVESTMENTS_CLEARED",
+                 "SHARIAH_INCOME_CLEARED"):
         assert getattr(sh, name) is getattr(config, name), name
     monkeypatch.setattr(sh, "SHARIAH_PROHIBITED_INDUSTRIES", frozenset(["Speciality Chemicals"]))
     assert _screen()["shariah_status"] == "Non-Shariah"

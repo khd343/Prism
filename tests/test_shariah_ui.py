@@ -287,7 +287,8 @@ def test_the_reference_explains_labels_rules_sight_purification_and_source():
         assert f"Rule {r['n']} — {r['name']}" in labels
     text = " ".join(e for _, e in section)
     for needle in ("KMI-30", "AAOIFI", "purif", "cannot see", "annual report", "SHARIAH_APPROVED",
-                   "SHARIAH_REJECTED", "SHARIAH_REVIEW_COMPANIES", "SHARIAH_PROHIBITED_COMPANIES"):
+                   "SHARIAH_REJECTED", "SHARIAH_REVIEW_COMPANIES", "SHARIAH_PROHIBITED_COMPANIES",
+                   "SHARIAH_INVESTMENTS_CLEARED", "SHARIAH_INCOME_CLEARED"):
         assert needle in text, needle
 
 

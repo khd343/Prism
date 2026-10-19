@@ -514,6 +514,12 @@ def shariah_concepts() -> list:
          "then names), SHARIAH_REJECTED Non-Shariah, SHARIAH_REVIEW_COMPANIES Review. A haram business the data "
          "cannot see goes in SHARIAH_PROHIBITED_COMPANIES with its reason: that is Rule 1 itself, so no new result "
          "clears it."),
+        ("Rules you checked",
+         f"Rule 6 and Rule 2 are the two the data cannot prove. When you read the real figure — in your app or the "
+         f"annual report — and it is within the limit, list the ticker in config.py: SHARIAH_INVESTMENTS_CLEARED "
+         f"(non-compliant investments {rule_limit_text('investments')}) or SHARIAH_INCOME_CLEARED (impermissible "
+         f"income {rule_limit_text('income')}). That one rule then passes; the other five run as ever on every new "
+         f"result, so a fail, a missing figure or another open rule still decides the label."),
         ("Source",
          f"The KMI-30 / Meezan method (Pakistan Stock Exchange) with your thresholds — debt "
          f"{rule_limit_text('debt')}, illiquid assets {rule_limit_text('illiquid')} — not AAOIFI, which measures "
