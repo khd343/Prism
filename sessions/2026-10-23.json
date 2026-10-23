@@ -1,0 +1,675 @@
+{
+  "schema": 1,
+  "session": "2026-10-23",
+  "playbook": {
+    "rows": 220,
+    "columns": [
+      "symbol",
+      "name",
+      "sector",
+      "industry",
+      "cap",
+      "composite_score",
+      "crs_52w",
+      "dist_to_vstop",
+      "momentum_score",
+      "breakout_score",
+      "traded_value_cr",
+      "rsi_14d",
+      "stage",
+      "close_price",
+      "equity_shares"
+    ],
+    "csv_sha256": "6cd91bb17c007204d62d20fbc656e767e4ae444dad32f477faf15f74a946f3fd"
+  },
+  "rank": {
+    "rows": 2695,
+    "columns": [
+      "symbol",
+      "shariah_status",
+      "cap",
+      "traded_value_cr",
+      "momentum_score",
+      "momentum_pct",
+      "vstop_value",
+      "close_price",
+      "sector",
+      "stage",
+      "last_result_date",
+      "next_result_date",
+      "equity_shares"
+    ],
+    "csv_sha256": "01ea5b1cc0d44f69921821bb4f2bbda923fda968f666ead4b0d341184eb0c7e8"
+  },
+  "recipe": "playbook",
+  "recipe_fingerprint": "80251b8b4da6d635",
+  "engine_commit": "dc81c85d5468448b6b003bb40f0f1958b969c105",
+  "source_title": "PRISM 2026-10-23 Fri",
+  "source_sha256": "5a50ecb53f0abcefb5d2399b386f6710aeffd69e834404cfde58c23e8407f5a1",
+  "origin": "recorded",
+  "trigger": "after-feed",
+  "published_at": "2026-10-23T19:44:58+05:30",
+  "checks": {
+    "passed": 17,
+    "warnings": [
+      "Industry names: 1 unmapped (0.1% of stocks): ['Aluminium Proxies']",
+      "Sector names: 1 without a fallback tier: ['Aluminium']"
+    ]
+  },
+  "blanks": {
+    "in": {
+      "BSE:EXATO": [
+        "crs_52w",
+        "ret_vs_industry_1y"
+      ],
+      "BSE:GOODRICKE": [
+        "ret_vs_industry_1y",
+        "ret_vs_industry_3m"
+      ],
+      "BSE:GRERENEW": [
+        "crs_52w",
+        "ret_vs_industry_1y",
+        "sma_200d"
+      ],
+      "BSE:GTIL": [
+        "crs_52w",
+        "ret_vs_industry_1y",
+        "sma_200d"
+      ],
+      "BSE:HINDADH": [
+        "ret_vs_industry_1y",
+        "ret_vs_industry_3m"
+      ],
+      "BSE:HRS": [
+        "crs_52w",
+        "ret_vs_industry_1y"
+      ],
+      "BSE:OVOBELE": [
+        "ret_vs_industry_1y",
+        "ret_vs_industry_3m"
+      ],
+      "BSE:PARMESHWAR": [
+        "ret_vs_industry_1y",
+        "ret_vs_industry_3m"
+      ],
+      "BSE:PPEL": [
+        "adx_14w",
+        "crs_26w",
+        "crs_52w",
+        "ret_vs_industry_1y",
+        "ret_vs_industry_3m",
+        "sma_200d"
+      ],
+      "BSE:PRADPME": [
+        "ret_vs_industry_1y",
+        "ret_vs_industry_3m"
+      ],
+      "BSE:RECODE": [
+        "adx_14w",
+        "crs_26w",
+        "crs_52w",
+        "ret_vs_industry_1y",
+        "sma_200d"
+      ],
+      "BSE:SJCORP": [
+        "crs_26w",
+        "crs_50d",
+        "crs_52w"
+      ],
+      "BSE:SVRL": [
+        "ret_vs_industry_1y",
+        "ret_vs_industry_3m"
+      ],
+      "BSE:THAKDEV": [
+        "crs_26w",
+        "crs_50d",
+        "crs_52w"
+      ],
+      "BSE:TIPCO": [
+        "crs_52w",
+        "ret_vs_industry_1y",
+        "sma_200d"
+      ],
+      "BSE:VIPPYSP": [
+        "ret_vs_industry_1y",
+        "ret_vs_industry_3m"
+      ],
+      "NSE:ABSMARINE": [
+        "ret_vs_industry_1y",
+        "ret_vs_industry_3m"
+      ],
+      "NSE:ADISOFT": [
+        "adx_14w",
+        "crs_26w",
+        "crs_52w",
+        "ret_vs_industry_1y",
+        "sma_200d"
+      ],
+      "NSE:ARIES": [
+        "ret_vs_industry_1y",
+        "ret_vs_industry_3m"
+      ],
+      "NSE:AVTNPL": [
+        "ret_vs_industry_1y",
+        "ret_vs_industry_3m"
+      ],
+      "NSE:CARTRADE": [
+        "ret_vs_industry_1y",
+        "ret_vs_industry_3m"
+      ],
+      "NSE:CORONA": [
+        "crs_52w",
+        "ret_vs_industry_1y"
+      ],
+      "NSE:EPWINDIA": [
+        "crs_52w",
+        "ret_vs_industry_1y",
+        "sma_200d"
+      ],
+      "NSE:ETL": [
+        "ret_vs_industry_1y",
+        "ret_vs_industry_3m"
+      ],
+      "NSE:GARFIBRES": [
+        "ret_vs_industry_1y",
+        "ret_vs_industry_3m"
+      ],
+      "NSE:LAGNAM": [
+        "ret_vs_industry_1y",
+        "ret_vs_industry_3m"
+      ],
+      "NSE:LENSKART": [
+        "crs_52w",
+        "ret_vs_industry_1y"
+      ],
+      "NSE:LGEINDIA": [
+        "crs_52w"
+      ],
+      "NSE:LLOYDSENGG": [
+        "ret_vs_industry_1y",
+        "ret_vs_industry_3m"
+      ],
+      "NSE:MADHUSUDAN": [
+        "ret_vs_industry_1y",
+        "ret_vs_industry_3m"
+      ],
+      "NSE:MANORAMA": [
+        "ret_vs_industry_1y",
+        "ret_vs_industry_3m"
+      ],
+      "NSE:OMNI": [
+        "crs_52w",
+        "ret_vs_industry_1y",
+        "sma_200d"
+      ],
+      "NSE:PANACHE": [
+        "ret_vs_industry_1y",
+        "ret_vs_industry_3m"
+      ],
+      "NSE:PNGSREVA": [
+        "crs_52w",
+        "ret_vs_industry_1y",
+        "sma_200d"
+      ],
+      "NSE:RSL": [
+        "crs_52w",
+        "ret_vs_industry_1y",
+        "sma_200d"
+      ],
+      "NSE:SCPL": [
+        "ret_vs_industry_1y",
+        "ret_vs_industry_3m"
+      ],
+      "NSE:SEDEMAC": [
+        "crs_52w",
+        "ret_vs_industry_1y",
+        "sma_200d"
+      ],
+      "NSE:SHADOWFAX": [
+        "crs_52w",
+        "ret_vs_industry_1y",
+        "sma_200d"
+      ],
+      "NSE:SHETHJI": [
+        "crs_52w",
+        "ret_vs_industry_1y",
+        "ret_vs_industry_3m"
+      ],
+      "NSE:SMARTLINK": [
+        "ret_vs_industry_1y",
+        "ret_vs_industry_3m"
+      ],
+      "NSE:SSFL": [
+        "ret_vs_industry_1y",
+        "ret_vs_industry_3m"
+      ],
+      "NSE:SUNLITE": [
+        "ret_vs_industry_1y",
+        "ret_vs_industry_3m"
+      ],
+      "NSE:THEJO": [
+        "ret_vs_industry_1y",
+        "ret_vs_industry_3m"
+      ],
+      "NSE:TIMEX": [
+        "crs_26w",
+        "crs_52w",
+        "ret_vs_industry_1y",
+        "sma_200d"
+      ]
+    },
+    "out": {
+      "BSE:BAIKAKAJI": {
+        "quarter": [
+          "ebitda_pyq",
+          "pat_pyq",
+          "rev_pyq"
+        ]
+      },
+      "BSE:BDI": {
+        "quarter": [
+          "ebitda_pyq",
+          "pat_pyq",
+          "rev_pyq"
+        ]
+      },
+      "BSE:DEVSON": {
+        "quarter": [
+          "ebitda_pyq",
+          "pat_pyq",
+          "rev_pyq"
+        ]
+      },
+      "BSE:DIGILOGIC": {
+        "quarter": [
+          "ebitda_pyq",
+          "pat_pyq",
+          "rev_pyq"
+        ]
+      },
+      "BSE:MAHALIFE": {
+        "momentum": [
+          "crs_52w",
+          "ret_vs_industry_1y"
+        ]
+      },
+      "BSE:MRTX": {
+        "quarter": [
+          "ebitda_pyq",
+          "pat_pyq",
+          "rev_pyq"
+        ]
+      },
+      "BSE:MSAFE": {
+        "quarter": [
+          "ebitda_pyq",
+          "pat_pyq",
+          "rev_pyq"
+        ]
+      },
+      "BSE:NOVUS": {
+        "momentum": [
+          "crs_52w",
+          "ret_vs_industry_1y",
+          "sma_200d"
+        ],
+        "quarter": [
+          "ebitda_pyq",
+          "pat_pyq",
+          "rev_pyq"
+        ]
+      },
+      "BSE:PPARIVAH": {
+        "evidence": [
+          "opm_1yb",
+          "pat_1yb",
+          "revenue_1yb"
+        ],
+        "quarter": [
+          "ebitda_pyq",
+          "pat_pyq",
+          "rev_pyq"
+        ]
+      },
+      "BSE:QLL": {
+        "quarter": [
+          "ebitda_pyq",
+          "pat_pyq",
+          "rev_pyq"
+        ]
+      },
+      "BSE:SEALMATIC": {
+        "quarter": [
+          "ebitda_pyq",
+          "pat_pyq",
+          "rev_pyq"
+        ]
+      },
+      "BSE:SKM": {
+        "quarter": [
+          "ebitda_pyq",
+          "pat_pyq",
+          "rev_pyq"
+        ]
+      },
+      "BSE:TANDHANIN": {
+        "evidence": [
+          "opm_1yb",
+          "pat_1yb",
+          "revenue_1yb"
+        ],
+        "quarter": [
+          "ebitda_pyq",
+          "pat_pyq",
+          "rev_pyq"
+        ]
+      },
+      "BSE:ZELIO": {
+        "evidence": [
+          "opm_1yb",
+          "pat_1yb",
+          "revenue_1yb"
+        ],
+        "quarter": [
+          "ebitda_pyq",
+          "pat_pyq",
+          "rev_pyq"
+        ]
+      },
+      "NSE:ATHERENERG": {
+        "evidence": [
+          "opm_1yb",
+          "pat_1yb",
+          "revenue_1yb"
+        ],
+        "quarter": [
+          "ebitda_pyq",
+          "pat_pyq",
+          "rev_pyq"
+        ]
+      },
+      "NSE:AVANA": {
+        "quarter": [
+          "ebitda_pyq",
+          "pat_pyq",
+          "rev_pyq"
+        ]
+      },
+      "NSE:BMLL": {
+        "quarter": [
+          "ebitda_pyq",
+          "pat_pyq",
+          "rev_pyq"
+        ]
+      },
+      "NSE:CMLL": {
+        "momentum": [
+          "adx_14w",
+          "crs_26w",
+          "crs_52w",
+          "ret_vs_industry_1y",
+          "ret_vs_industry_3m",
+          "sma_200d"
+        ],
+        "quarter": [
+          "ebitda_pyq",
+          "pat_pyq",
+          "rev_pyq"
+        ]
+      },
+      "NSE:DEEPA": {
+        "momentum": [
+          "adx_14w",
+          "crs_26w",
+          "crs_50d",
+          "crs_52w",
+          "ret_vs_industry_1y",
+          "ret_vs_industry_3m",
+          "sma_200d"
+        ],
+        "quarter": [
+          "ebitda_pyq",
+          "pat_pyq",
+          "rev_pyq"
+        ]
+      },
+      "NSE:HOACFOODS": {
+        "quarter": [
+          "ebitda_pyq",
+          "pat_pyq",
+          "rev_pyq"
+        ]
+      },
+      "NSE:INFLUX": {
+        "evidence": [
+          "opm_1yb",
+          "pat_1yb",
+          "revenue_1yb"
+        ],
+        "quarter": [
+          "ebitda_lq",
+          "ebitda_pyq",
+          "pat_lq",
+          "pat_pyq",
+          "rev_lq",
+          "rev_pyq"
+        ]
+      },
+      "NSE:JMA": {
+        "momentum": [
+          "ret_vs_industry_1y",
+          "ret_vs_industry_3m"
+        ]
+      },
+      "NSE:KNACK": {
+        "evidence": [
+          "opm",
+          "opm_1yb"
+        ],
+        "quarter": [
+          "ebitda_pyq",
+          "pat_pyq",
+          "rev_pyq"
+        ]
+      },
+      "NSE:LCL": {
+        "quarter": [
+          "ebitda_pyq",
+          "pat_pyq",
+          "rev_pyq"
+        ]
+      },
+      "NSE:MOMSBELIEF": {
+        "evidence": [
+          "opm_1yb",
+          "pat_1yb",
+          "revenue_1yb"
+        ],
+        "momentum": [
+          "adx_14w",
+          "crs_26w",
+          "crs_50d",
+          "crs_52w",
+          "ret_vs_industry_1y",
+          "ret_vs_industry_3m",
+          "sma_200d"
+        ],
+        "quarter": [
+          "ebitda_pyq",
+          "pat_pyq",
+          "rev_pyq"
+        ]
+      },
+      "NSE:PATILAUTOM": {
+        "evidence": [
+          "opm_1yb",
+          "pat_1yb",
+          "revenue_1yb"
+        ],
+        "quarter": [
+          "ebitda_pyq",
+          "pat_pyq",
+          "rev_pyq"
+        ]
+      },
+      "NSE:PRIORITY": {
+        "momentum": [
+          "adx_14w",
+          "crs_26w",
+          "crs_50d",
+          "crs_52w",
+          "ret_vs_industry_1y",
+          "ret_vs_industry_3m",
+          "sma_200d"
+        ],
+        "quarter": [
+          "ebitda_pyq",
+          "pat_pyq",
+          "rev_pyq"
+        ]
+      },
+      "NSE:RUBYMILLS": {
+        "evidence": [
+          "opm_1yb",
+          "pat_1yb",
+          "revenue_1yb"
+        ],
+        "quarter": [
+          "ebitda_pyq",
+          "pat_pyq",
+          "rev_pyq"
+        ]
+      },
+      "NSE:SHANKESH": {
+        "quarter": [
+          "ebitda_lq",
+          "ebitda_pyq",
+          "pat_lq",
+          "pat_pyq",
+          "rev_lq",
+          "rev_pyq"
+        ]
+      },
+      "NSE:SHANTIGOLD": {
+        "evidence": [
+          "opm_1yb",
+          "pat_1yb",
+          "revenue_1yb"
+        ],
+        "quarter": [
+          "ebitda_pyq",
+          "pat_pyq",
+          "rev_pyq"
+        ]
+      },
+      "NSE:SHANTIINOR": {
+        "quarter": [
+          "ebitda_lq",
+          "ebitda_pyq",
+          "pat_lq",
+          "pat_pyq",
+          "rev_lq",
+          "rev_pyq"
+        ]
+      },
+      "NSE:SHIPROCKET": {
+        "momentum": [
+          "adx_14w",
+          "crs_26w",
+          "crs_50d",
+          "crs_52w",
+          "ret_vs_industry_1y",
+          "ret_vs_industry_3m",
+          "sma_200d"
+        ],
+        "quarter": [
+          "ebitda_pyq",
+          "pat_pyq",
+          "rev_pyq"
+        ]
+      },
+      "NSE:SHREEDHAR": {
+        "quarter": [
+          "ebitda_pyq",
+          "pat_pyq",
+          "rev_pyq"
+        ]
+      },
+      "NSE:SVLL": {
+        "quarter": [
+          "ebitda_pyq",
+          "pat_pyq",
+          "rev_pyq"
+        ]
+      },
+      "NSE:SYMBIOTEC": {
+        "quarter": [
+          "ebitda_pyq",
+          "pat_pyq",
+          "rev_pyq"
+        ]
+      },
+      "NSE:TEAMTECH": {
+        "momentum": [
+          "adx_14w",
+          "crs_26w",
+          "crs_52w",
+          "ret_vs_industry_1y",
+          "sma_200d"
+        ],
+        "quarter": [
+          "ebitda_pyq",
+          "pat_pyq",
+          "rev_pyq"
+        ]
+      },
+      "NSE:TECHNOCRAF": {
+        "quarter": [
+          "ebitda_pyq",
+          "pat_pyq",
+          "rev_pyq"
+        ]
+      },
+      "NSE:VINYAS": {
+        "evidence": [
+          "opm_1yb",
+          "pat_1yb",
+          "revenue_1yb"
+        ],
+        "quarter": [
+          "ebitda_pyq",
+          "pat_pyq",
+          "rev_pyq"
+        ]
+      }
+    }
+  },
+  "counts": {
+    "cap": {
+      "": 0,
+      "LARGE": 246,
+      "MEGA": 32,
+      "MICRO": 838,
+      "MID": 407,
+      "NANO": 122,
+      "SMALL": 1050
+    },
+    "stage": {
+      "": 164,
+      "1": 109,
+      "2": 650,
+      "3": 849,
+      "4": 923
+    },
+    "shariah": {
+      "": 0,
+      "Doubtful": 354,
+      "Non-Shariah": 1193,
+      "Review": 383,
+      "Shariah": 765
+    }
+  },
+  "carried_from": "2026-10-22",
+  "carried": 572,
+  "unknown_days": 3
+}
