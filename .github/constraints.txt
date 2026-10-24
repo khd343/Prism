@@ -1,16 +1,19 @@
 # The whole dependency tree every GitHub job installs, pinned exactly (2026-10-24).
 # requirements.txt names eight packages; their own dependencies (streamlit's pyarrow, altair, protobuf, tornado;
 # plotly's narwhals; pandas' python-dateutil) were resolved afresh on every run, so the jobs ran on whatever was
-# newest that day. Measured: python-dateutil 2.9.0.post0 until 21 Oct 2026, 3.0.0 from 22 Oct.
-# This is the set pip installed on ubuntu-24.04 / Python 3.13 in run 40094645819 (24 Oct 2026), the back-fill that
-# rebuilt the v2 lists of 21-23 Oct byte for byte from the archive's copies. Every install passes it with -c
-# (tests/test_ci_constraints.py). A requirement bumped there is bumped here too; refresh this set only with a
-# back-fill compare like that run's. ASCII only: pip reads it on a Linux box with its own locale.
+# newest that day. Measured: python-dateutil 2.9.0.post0 until 21 Oct 2026, then 3.0.0 (a major release three days
+# old, newer than pandas 2.3.3 itself) from 22 Oct.
+# This is the set pip installed on ubuntu-24.04 / Python 3.13 in run 39617674220 (21 Oct 2026), which published that
+# day's v2 lists: the last set before the drift. A back-fill rebuilt 21-23 Oct byte for byte with the drifted set (run
+# 40094645819); the commit that pinned this set records its own compare. Every install passes it with -c
+# (tests/test_ci_constraints.py). Every requirement, on main AND at both pinned code commits (FEED_CODE_SHA,
+# V2_CODE_SHA), equals its line here: while a pin names a version, a bump on main cannot be made here (pip would
+# refuse both pinned jobs). Refresh this set only with a back-fill compare. ASCII only: pip reads it on a Linux box.
 altair==6.3.0
 attrs==26.1.0
 blinker==1.9.0
 cachetools==6.2.6
-certifi==2026.10.23
+certifi==2026.10.19
 charset_normalizer==3.5.2
 click==8.5.0
 et-xmlfile==2.0.0
@@ -32,7 +35,7 @@ protobuf==6.33.6
 pyarrow==26.0.0
 pydeck==0.9.3
 python-calamine==0.7.0
-python-dateutil==3.0.0
+python-dateutil==2.9.0.post0
 pytz==2026.5
 referencing==0.37.0
 requests==2.32.5
@@ -42,7 +45,7 @@ smmap==5.0.3
 streamlit==1.54.0
 tenacity==9.2.1
 toml==0.10.2
-tornado==6.6
+tornado==6.5.10
 typing-extensions==4.16.0
 tzdata==2026.5
 urllib3==2.8.0
