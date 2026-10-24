@@ -431,17 +431,33 @@ def test_a_push_made_meanwhile_does_not_lose_the_records():
 _KA = (ROOT / ".github" / "workflows" / "keepalive.yml").read_text(encoding="utf-8")
 
 
-def test_the_keepalive_commits_only_after_a_quiet_stretch_and_inside_60_days():
-    """GitHub switches off scheduled workflows after 60 days without a commit. The keepalive writes
-    only when the repository has been quiet for QUIET days, and runs often enough that the longest gap
-    between runs plus QUIET stays under 60."""
+def _keepalive():
+    """(QUIET, the gaps in days between the keepalive's runs over a 31-day month)."""
     import re
     quiet = int(re.search(r'-lt (\d+) \]', _KA).group(1))
     (cron,) = _crons(_KA)
     days = [int(d) for d in cron.split()[2].split(",")]
+    return quiet, [b - a for a, b in zip(days, days[1:])] + [31 - days[-1] + days[0]]
+
+
+def _within_60(quiet, gaps, dropped):
+    """The keepalive's last chance comes `dropped + 1` gaps after a run that did not commit. That run can see an age
+    just under QUIET (age_days is floored, not QUIET - 1), and GitHub starts a scheduled run hours late: QUIET plus
+    the longest such stretch plus one day must stay within the 60 (final review, 24 Oct 2026)."""
+    k = dropped + 1
+    stretch = max(sum(gaps[(i + j) % len(gaps)] for j in range(k)) for i in range(len(gaps)))
+    return quiet + stretch + 1 <= 60, (quiet, stretch)
+
+
+def test_the_keepalive_commits_only_after_a_quiet_stretch_and_inside_60_days():
+    """GitHub switches off scheduled workflows after 60 days without a commit. The keepalive writes
+    only when the repository has been quiet for QUIET days, and runs often enough that the longest gap
+    between runs plus QUIET stays within 60."""
+    quiet, gaps = _keepalive()
+    (cron,) = _crons(_KA)
     assert int(cron.split()[0]) not in (0, 15, 30, 45)
-    longest_gap = max([b - a for a, b in zip(days, days[1:])] + [31 - days[-1] + days[0]])
-    assert quiet - 1 + longest_gap < 60, (quiet, longest_gap)
+    ok, why = _within_60(quiet, gaps, dropped=0)
+    assert ok, why
     adds = [line.strip() for line in _KA.splitlines() if line.strip().startswith("git add")]
     assert adds == ["git add .keepalive"], "the keepalive touches its own file and nothing else"
     assert "workflow_dispatch:" in _KA and "contents: write" in _KA
@@ -449,16 +465,18 @@ def test_the_keepalive_commits_only_after_a_quiet_stretch_and_inside_60_days():
 
 def test_the_keepalive_survives_one_dropped_fire():
     """GitHub drops a scheduled run at times (measured in stockscans-sync's sheet_state.py). With one keepalive run
-    skipped the next comes two gaps on, and the quiet stretch plus both gaps must still stay under 60 days: past it
-    GitHub switches off every PRISM workflow, the Playbook feed and v2's lists included, and a disabled workflow
-    refuses a dispatch too, with no error anywhere (independent review, 24 Oct 2026: 39 + 31 = 70 at 40 days)."""
-    import re
-    quiet = int(re.search(r'-lt (\d+) \]', _KA).group(1))
-    (cron,) = _crons(_KA)
-    days = [int(d) for d in cron.split()[2].split(",")]
-    gaps = [b - a for a, b in zip(days, days[1:])] + [31 - days[-1] + days[0]]
-    two = max(gaps[i] + gaps[(i + 1) % len(gaps)] for i in range(len(gaps)))
-    assert quiet - 1 + two < 60, (quiet, two)
+    skipped the next comes two gaps on: past 60 days GitHub switches off every PRISM workflow, the Playbook feed and
+    v2's lists included, and a disabled workflow refuses a dispatch too, with no error anywhere (independent review,
+    24 Oct 2026: 70 days at the old 40)."""
+    ok, why = _within_60(*_keepalive(), dropped=1)
+    assert ok, why
+
+
+def test_the_keepalive_survives_two_dropped_or_failed_fires():
+    """A failed run counts as a dropped one (an Actions incident, a push refused three times): two in a row at the 1st
+    and 15th meant ~73 days, every workflow off by late January with nobody there (final review, 24 Oct 2026)."""
+    ok, why = _within_60(*_keepalive(), dropped=2)
+    assert ok, why
 
 
 # The first Node-24 major of each action, read from each release's action.yml on 2026-10-08

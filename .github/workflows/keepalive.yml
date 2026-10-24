@@ -6,14 +6,15 @@
 # no error anywhere, just a banner in the Actions tab. Idea taken from khd343/Stage.
 #
 # It commits ONLY when the repository has been quiet for 25 days, so on an active repo it never
-# writes. Twice a month, so the worst case stays inside the 60 days even when GitHub drops one run:
-# a 24-day-old commit plus two gaps between runs (31 days) is 55 (at 40 days it was 70: independent
-# review, 2026-10-24). Off the busy :00 / :30 minutes.
+# writes. Three times a month, so the worst case stays inside the 60 days even when GitHub drops or
+# fails two runs in a row: a commit just under 25 days old, plus three gaps between runs (31 days),
+# plus a day for a late start, is 57 (the 1st and 15th at 40 days made it 88: reviews, 2026-10-24).
+# Off the busy :00 / :30 minutes.
 name: Keepalive
 
 on:
   schedule:
-    - cron: "7 3 1,15 * *"    # the 1st and 15th, 03:07 UTC = 08:37 IST
+    - cron: "7 3 1,11,21 * *"    # the 1st, 11th and 21st, 03:07 UTC = 08:37 IST
   workflow_dispatch:
 
 permissions:
