@@ -75,7 +75,9 @@ def test_a_job_on_pinned_code_reads_mains_constraints_beside_it():
 
 def test_the_constraints_file_is_never_ignored():
     """.gitignore ignores every *.txt but requirements.txt: a constraints file it caught would never reach GitHub, and
-    every install would fail on a missing -c file (found 24 Oct 2026, when ci/constraints.txt would not add)."""
+    every install would fail on a missing -c file (found 24 Oct 2026, when ci/constraints.txt would not add).
+    --no-index asks the rules themselves: git never calls a tracked file ignored, which would hide a lost exception."""
     import subprocess
-    p = subprocess.run(["git", "-C", str(ROOT), "check-ignore", "-q", str(_CONSTRAINTS.relative_to(ROOT))])
-    assert p.returncode == 1, "git ignores the constraints file"
+    p = subprocess.run(["git", "-C", str(ROOT), "check-ignore", "-q", "--no-index",
+                        _CONSTRAINTS.relative_to(ROOT).as_posix()])
+    assert p.returncode == 1, "git's rules ignore the constraints file"
