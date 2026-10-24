@@ -5,9 +5,10 @@
 # changes, so a quiet stretch (no development, no new archive copy) could end the weekly record with
 # no error anywhere, just a banner in the Actions tab. Idea taken from khd343/Stage.
 #
-# It commits ONLY when the repository has been quiet for 40 days, so on an active repo it never
-# writes. Twice a month, so the worst case stays inside the 60 days: a 39-day-old commit plus the
-# longest gap between runs (17 days) is 56. Off the busy :00 / :30 minutes.
+# It commits ONLY when the repository has been quiet for 25 days, so on an active repo it never
+# writes. Twice a month, so the worst case stays inside the 60 days even when GitHub drops one run:
+# a 24-day-old commit plus two gaps between runs (31 days) is 55 (at 40 days it was 70: independent
+# review, 2026-10-24). Off the busy :00 / :30 minutes.
 name: Keepalive
 
 on:
@@ -32,13 +33,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Commit only if the repository has been quiet for 40 days
+      - name: Commit only if the repository has been quiet for 25 days
         run: |
           set -euo pipefail
           last=$(git log -1 --format=%ct)
           age_days=$(( ($(date +%s) - last) / 86400 ))
           echo "last commit ${age_days} days ago"
-          if [ "${age_days}" -lt 40 ]; then
+          if [ "${age_days}" -lt 25 ]; then
             echo "Active enough; nothing to do."
             exit 0
           fi

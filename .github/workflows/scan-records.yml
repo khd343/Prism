@@ -41,7 +41,7 @@ jobs:
           cache: pip
 
       - name: Install the pinned engine
-        run: pip install -r requirements.txt
+        run: pip install -r requirements.txt -c .github/constraints.txt
 
       - name: Measure the scans on the archive
         env:

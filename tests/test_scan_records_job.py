@@ -447,6 +447,20 @@ def test_the_keepalive_commits_only_after_a_quiet_stretch_and_inside_60_days():
     assert "workflow_dispatch:" in _KA and "contents: write" in _KA
 
 
+def test_the_keepalive_survives_one_dropped_fire():
+    """GitHub drops a scheduled run at times (measured in stockscans-sync's sheet_state.py). With one keepalive run
+    skipped the next comes two gaps on, and the quiet stretch plus both gaps must still stay under 60 days: past it
+    GitHub switches off every PRISM workflow, the Playbook feed and v2's lists included, and a disabled workflow
+    refuses a dispatch too, with no error anywhere (independent review, 24 Oct 2026: 39 + 31 = 70 at 40 days)."""
+    import re
+    quiet = int(re.search(r'-lt (\d+) \]', _KA).group(1))
+    (cron,) = _crons(_KA)
+    days = [int(d) for d in cron.split()[2].split(",")]
+    gaps = [b - a for a, b in zip(days, days[1:])] + [31 - days[-1] + days[0]]
+    two = max(gaps[i] + gaps[(i + 1) % len(gaps)] for i in range(len(gaps)))
+    assert quiet - 1 + two < 60, (quiet, two)
+
+
 # The first Node-24 major of each action, read from each release's action.yml on 2026-10-08
 # (checkout v4 and setup-python v5 still declared node20, which GitHub is retiring).
 _NODE24_FROM = {"actions/checkout": 5, "actions/setup-python": 6}
