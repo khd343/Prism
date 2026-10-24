@@ -18,9 +18,9 @@ ROOT = Path(__file__).resolve().parent.parent
 _CONSTRAINTS = ROOT / ".github" / "constraints.txt"
 _WORKFLOWS = sorted((ROOT / ".github" / "workflows").glob("*.yml"))
 _PIN = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)==([0-9][0-9A-Za-z.+!-]*)$")
-# The jobs whose code checkout is a pinned commit (its own requirements.txt, no constraints file): main's .github/
-# beside it.
-_PINNED_CODE = {"playbook-feed.yml", "v2-lists.yml"}
+# The jobs whose code checkout is a pinned commit (its own requirements.txt, no constraints file), each with the env
+# var naming its commit: main's .github/ beside it.
+_PINNED_CODE = {"playbook-feed.yml": "FEED_CODE_SHA", "v2-lists.yml": "V2_CODE_SHA"}
 
 
 def _lines(path):
@@ -66,11 +66,15 @@ def test_every_job_that_installs_the_engine_installs_it_with_the_constraints():
 def test_a_job_on_pinned_code_reads_mains_constraints_beside_it():
     """The code checkout is the frozen commit (no constraints file there); main's .github/ comes in a sparse checkout
     of its own, so moving a pin never moves the code."""
-    for name in sorted(_PINNED_CODE):
+    for name, env in sorted(_PINNED_CODE.items()):
         y = (ROOT / ".github" / "workflows" / name).read_text(encoding="utf-8")
         assert re.search(r"- uses: actions/checkout@v7\n\s+with:\n\s+path: main-ci\n\s+sparse-checkout: \.github\n", y), \
             name
-        assert y.index("path: main-ci") < y.index("pip install"), name
+        # The root checkout empties the workspace, so main-ci comes after it or the -c file is gone; and main-ci is the
+        # workflow's own commit: a ref would point it at code with no constraints file (final review, 24 Oct 2026).
+        assert y.index("ref: ${{ env.%s }}" % env) < y.index("path: main-ci") < y.index("pip install"), name
+        (step,) = [s for s in re.split(r"\n(?=      - )", y) if "path: main-ci" in s]
+        assert "ref:" not in step, name
 
 
 def test_the_constraints_file_is_never_ignored():
@@ -81,3 +85,26 @@ def test_the_constraints_file_is_never_ignored():
     p = subprocess.run(["git", "-C", str(ROOT), "check-ignore", "-q", "--no-index",
                         _CONSTRAINTS.relative_to(ROOT).as_posix()])
     assert p.returncode == 1, "git's rules ignore the constraints file"
+
+
+def test_every_pinned_commits_requirements_stand_at_their_constraints():
+    """The feed and v2-lists install requirements.txt AT THEIR PINNED COMMIT, not main's. A requirement bumped on main
+    with its constraint -- as the test above requires -- would leave a pin naming the old version against the new
+    constraint: pip refuses (ResolutionImpossible, measured), and every feed and v2-lists run is red until the pins move
+    (final review, 24 Oct 2026)."""
+    import subprocess
+
+    import pytest
+
+    pinned = {_norm(m.group(1)): m.group(2) for m in map(_PIN.match, _lines(_CONSTRAINTS))}
+    for name, env in sorted(_PINNED_CODE.items()):
+        y = (ROOT / ".github" / "workflows" / name).read_text(encoding="utf-8")
+        (sha,) = re.findall(rf"^\s+{env}:\s*([0-9a-f]{{40}})\s*$", y, re.M)
+        p = subprocess.run(["git", "-C", str(ROOT), "show", f"{sha}:requirements.txt"], capture_output=True, text=True,
+                           encoding="utf-8")
+        if p.returncode != 0:
+            pytest.skip(f"{name}'s pin {sha[:7]} is not in this clone (a shallow clone)")
+        for req in [ln.split("#", 1)[0].strip() for ln in p.stdout.splitlines() if ln.split("#", 1)[0].strip()]:
+            m = _PIN.match(req)
+            assert m, (name, req)
+            assert pinned.get(_norm(m.group(1))) == m.group(2), (name, sha[:7], req, pinned.get(_norm(m.group(1))))
