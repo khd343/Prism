@@ -23,6 +23,8 @@ run_schilit_analysis.py
 # Personal working notes
 *.txt
 !requirements.txt
+# The CI jobs' whole dependency tree (tests/test_ci_constraints.py): code, not a note.
+!.github/constraints.txt
 
 # Serena MCP machine-local config + symbol cache
 .serena/

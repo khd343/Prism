@@ -58,13 +58,20 @@ jobs:
           ref: v2-lists
           path: lists
 
+      # The whole dependency tree, pinned (.github/constraints.txt, 2026-10-24): main's .github/ beside the
+      # pinned code, so a package pin moves without moving the code.
+      - uses: actions/checkout@v7
+        with:
+          path: main-ci
+          sparse-checkout: .github
+
       - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
           cache: pip
 
       - name: Install the pinned engine
-        run: pip install -r requirements.txt
+        run: pip install -r requirements.txt -c main-ci/.github/constraints.txt
 
       - name: Fetch the archive's copies
         if: inputs.backfill_from != ''

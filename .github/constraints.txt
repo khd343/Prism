@@ -1,0 +1,49 @@
+# The whole dependency tree every GitHub job installs, pinned exactly (2026-10-24).
+# requirements.txt names eight packages; their own dependencies (streamlit's pyarrow, altair, protobuf, tornado;
+# plotly's narwhals; pandas' python-dateutil) were resolved afresh on every run, so the jobs ran on whatever was
+# newest that day. Measured: python-dateutil 2.9.0.post0 until 21 Oct 2026, 3.0.0 from 22 Oct.
+# This is the set pip installed on ubuntu-24.04 / Python 3.13 in run 40094645819 (24 Oct 2026), the back-fill that
+# rebuilt the v2 lists of 21-23 Oct byte for byte from the archive's copies. Every install passes it with -c
+# (tests/test_ci_constraints.py). A requirement bumped there is bumped here too; refresh this set only with a
+# back-fill compare like that run's. ASCII only: pip reads it on a Linux box with its own locale.
+altair==6.3.0
+attrs==26.1.0
+blinker==1.9.0
+cachetools==6.2.6
+certifi==2026.10.23
+charset_normalizer==3.5.2
+click==8.5.0
+et-xmlfile==2.0.0
+gitdb==4.0.12
+gitpython==3.2.1
+idna==3.20
+jinja2==3.1.6
+jsonschema==4.26.0
+jsonschema-specifications==2025.9.1
+MarkupSafe==3.0.4
+narwhals==2.27.1
+numpy==2.4.2
+openpyxl==3.1.5
+packaging==26.3
+pandas==2.3.3
+pillow==12.1.0
+plotly==6.5.2
+protobuf==6.33.6
+pyarrow==26.0.0
+pydeck==0.9.3
+python-calamine==0.7.0
+python-dateutil==3.0.0
+pytz==2026.5
+referencing==0.37.0
+requests==2.32.5
+rpds-py==2026.9.1
+six==1.17.0
+smmap==5.0.3
+streamlit==1.54.0
+tenacity==9.2.1
+toml==0.10.2
+tornado==6.6
+typing-extensions==4.16.0
+tzdata==2026.5
+urllib3==2.8.0
+watchdog==6.0.0
