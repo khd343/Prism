@@ -485,6 +485,12 @@ SHARIAH_INVESTMENTS_CLEARED = frozenset([
     "NSE:IGL",            # Indraprastha Gas (your app; the data shows up to 38%)
     "NSE:FIRSTCRY",       # Brainbees Solutions (your app; the data shows up to 34%)
     "NSE:RCF",            # Rashtriya Chemicals & Fertilizers (your app; the data shows up to 38%)
+    "NSE:HEIDELBERG",     # HeidelbergCement India (your app; the data shows up to 34%)
+    "NSE:WINDMACHIN",     # Windsor Machines (your app; the data shows up to 41%)
+    "NSE:PLATIND",        # Platinum Industries (your app; the data shows up to 37%)
+    "BSE:ECORECO",        # Eco Recycling (your app; the data shows up to 35%)
+    "NSE:ARIES",          # Aries Agro (your app; the data shows up to 39%)
+    "NSE:AEROENTER",      # Aeroflex Enterprises (your app; the data shows up to 36%; its Rule 2 is listed too)
 ])
 # Rule 2 — impermissible income at most 5% of revenue:
 SHARIAH_INCOME_CLEARED = frozenset([
@@ -492,6 +498,11 @@ SHARIAH_INCOME_CLEARED = frozenset([
     "NSE:BHARATCOAL",     # Bharat Coking Coal (your app; the data shows at least 6%)
     "NSE:EMBDL",          # Embassy Developments (your app; the data shows at least 10%)
     "NSE:BLUEJET",        # Blue Jet Healthcare (your app; the data shows at least 6%)
+    "NSE:HESTERBIO",      # Hester Biosciences (your app; the data shows at least 25%)
+    "NSE:KANORICHEM",     # Kanoria Chemicals & Industries (your app; the data shows at least 7%)
+    "NSE:SYNCOMF",        # Syncom Formulations (India) (your app; the data shows at least 5.3%)
+    "NSE:UNICHEMLAB",     # Unichem Laboratories (your app; the data shows at least 7%)
+    "NSE:AEROENTER",      # Aeroflex Enterprises (your app; the data shows at least 17%; its Rule 6 is listed too)
 ])
 # Industries whose NAME holds a word the classification guard looks for, decided allowed: "film" here is
 # plastic film, "media" sits inside "intermediate", and industrial alcohol is a chemical, not a drink (the
