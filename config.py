@@ -480,9 +480,18 @@ SHARIAH_INVESTMENTS_CLEARED = frozenset([
     "NSE:THERMAX",        # Thermax
     "NSE:PIIND",          # P I Industries
     "BSE:ALUFLUOR",       # Alufluoride
+    "NSE:TANLA",          # Tanla Platforms (your app; the data shows cash + unexplained assets up to 50%)
+    "NSE:GRWRHITECH",     # Garware Hi Tech Films (your app)
+    "NSE:IGL",            # Indraprastha Gas (your app; the data shows up to 38%)
+    "NSE:FIRSTCRY",       # Brainbees Solutions (your app; the data shows up to 34%)
+    "NSE:RCF",            # Rashtriya Chemicals & Fertilizers (your app; the data shows up to 38%)
 ])
 # Rule 2 — impermissible income at most 5% of revenue:
 SHARIAH_INCOME_CLEARED = frozenset([
+    "NSE:JSWDULUX",       # JSW Dulux (your app; the data shows other income of at least 53% of revenue)
+    "NSE:BHARATCOAL",     # Bharat Coking Coal (your app; the data shows at least 6%)
+    "NSE:EMBDL",          # Embassy Developments (your app; the data shows at least 10%)
+    "NSE:BLUEJET",        # Blue Jet Healthcare (your app; the data shows at least 6%)
 ])
 # Industries whose NAME holds a word the classification guard looks for, decided allowed: "film" here is
 # plastic film, "media" sits inside "intermediate", and industrial alcohol is a chemical, not a drink (the
