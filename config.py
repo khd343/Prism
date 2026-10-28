@@ -475,7 +475,7 @@ SHARIAH_INVESTMENTS_CLEARED = frozenset([
     "NSE:WAAREEENER",     # Waaree Energies
     "NSE:CONCOR",         # Container Corporation Of India
     "NSE:LINDEINDIA",     # Linde India
-    "NSE:HINDUNILVR",     # Hindustan Unilever (Rule 6 already passes on the data; its Rule 2 is open)
+    "NSE:HINDUNILVR",     # Hindustan Unilever (Rule 6 already passes on the data; its Rule 2 is listed too)
     "BSE:GUJENERGY",      # Gujarat Energy
     "NSE:THERMAX",        # Thermax
     "NSE:PIIND",          # P I Industries
@@ -491,6 +491,10 @@ SHARIAH_INVESTMENTS_CLEARED = frozenset([
     "BSE:ECORECO",        # Eco Recycling (your app; the data shows up to 35%)
     "NSE:ARIES",          # Aries Agro (your app; the data shows up to 39%)
     "NSE:AEROENTER",      # Aeroflex Enterprises (your app; the data shows up to 36%; its Rule 2 is listed too)
+    "NSE:APLAPOLLO",      # APL Apollo Tubes (your app; the data shows up to 35%)
+    "NSE:ANTELOPUS",      # Antelopus Selan Energy (your app; the data shows up to 70%; Rule 4's figure is missing)
+    "BSE:CFF",            # CFF Fluid Control (your app; the data shows up to 47%; Rule 4's figure is missing)
+    "BSE:YASHHV",         # Yash Highvoltage (your app; the data shows up to 44%; Rule 4's figure is missing)
 ])
 # Rule 2 — impermissible income at most 5% of revenue:
 SHARIAH_INCOME_CLEARED = frozenset([
@@ -503,6 +507,7 @@ SHARIAH_INCOME_CLEARED = frozenset([
     "NSE:SYNCOMF",        # Syncom Formulations (India) (your app; the data shows at least 5.3%)
     "NSE:UNICHEMLAB",     # Unichem Laboratories (your app; the data shows at least 7%)
     "NSE:AEROENTER",      # Aeroflex Enterprises (your app; the data shows at least 17%; its Rule 6 is listed too)
+    "NSE:HINDUNILVR",     # Hindustan Unilever (your app; the data shows at least 5.4%; its Rule 6 is listed too)
 ])
 # Industries whose NAME holds a word the classification guard looks for, decided allowed: "film" here is
 # plastic film, "media" sits inside "intermediate", and industrial alcohol is a chemical, not a drink (the
