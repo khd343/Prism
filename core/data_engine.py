@@ -18,7 +18,8 @@ from config import (CSV_FILES, MCAP_TIERS,
                     COST_OF_EQUITY, INDIA_GSEC_YIELD,
                     EPOCH3_TAXONOMY, EPOCH5_MODERN, CONSISTENT_SECTORS,
                     PRELISTING_BASELINE_DAYS, STALE_RESULT_DAYS, BENCHMARK_INDICES,
-                    TREND_TEMPLATE_MAX_BELOW_HIGH, VSTOP_FRESH_MAX_WEEKS, _vintage_sort_key, newer_vintage)
+                    TREND_TEMPLATE_MAX_BELOW_HIGH, VSTOP_FRESH_MAX_WEEKS, SMART_MONEY_BIG_MOVE_PP,
+                    _vintage_sort_key, newer_vintage)
 from core.cyclicality_map import INDUSTRY_TIER, SECTOR_TIER_FALLBACK, TIER_LABELS
 from core.shariah import compute_shariah
 from core.taxonomy import canonicalize_taxonomy
@@ -1789,6 +1790,11 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
 
     df["smart_money_flow"] = np.select(
         [
+            # A BIG exit before anything else (2026-10-29): FII OR DII cutting its stake by SMART_MONEY_BIG_MOVE_PP
+            # points or more in the quarter is distribution whatever the volume or price. The conditions below read
+            # only the SIGN, so a -0.01 move counted like a -10.4 (config.py has the measurement). No fillna: NaN is
+            # not <= -5, so a missing change never triggers it (unverifiable is not passed).
+            (_ch_fii_lq <= -SMART_MONEY_BIG_MOVE_PP) | (_ch_dii_lq <= -SMART_MONEY_BIG_MOVE_PP),
             # Distribution FIRST — Wyckoff: heavy volume on a FALLING price is distribution, not
             # "interest". Evaluating it before the volume-driven Moderate tier stops high-volume
             # selling (both institutions exiting + price weak) from being mislabelled accumulation.
@@ -1800,6 +1806,7 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
             (df["vqs_score"] >= 40) & (_crs50d.fillna(0) >= 0),
         ],
         [
+            "❌ Distribution",
             "❌ Distribution",
             "🌊💎 Elite Accumulation",
             "🎯 Strong Accumulation",

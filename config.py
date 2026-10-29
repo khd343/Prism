@@ -732,6 +732,23 @@ PRELISTING_BASELINE_DAYS = 730
 # misses ONE deadline is flagged at ~8 months, not ~4; its Result Age still shows the days.
 STALE_RESULT_DAYS = 240
 
+# A BIG institutional exit, in percentage points of the company's shares in one quarter (2026-10-29). Display only:
+# the Smart Money label (core/data_engine, smart_money_flow) and the tear-sheet's move chip read it, no score does.
+# The label used to read only the SIGN of change_fii_lq / change_dii_lq, so a -0.01 move counted like a -10.4.
+# Measured on the live sheet of 28 Oct 2026 (2,692 stocks): 43 had a quarterly FII or DII exit of 5 points or more,
+# and they read 18 Distribution, 16 Neutral and 9 Moderate Interest. EPack Prefab: FII 11.1% -> 0.71% (-10.4).
+# An exit this size reads Distribution whatever the volume or price; a move this size either way gets a chip.
+SMART_MONEY_BIG_MOVE_PP = 5.0
+
+# The move chip shows a 0.0% starting share only for a stock listed at least this many days ago (2026-10-29). For a
+# younger listing the vendor's previous quarter can predate the listing, and its 0 is a placeholder, not a filed share
+# (the sibling of PRELISTING_BASELINE_DAYS above). On the 28 Oct 2026 sheet 32 of the 115 chip lines started from
+# 0.0%: 23 on stocks listed 51-118 days earlier, i.e. after the previous quarter-end (Symbiotec "DII +33.2 pts ·
+# 0.0% → 33.2%" is its IPO allotment), 2 at 152 and 169 days, and 7 at 281-2,527 days, which stay. 205 = two quarters
+# (at most 92 + 92 days) + the 21-day filing window: the oldest the previous quarter-end can be while the latest
+# quarter is the one on the sheet. Display only.
+SHAREHOLDING_BASELINE_DAYS = 205
+
 # ── Benchmark indices (2026-10-08) ──
 # The NSE indices the scans are judged against ("could I buy the index fund instead?"). They
 # arrive in the PRISM watchlists, so the sheet carries them as rows like a stock: price and

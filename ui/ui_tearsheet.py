@@ -15,7 +15,8 @@ import numpy as np
 import html as _html
 from config import (COLORS, CONVICTION_TIERS, TIER_COLORS, FORENSIC_MAX_FLAGS,
                     FRAMEWORK_CATEGORIES, MASTER_PROFILES, INDIA_GSEC_YIELD, COST_OF_EQUITY,
-                    PRELISTING_BASELINE_DAYS, TREND_TEMPLATE_MAX_BELOW_HIGH, SEPA_MIN_MARKET_CAP_CR)
+                    PRELISTING_BASELINE_DAYS, TREND_TEMPLATE_MAX_BELOW_HIGH, SEPA_MIN_MARKET_CAP_CR,
+                    SMART_MONEY_BIG_MOVE_PP, SHAREHOLDING_BASELINE_DAYS)
 # Single source of truth for the "?" help chip lives in ui_components (which owns the .ts-help CSS).
 # Re-imported here so this module's renderers AND existing `from ui.ui_tearsheet import ...` callers
 # (the scanner, the tests) resolve against the SAME objects — one definition, zero drift.
@@ -48,6 +49,58 @@ def _g(stock: pd.Series, key: str, default=0):
     """Null-safe Series lookup. Returns default if key is missing or NaN."""
     v = stock.get(key, default)
     return default if (v is None or (isinstance(v, float) and np.isnan(v))) else v
+
+
+# The move chip's tooltip (2026-10-29). No column states which quarter the shareholding is for, so no date is shown.
+HOLDER_MOVE_TIP = ("The change in the last reported quarter. Shareholding is filed about three weeks after the "
+                   "quarter ends, so this figure is 1–4 months old.")
+
+
+def _finite(v) -> float:
+    """A real number, or NaN -- never a guess from a blank, a word or an infinity."""
+    try:
+        x = float(v)
+    except (TypeError, ValueError):
+        return float("nan")
+    return x if np.isfinite(x) else float("nan")
+
+
+def holder_moves(stock) -> list:
+    """(group, change, before, now) for FII and DII when the quarterly change is SMART_MONEY_BIG_MOVE_PP points or
+    more either way (2026-10-29). before = now - change, kept only when both are known and both are real shares
+    (0-100): otherwise nothing, never a guess. A 0.0% start also needs a listing older than
+    SHAREHOLDING_BASELINE_DAYS: on a younger listing that 0 is the vendor's placeholder for a quarter before it."""
+    out = []
+    listed = _finite(stock.get("listed_days"))
+    for group, held, moved in (("FII", "fii_holdings", "change_fii_lq"), ("DII", "dii_holdings", "change_dii_lq")):
+        now, chg = _finite(stock.get(held)), _finite(stock.get(moved))
+        if np.isnan(now) or np.isnan(chg) or abs(chg) < SMART_MONEY_BIG_MOVE_PP:
+            continue
+        before = now - chg
+        if abs(before) < 0.005 and not listed >= SHAREHOLDING_BASELINE_DAYS:   # NaN age: unverifiable, not shown
+            continue
+        if 0.0 <= before <= 100.0 and 0.0 <= now <= 100.0:
+            out.append((group, chg, before, now))
+    return out
+
+
+def holder_moves_html(stock) -> str:
+    """One quiet line per big move, "FII −10.4 pts · 11.1% → 0.7%": only the figure is coloured, red for an exit,
+    green for an entry, with the tooltip saying how old shareholding data is. "" when there is nothing to show."""
+    moves = holder_moves(stock)
+    if not moves:
+        return ""
+    lines = []
+    for i, (group, chg, before, now) in enumerate(moves):
+        figure = f"{chg:+.1f}".replace("-", "−")          # the number alone gets the real minus sign
+        colour = COLORS["red"] if _shown(chg, 1) < 0 else COLORS["green"]   # on the figure as printed
+        tip = help_chip("", HOLDER_MOVE_TIP) if i == len(moves) - 1 else ""
+        # Two unbreakable halves, so a narrow cell (All Data) wraps at the "·", never inside "11.1% → 0.7%".
+        lines.append(f'<div style="font-size:0.65rem;color:{COLORS["text_secondary"]};line-height:1.35;">'
+                     f'<span style="white-space:nowrap;">{group} '
+                     f'<span style="color:{colour};font-weight:700;">{figure}</span> pts ·</span> '
+                     f'<span style="white-space:nowrap;">{before:.1f}% → {now:.1f}%{tip}</span></div>')
+    return f'<div style="margin-top:3px;">{"".join(lines)}</div>'
 
 
 def _shown(value, dp: int = 0) -> float:
@@ -2017,6 +2070,9 @@ def render_financial_insights(stock: pd.Series):
                "The icon judges institutional PRESENCE (FII or DII holding ≥5%). The flow label "
                "is a separate read of whether institutions are currently accumulating or "
                "distributing — a low holding can still show positive flow, and vice versa.")
+    _moves = holder_moves_html(stock)          # a big quarterly FII/DII move, stated as a fact (2026-10-29)
+    if _moves:
+        ow += f'<div style="padding:0 0 5px 24px;">{_moves}</div>'
 
     # ── Render in a balanced 2×2 CSS grid (no st.columns gutter padding) ──
     # FIXED 2 columns so the 4 cards always lay out 2×2 — auto-fit fit 3 per row on wide desktops,
@@ -2628,7 +2684,7 @@ def render_raw_signals(stock: pd.Series, query: str = ""):
         m = re.search(r'data-s="([^"]*)"', cell_html)
         return all(t in (m.group(1) if m else "") for t in _tokens)
 
-    def _cell(label: str, val, fmt: str = "", help: str = "") -> str:
+    def _cell(label: str, val, fmt: str = "", help: str = "", extra: str = "") -> str:
         if isinstance(val, float) and np.isnan(val):
             disp = "N/A"
         elif fmt:
@@ -2648,6 +2704,7 @@ def render_raw_signals(stock: pd.Series, query: str = ""):
             f'{_CELL_OPEN} data-s="{_hay}">'
             f'<div class="ts-raw-lbl">{_esc(label)}{help_html}</div>'
             f'<div class="ts-raw-val">{_esc(disp)}</div>'
+            f'{extra}'                 # trusted markup built in this module (the Smart Money move chip)
             f'</div>'
         )
 
@@ -2800,7 +2857,7 @@ def render_raw_signals(stock: pd.Series, query: str = ""):
         _cell("Promoter 3Y Δ", g("change_promoter_3y"),   "{:+.1f}%") +
         _cell("FII Chg",       g("change_fii_lq"),        "{:+.1f}%") +
         _cell("DII Chg",       g("change_dii_lq"),        "{:+.1f}%") +
-        _cell("Smart Money",   stock.get("smart_money_flow","") or "","") +
+        _cell("Smart Money",   stock.get("smart_money_flow","") or "","", extra=holder_moves_html(stock)) +
         _cell("Gov Bonus",     g("governance_bonus"),     "{:.0f}") +
         _cell("Mgmt Integrity",g("management_integrity_score"),"{:.0f}/3") +
         _cell("Dilution Flag", "Yes ⚠️" if g("dilution_flag") == 1 else "Clean ✅","") +
