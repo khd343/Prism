@@ -16,7 +16,7 @@ import html as _html
 from config import (COLORS, CONVICTION_TIERS, TIER_COLORS, FORENSIC_MAX_FLAGS,
                     FRAMEWORK_CATEGORIES, MASTER_PROFILES, INDIA_GSEC_YIELD, COST_OF_EQUITY,
                     PRELISTING_BASELINE_DAYS, TREND_TEMPLATE_MAX_BELOW_HIGH, SEPA_MIN_MARKET_CAP_CR,
-                    SMART_MONEY_BIG_MOVE_PP)
+                    SMART_MONEY_BIG_MOVE_PP, SHAREHOLDING_BASELINE_DAYS)
 # Single source of truth for the "?" help chip lives in ui_components (which owns the .ts-help CSS).
 # Re-imported here so this module's renderers AND existing `from ui.ui_tearsheet import ...` callers
 # (the scanner, the tests) resolve against the SAME objects — one definition, zero drift.
@@ -68,13 +68,17 @@ def _finite(v) -> float:
 def holder_moves(stock) -> list:
     """(group, change, before, now) for FII and DII when the quarterly change is SMART_MONEY_BIG_MOVE_PP points or
     more either way (2026-10-29). before = now - change, kept only when both are known and both are real shares
-    (0-100): otherwise nothing, never a guess."""
+    (0-100): otherwise nothing, never a guess. A 0.0% start also needs a listing older than
+    SHAREHOLDING_BASELINE_DAYS: on a younger listing that 0 is the vendor's placeholder for a quarter before it."""
     out = []
+    listed = _finite(stock.get("listed_days"))
     for group, held, moved in (("FII", "fii_holdings", "change_fii_lq"), ("DII", "dii_holdings", "change_dii_lq")):
         now, chg = _finite(stock.get(held)), _finite(stock.get(moved))
         if np.isnan(now) or np.isnan(chg) or abs(chg) < SMART_MONEY_BIG_MOVE_PP:
             continue
         before = now - chg
+        if abs(before) < 0.005 and not listed >= SHAREHOLDING_BASELINE_DAYS:   # NaN age: unverifiable, not shown
+            continue
         if 0.0 <= before <= 100.0 and 0.0 <= now <= 100.0:
             out.append((group, chg, before, now))
     return out
@@ -89,7 +93,7 @@ def holder_moves_html(stock) -> str:
     lines = []
     for i, (group, chg, before, now) in enumerate(moves):
         figure = f"{chg:+.1f}".replace("-", "−")          # the number alone gets the real minus sign
-        colour = COLORS["red"] if chg < 0 else COLORS["green"]
+        colour = COLORS["red"] if _shown(chg, 1) < 0 else COLORS["green"]   # on the figure as printed
         tip = help_chip("", HOLDER_MOVE_TIP) if i == len(moves) - 1 else ""
         # Two unbreakable halves, so a narrow cell (All Data) wraps at the "·", never inside "11.1% → 0.7%".
         lines.append(f'<div style="font-size:0.65rem;color:{COLORS["text_secondary"]};line-height:1.35;">'

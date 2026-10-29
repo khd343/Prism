@@ -73,9 +73,11 @@ def test_a_big_exit_reads_distribution_whatever_the_volume_or_price():
 
 
 def test_minus_4_9_is_unchanged_and_minus_5_reads_distribution():
-    out = _labels({**_MODERATE, "change_fii_lq": -4.9}, {**_MODERATE, "change_fii_lq": -5.0})
-    assert out.loc[0, "smart_money_flow"] == MOD
+    out = _labels({**_MODERATE, "change_fii_lq": -4.9}, {**_MODERATE, "change_fii_lq": -5.0},
+                  {**_MODERATE, "change_dii_lq": -4.9}, {**_MODERATE, "change_dii_lq": -5.0})
+    assert out.loc[0, "smart_money_flow"] == MOD and out.loc[2, "smart_money_flow"] == MOD
     assert out.loc[1, "smart_money_flow"] == DIST, "the rule is <= -5, so exactly -5 counts"
+    assert out.loc[3, "smart_money_flow"] == DIST, "for DII too"
 
 
 def test_a_missing_change_never_triggers_it():
@@ -126,6 +128,7 @@ def test_the_chip_states_an_exit_in_red():
     assert "11.1% → 0.7%" in _text(html) and C.COLORS["green"] not in html
     styles = re.findall(r'style="([^"]*)"', html)
     assert styles and not any("−" in s for s in styles), "the real minus sign belongs to the figure, not the CSS"
+    assert f'data-tip="{ts.HOLDER_MOVE_TIP}"' in html, "the line says how old the figure is"
 
 
 def test_the_chip_states_an_entry_in_green():
@@ -138,6 +141,14 @@ def test_both_groups_get_a_line_each():
     html = ts.holder_moves_html(_stock(fii_holdings=2.0, change_fii_lq=-6.0, dii_holdings=20.0, change_dii_lq=7.5))
     txt = _text(html)
     assert "FII −6.0 pts · 8.0% → 2.0%" in txt and "DII +7.5 pts · 12.5% → 20.0%" in txt
+    assert html.count('class="ts-help"') == 1 and html.index("ts-help") > html.index("DII"), \
+        "one tooltip per chip, on its last line"
+
+
+def test_a_move_of_exactly_five_points_shows_its_line():
+    """The rule is |change| >= 5, so exactly 5 either way gets its line."""
+    assert "FII −5.0 pts · 11.0% → 6.0%" in _text(ts.holder_moves_html(_stock(fii_holdings=6.0, change_fii_lq=-5.0)))
+    assert "DII +5.0 pts · 4.0% → 9.0%" in _text(ts.holder_moves_html(_stock(dii_holdings=9.0, change_dii_lq=5.0)))
 
 
 def test_a_narrow_cell_breaks_the_chip_at_the_dot_never_inside_the_move():
@@ -166,6 +177,49 @@ def test_an_impossible_previous_share_shows_no_chip(now, chg):
     before = now - chg
     html = ts.holder_moves_html(_stock(fii_holdings=now, change_fii_lq=chg))
     assert (html == "") == (not 0.0 <= before <= 100.0)
+
+
+@pytest.mark.parametrize("now,chg", [(120.0, 30.0), (-1.0, -6.0)])
+def test_an_impossible_current_share_shows_no_chip(now, chg):
+    """before is a real share here (90.0, 5.0), but a current share of 120% or -1% is not: still nothing."""
+    assert ts.holder_moves_html(_stock(fii_holdings=now, change_fii_lq=chg)) == ""
+
+
+def test_a_new_listing_shows_no_invented_starting_share():
+    """Symbiotec Pharmalab, listed 57 days before the 28 Oct sheet: DII 33.17, change +33.17. Its "0.0%" is the
+    vendor's placeholder for a quarter before the listing, not a filed share, so the chip would be a guess."""
+    stock = _stock(dii_holdings=33.17, change_dii_lq=33.17, listed_days=57)
+    assert ts.holder_moves_html(stock) == ""
+
+
+def test_a_zero_start_needs_a_known_listing_age():
+    """No listing age, no proof the 0.0% was ever filed: nothing (unverifiable is not passed)."""
+    assert ts.holder_moves_html(_stock(dii_holdings=5.17, change_dii_lq=5.17, listed_days=np.nan)) == ""
+    assert ts.holder_moves_html(_stock(dii_holdings=5.17, change_dii_lq=5.17)) == ""
+
+
+def test_an_old_stock_entering_from_zero_keeps_its_line():
+    """MGEL, listed 2,527 days: DII 0 -> 5.17 is a real first entry."""
+    html = ts.holder_moves_html(_stock(dii_holdings=5.17, change_dii_lq=5.17, listed_days=2527))
+    assert "DII +5.2 pts · 0.0% → 5.2%" in _text(html)
+
+
+def test_a_young_listing_with_a_filed_previous_share_keeps_its_line():
+    """Only the 0.0% start is a placeholder: a young listing whose previous share is real (3.0) still shows."""
+    html = ts.holder_moves_html(_stock(dii_holdings=15.0, change_dii_lq=12.0, listed_days=57))
+    assert "DII +12.0 pts · 3.0% → 15.0%" in _text(html)
+
+
+@pytest.mark.parametrize("days,shown", [(C.SHAREHOLDING_BASELINE_DAYS - 1, False), (C.SHAREHOLDING_BASELINE_DAYS, True)])
+def test_the_listing_age_boundary(days, shown):
+    html = ts.holder_moves_html(_stock(fii_holdings=6.04, change_fii_lq=6.04, listed_days=days))
+    assert (html != "") == shown
+
+
+def test_the_listing_age_constant():
+    """Two quarters (at most 92 + 92 days) plus the 21-day filing window: the oldest the previous quarter-end can
+    be while the latest quarter is the one on the sheet."""
+    assert C.SHAREHOLDING_BASELINE_DAYS == 92 + 92 + 21
 
 
 def test_the_chip_never_prints_nan_or_an_action_word():
