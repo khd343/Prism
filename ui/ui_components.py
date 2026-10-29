@@ -12,7 +12,7 @@ import plotly.express as px
 import pandas as pd
 import numpy as np
 import html as _html
-from config import COLORS, TIER_COLORS, CONVICTION_TIERS, UI, FRAMEWORK_CATEGORIES
+from config import COLORS, TIER_COLORS, CONVICTION_TIERS, UI, FRAMEWORK_CATEGORIES, SMART_MONEY_BIG_MOVE_PP
 from ui.shariah_view import SHARIAH_COLORS, shariah_label
 
 
@@ -718,7 +718,7 @@ _RAW_GLOSSARY = {
     "Promoter 3Y Δ": "Change in promoter holding over 3 years — the longer-term ownership trend.",
     "FII Chg":       "Change in foreign-institution holding in the latest quarter.",
     "DII Chg":       "Change in domestic-institution holding in the latest quarter.",
-    "Smart Money":   "An accumulation read that blends recent trading volume, institutional (FII/DII) flow, and price strength. Volume is the heaviest input, so it reflects buying interest broadly — not purely institutional money.",
+    "Smart Money":   f"An accumulation read that blends recent trading volume, institutional (FII/DII) flow, and price strength. Volume is the heaviest input, so it reflects buying interest broadly — not purely institutional money. One rule comes first: a quarter in which FIIs or DIIs cut their stake by {SMART_MONEY_BIG_MOVE_PP:g} points or more reads Distribution, whatever the volume or price, and the tear-sheet then states the move (for example FII −10.4 pts · 11.1% → 0.7%).",
     "Gov Bonus":     "Governance bonus — a score rewarding clean ownership signals (high promoter skin, insiders buying, no pledging, no dilution).",
     "Mgmt Integrity":"A 0-3 read on management trustworthiness from accounting and ownership behaviour.",
     "Dilution Flag": "Flags whether the company has been issuing lots of new shares (diluting existing holders). Two cases are deliberately NOT treated as dilution: a share count that jumps 1.5x or more in a year (a bonus, split, rights issue or IPO re-basing — the share row shows the raw counts and 'restructuring'), and a company listed within the last ~2 years, whose prior-year share count predates listing so the comparison is not a measurement (shown as 'pre-listing baseline'). Both land on the Watch tier: the count moved, so they are never certified zero-dilution, but they are not hard-rejected on a number that is not dilution. Below 1.5x, a jump of more than 10% counts as dilution even when it is a bonus, a rights issue or shares held by an employee trust that only this year's count includes: PRISM's data can't tell those apart from a placement.",

@@ -70,7 +70,7 @@ CONCEPT_REFERENCE = {
         ("🎯 Strong Accumulation", "High volume-quality (60+) with FIIs or DIIs net buying — clear accumulation."),
         ("✅ Moderate Interest", "Decent volume-quality (40+) AND the price confirming (not lagging the market) — mild interest."),
         ("⚪ Neutral", "No clear institutional accumulation or distribution signal."),
-        ("❌ Distribution", "Both FIIs and DIIs net selling while the price falls — Wyckoff distribution (institutions exiting), not interest."),
+        ("❌ Distribution", "Institutions exiting, not interest: FIIs or DIIs cutting their stake by 5 points or more in a quarter, whatever the volume or price, or both net selling while the price falls (Wyckoff distribution)."),
     ],
     # ── wealth_tier — core/verdict_engine.py (the change-lens verdict; price- and forensics-blind) ──
     "💹 Wealth Tier": [
