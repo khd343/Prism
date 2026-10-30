@@ -173,7 +173,8 @@ from ui.ui_scans import (SCANS, CANDIDATES as SCAN_CANDIDATES, LIQUIDITY_STEPS a
                          latest_label as scan_latest_label, load_records as load_scan_records,
                          members_label as scan_members_label,
                          record_state as scan_record_state, scan_table, table_config as scan_table_config,
-                         SCAN_VIEWS, TREND_SHORT as SCAN_TREND_SHORT, momentum_ordered as scan_momentum_ordered)
+                         SCAN_VIEWS, TREND_SHORT as SCAN_TREND_SHORT, momentum_ordered as scan_momentum_ordered,
+                         PLAYBOOK_LAYERS, playbook_layer_mask, playbook_layer_scan)
 from ui.scan_guide import (guide_html as scan_guide_html, guide_markdown as scan_guide_markdown,
                            reference_html as scan_reference_html)
 from config import (COLORS, TIER_COLORS, CONVICTION_TIERS, UI, HARD_GATES,
@@ -962,6 +963,23 @@ with tabs[1]:
     with st.expander(f"📖 How it works — {_sc_sel['emoji']} {_sc_sel['name']}: each condition in plain words, "
                      f"when a stock enters and leaves, what it cannot see", expanded=False):
         st.markdown(scan_guide_html(_sc_sel, _sc_rec_sel, _sc_state_sel), unsafe_allow_html=True)
+    # THE 🚀 LADDER (2026-10-30, the operator's call): two wider lists of 🚀's own recipe, B without the 🔥 Strong
+    # Quarter and C on price alone, each with its whole-market count. They are the lists of Kite's frozen ladder test
+    # (36), so they carry NO record (ui_scans.PLAYBOOK_LAYERS): the cards, 📊 record and 📖 guide above stay 🚀's, and
+    # B or C marks no 🆕 and shows no Left. Drawn on 🚀 only, between the scan and its filters (scan → list → filters →
+    # columns → table); a list choice like the scan choice, so the 🧹 Clear never resets it (tests/test_scan_ladder.py).
+    _sc_tbl_scan = _sc_sel
+    if _sc_sel["key"] == "playbook":
+        _sc_layers = {_l["key"]: _l for _l in PLAYBOOK_LAYERS}
+        _sc_layer_n = {_k: int(playbook_layer_mask(df, _k).sum()) for _k in _sc_layers}
+        _sc_layer = st.segmented_control("List", list(_sc_layers), default="playbook", key="scan_layer",
+                                         format_func=lambda _k: f"{_sc_layers[_k]['label']} · {_sc_layer_n[_k]:,}")
+        if not _sc_layer:
+            _sc_layer = "playbook"
+        if _sc_layers[_sc_layer]["note"]:
+            st.caption(_sc_layers[_sc_layer]["note"])
+        _sc_tbl_scan = playbook_layer_scan(_sc_sel, _sc_layer)
+    _sc_unrecorded = _sc_tbl_scan is not _sc_sel     # 🚀's B or C: a plain list, no record to read a 🆕 baseline from
     # ONE FUNNEL, TOP DOWN (2026-10-06). The card's recipe ranks the WHOLE market, so every listed stock
     # is exactly the match its record measured. Then the traded-value floor and — only while the
     # sidebar actually narrows the market — the same 🎯 opt-in Market Pulse uses; then the tab's own row
@@ -997,19 +1015,20 @@ with tabs[1]:
             "Liquidity", SCAN_LIQUIDITY_STEPS, key="scan_liq",
             format_func=liquidity_step_label, placeholder="Any",
             help=scan_liquidity_help())
-    _sc_members = _sc_rec_sel.get("members_at_latest") if _sc_state_sel == "measured" else None
+    _sc_members = (_sc_rec_sel.get("members_at_latest") if _sc_state_sel == "measured" and not _sc_unrecorded
+                   else None)
     # 📄 window = the days from the 🆕 baseline to the data's own date (the Movers rule): a result
     # declared inside it arrived after the baseline copy was taken.
     _sc_base_day = _sc_recs.get("members_date") if _sc_recs else None
     _sc_data_day = _fresh.data_date if _fresh.is_known else _date.today()
     _sc_window = (_sc_data_day - _date.fromisoformat(_sc_base_day)).days if _sc_base_day else None
-    _sc_base = scan_table(df, _sc_sel, min_cr=_sc_min,
+    _sc_base = scan_table(df, _sc_tbl_scan, min_cr=_sc_min,
                           keep_ids=set(filt['company_id'].astype(str)) if _sc_scoped else None)
     _sc_kept, _sc_narrow = _scan_filter_row(
         df[df["company_id"].astype(str).isin(set(_sc_base["company_id"]))], _sc_slots, _sc_sh)
-    _sc_tbl = scan_table(df, _sc_sel, members_at_latest=_sc_members, min_cr=_sc_min,
+    _sc_tbl = scan_table(df, _sc_tbl_scan, members_at_latest=_sc_members, min_cr=_sc_min,
                          keep_ids=set(_sc_kept["company_id"].astype(str)), result_window_days=_sc_window)
-    _sc_total = _sc_counts[_sc_sel["key"]]
+    _sc_total = _sc_layer_n[_sc_layer] if _sc_unrecorded else _sc_counts[_sc_sel["key"]]
     if _sc_tbl.empty:
         if _sc_total == 0:
             st.info("No stock matches this scan today.")
@@ -1043,11 +1062,11 @@ with tabs[1]:
         # an old row pick cannot point at a different stock.
         _sc_ids = universe_signature(_sc_tbl["company_id"])
         _sc_pick = st.dataframe(
-            _sc_tbl, column_config=scan_table_config(_sc_new_label, _sc_sel),
-            column_order=list(scan_table_columns(_sc_sel, _sc_view)),
+            _sc_tbl, column_config=scan_table_config(_sc_new_label, _sc_tbl_scan),
+            column_order=list(scan_table_columns(_sc_tbl_scan, _sc_view)),
             hide_index=True, width="stretch", height=min(560, 38 + 35 * len(_sc_tbl)),
             on_select="rerun", selection_mode="single-row",
-            key=f"scan_tbl_{_sc_sel['key']}_{_sc_view}_{_sc_ids}")
+            key=f"scan_tbl_{_sc_tbl_scan['key']}_{_sc_view}_{_sc_ids}")
         _sc_rows = _sc_pick.selection.rows if _sc_pick and hasattr(_sc_pick, "selection") else []
         if _sc_rows:
             _sc_name = _sc_tbl.iloc[_sc_rows[0]]["name"]
@@ -1056,7 +1075,7 @@ with tabs[1]:
             # rendered AFTER that widget; here the staged key is consumed further down the script, so it
             # would rerun forever. Set only when the pick CHANGES, so a row left selected never overrides
             # a stock chosen later in the Tear-Sheet itself (tests/test_scans.py).
-            _sc_sig = f"{_sc_sel['key']}|{_sc_ids}|{_sc_name}"
+            _sc_sig = f"{_sc_tbl_scan['key']}|{_sc_ids}|{_sc_name}"
             if st.session_state.get("_scan_last_pick") != _sc_sig:
                 st.session_state["_scan_last_pick"] = _sc_sig
                 st.session_state["xray_stock"] = _sc_name
@@ -1069,8 +1088,9 @@ with tabs[1]:
             """, unsafe_allow_html=True)
     # "Left 🌱" (2026-10-07): the exit side. Only a scan with measured exit reasons shows it, on the same
     # baseline and the same rule as 🆕 (members only while the record is current). The 🎯 sidebar scope
-    # narrows it; the liquidity floor and the lens row do not (a stock does not leave by trading less).
-    if "exit_reason" in _sc_sel and _sc_state_sel == "measured":
+    # narrows it; the liquidity floor and the lens row do not (a stock does not leave by trading less). The 🚀
+    # ladder's B and C carry no exit reasons (2026-10-30): they have no record, so nothing "left" them.
+    if "exit_reason" in _sc_tbl_scan and _sc_state_sel == "measured":
         if _sc_members is None or not _sc_new_label:
             st.caption(f"Left {_sc_sel['emoji']}: shown once the weekly record has saved a month-end list "
                        f"to compare against.")

@@ -160,6 +160,13 @@ GUIDES = {
             "On 16 Oct 2026 a blank 52-week-high age was made to count as unknown — the middle of its 20% — "
             "instead of as a high more than a year old. No saved snapshot's list changes, so the figures above "
             "stand.",
+            # The ladder (2026-10-30): its definitions live in ui_scans.PLAYBOOK_LAYERS; tests/test_scan_ladder.py
+            # pins this paragraph to their labels, beside the tests that pin what each layer is.
+            "On 30 Oct 2026 the tab's List control added two wider lists of this recipe, shown as plain lists: "
+            "**B · without 🔥**, every condition but the 🔥 Strong Quarter, and **C · price only**, Momentum and "
+            "Breakout in the top third and the price above its stop. Neither has a record: they are the lists of "
+            "Kite's ladder test (36), which a record would score before it is read in May 2027 — so the card, its "
+            "record and this guide are the 🚀 list's alone.",
         ],
     ),
     "leaders": dict(
