@@ -14,7 +14,8 @@ from app.py with the rest.
 What it pins: all three cards render, there is no toggle (2026-10-07: 🌱's revenue-led leg is part of
 its recipe, not a switch), and picking 🌱 shows exactly the recipe's matches; the Liquidity guide; and
 "Left 🌱" — who left since the baseline and why, a note while there is no baseline, nothing on a stale
-record or on scans without measured exits.
+record or on scans without measured exits. And the 🚀 ladder (2026-10-30, tests/test_scan_ladder.py): the List
+control on 🚀 only, its live counts, B and C listed with their note and no record marks, the 🧹 leaving it alone.
 """
 import ast
 import json
@@ -146,6 +147,13 @@ def test_apptest_still_needs_the_single_choice_workaround(tmp_path):
     assert _indices(el) == [0], "the workaround reads the chosen option"
 
 
+def _control(at, key):
+    """The segmented control drawn under `key`, or None when the tab does not draw it — found by its key, never by
+    its place: since 2026-10-30 🚀 draws two (List above the filters, Column View above the table)."""
+    found = [b for b in at.get("button_group") if b.key == key]
+    return found[0] if found else None
+
+
 @pytest.fixture
 def tab(tmp_path):
     from streamlit.testing.v1 import AppTest
@@ -197,7 +205,7 @@ def test_the_view_switch_reaches_the_table(tab):
     on the same stocks — the switch reaches the table, not just the source (tests/test_scan_views.py)."""
     from ui import ui_scans as S
     play = S.SCANS[0]
-    view = tab.get("button_group")[0]
+    view = _control(tab, "scan_view")             # by key since 2026-10-30: 🚀 also draws the List control
     assert view.value == "🏆 Core"
     assert list(tab.dataframe[0].proto.column_order) == list(S.table_columns(play, "🏆 Core"))
     core_names = list(tab.dataframe[0].value["name"])
@@ -372,7 +380,7 @@ def test_clear_returns_every_control_to_its_default(tab):
     assert tab.selectbox(key="scan_liq").value is None, "back to Any"
     assert tab.multiselect(key="scan_stage").value == []
     assert tab.multiselect(key="scan_cap").value == [] and tab.multiselect(key="scan_zone").value == []
-    assert tab.get("button_group")[0].value == "🏆 Core", "the view is not a filter"
+    assert _control(tab, "scan_view").value == "🏆 Core", "the view is not a filter"
 
 
 def _run(tmp_path, records):
@@ -459,4 +467,114 @@ def test_no_left_line_when_the_record_is_stale(tmp_path):
     at = _run(tmp_path, records)
     assert not any(e.label.startswith("Left") for e in at.expander)
     assert not any(c.value.startswith(("Left", "None left")) for c in at.caption)
+
+
+# ── The 🚀 ladder (2026-10-30, the operator's call; tests/test_scan_ladder.py) ─────────────────────────────────
+def _layer_counts():
+    """Each layer's whole-market count on the harness's market."""
+    from ui import ui_scans as S
+    df = _frame()
+    return {layer["key"]: int(S.playbook_layer_mask(df, layer["key"]).sum()) for layer in S.PLAYBOOK_LAYERS}
+
+
+def _notes(at):
+    from ui import ui_scans as S
+    notes = {layer["note"] for layer in S.PLAYBOOK_LAYERS if layer["note"]}
+    return [c.value for c in at.caption if c.value in notes]
+
+
+def test_the_list_control_opens_on_the_rocket_with_each_lists_live_count(tab):
+    """RUN: on 🚀 the List control shows the three layers with their whole-market counts and opens on 🚀's own list,
+    which is the table — with no note, because 🚀 is the scan its record measured."""
+    from ui import ui_scans as S
+    n = _layer_counts()
+    assert 0 < n["playbook"] < n["no_quarter"] < n["price_only"], "the harness market reaches every rung"
+    ctl = _control(tab, "scan_layer")
+    assert ctl is not None and ctl.proto.label == "List"
+    assert ctl.value == "playbook", "🚀 opens on its own list"
+    # A label's leading emoji travels as the option's icon (Streamlit's button group), drawn before its words.
+    shown = [" ".join(p for p in (o.content_icon, o.content) if p) for o in ctl.options]
+    assert shown == [f"{layer['label']} · {n[layer['key']]:,}" for layer in S.PLAYBOOK_LAYERS]
+    assert sorted(tab.dataframe[0].value["name"]) == _expected(S.SCANS[0]) and len(_expected(S.SCANS[0])) == n["playbook"]
+    assert not _notes(tab)
+    # Deselected (AppTest deselects with [], never None), the List falls back to 🚀's own list, as Column View does.
+    _control(tab, "scan_layer").set_value("no_quarter").run()
+    _control(tab, "scan_layer").set_value([]).run()
+    assert not tab.exception, [e.value for e in tab.exception]
+    assert _control(tab, "scan_layer").value is None
+    assert sorted(tab.dataframe[0].value["name"]) == _expected(S.SCANS[0]) and not _notes(tab)
+
+
+@pytest.mark.parametrize("key", ["no_quarter", "price_only"])
+def test_b_and_c_list_their_stocks_with_one_note_and_no_record_marks(tmp_path, key):
+    """RUN, with a 🚀 baseline on file (what the 🆕 marks read): 🚀 marks its new names, while B and C mark none, name
+    no baseline and show no Left — they have no record. Their table, its columns and its widget key are the list's;
+    the 📊 record and the 📖 guide stay 🚀's."""
+    from streamlit.testing.v1 import AppTest
+    from ui import ui_scans as S
+    df = _frame()
+    records = _records_without_baselines()
+    records["scans"]["playbook"]["members_at_latest"] = df["company_id"].tolist()[:150]
+    records["members_date"] = "2026-09-30"
+    script = tmp_path / "scans_tab_ladder.py"
+    script.write_text(_app_source(records), encoding="utf-8")
+    at = AppTest.from_file(str(script), default_timeout=60)
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert any("🆕 new since 30 Sep" in c.value for c in at.caption), "the control: 🚀 reads its baseline"
+    _control(at, "scan_layer").set_value(key).run()
+    assert not at.exception, [e.value for e in at.exception]
+    n, layer = _layer_counts()[key], next(lay for lay in S.PLAYBOOK_LAYERS if lay["key"] == key)
+    table = at.dataframe[0]
+    assert sorted(table.value["name"]) == sorted(df.loc[S.playbook_layer_mask(df, key), "name"]) and len(table.value) == n
+    assert list(table.proto.column_order) == list(S.table_columns(S.playbook_layer_scan(S.SCANS[0], key), "🏆 Core"))
+    assert f"-scan_tbl_{key}_" in table.proto.id, "each list is its own table widget"
+    assert not table.value["_new"].astype(str).str.contains("🆕").any()
+    cap = next(c.value for c in at.caption if "sorted by Momentum" in c.value)
+    assert cap.startswith(f"{n:,} stocks · ") and "🆕" not in cap, cap
+    assert _notes(at) == [layer["note"]], "one note, under the control"
+    assert not any(e.label.startswith("Left") for e in at.expander)
+    assert not any(c.value.startswith(("Left", "None left")) for c in at.caption)
+    panels = [e.label for e in at.expander if e.label.startswith(("📊 Full record", "📖 How it works"))]
+    assert len(panels) == 2 and all("🚀 Playbook Shortlist" in p for p in panels), panels
+    # Narrowed, the caption counts against the LIST's own matches, never 🚀's.
+    at.selectbox(key="scan_liq").set_value(5.0).run()
+    assert not at.exception, [e.value for e in at.exception]
+    k = len(S.scan_table(df, S.playbook_layer_scan(S.SCANS[0], key), min_cr=5.0))
+    assert 0 < k < n and len(at.dataframe[0].value) == k, "the floor must really narrow"
+    cap = next(c.value for c in at.caption if "sorted by Momentum" in c.value)
+    assert cap.startswith(f"{k:,} of {n:,} stocks (₹5 Cr+ a day) · "), cap
+
+
+def test_the_list_control_is_the_rockets_alone_and_never_reaches_another_scan(tab):
+    """RUN: on 🌱 there is no List control and 🌱's table is its own whatever was chosen on 🚀; back on 🚀 the control
+    returns on 🚀's own list (Streamlit drops the state of a control it did not draw: 🚀 reopens on the list its record
+    measures) and the table is the list it shows."""
+    from ui import ui_scans as S
+    _control(tab, "scan_layer").set_value("price_only").run()
+    tab.button(key="scan_open_compounder").click().run()
+    assert not tab.exception, [e.value for e in tab.exception]
+    assert _control(tab, "scan_layer") is None, "the List control is 🚀's alone"
+    comp = next(s for s in S.SCANS if s["key"] == "compounder")
+    assert sorted(tab.dataframe[0].value["name"]) == _expected(comp)
+    assert list(tab.dataframe[0].proto.column_order) == list(S.table_columns(comp, "🏆 Core"))
+    assert not _notes(tab)
+    tab.button(key="scan_open_playbook").click().run()
+    assert not tab.exception, [e.value for e in tab.exception]
+    ctl, df = _control(tab, "scan_layer"), _frame()
+    assert ctl is not None
+    assert ctl.value == "playbook", "leaving 🚀 resets the list; back on 🚀 it reopens on 🚀's own"
+    assert sorted(tab.dataframe[0].value["name"]) == sorted(df.loc[S.playbook_layer_mask(df, ctl.value), "name"])
+
+
+def test_the_clear_leaves_the_list_alone(tab):
+    """The list is a choice, like the scan: 🧹 empties the filter row and keeps it."""
+    _control(tab, "scan_layer").set_value("price_only").run()
+    tab.selectbox(key="scan_liq").set_value(5.0).run()
+    clear = [b for b in tab.button if b.key == "scan_clear"]
+    assert clear, "🧹 shows once a control leaves its default"
+    clear[0].click().run()
+    assert not tab.exception, [e.value for e in tab.exception]
+    assert tab.selectbox(key="scan_liq").value is None
+    assert _control(tab, "scan_layer").value == "price_only"
 

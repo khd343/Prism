@@ -345,6 +345,63 @@ SCANS = (
 )
 
 
+# ── The 🚀 ladder (2026-10-30, the operator's call) ─────────────────────────────────────────────────────────────
+# Two wider lists of 🚀's own recipe, shown on its table as plain lists: B drops the 🔥 Strong Quarter, C keeps the
+# price legs only. They are exactly the L0/L1/L2 lists of Kite's frozen ladder test (Kite v2 addendum 36), so B and C
+# carry NO record: they are no scan — not in SCANS, so scan_records_job, tools/scan_records.py, the Playbook feed,
+# Kite's v2 lists and scan_records.json never see them (tests/test_scan_ladder.py). A record would publicly score the
+# comparison that test must judge blind until it is read in May 2027. Tightest first; `conditions` are the columns of
+# playbook_conditions, so the 🚀 layer (all six) is the shortlist itself. `note` is the line under the control: ONE
+# line on a 1536px laptop (≤ 148 characters, measured 2026-10-30), with no addendum number and no promise of a record.
+_NO_RECORD = "No record of its own: Kite's ladder test judges these lists in May 2027."
+PLAYBOOK_LAYERS = (
+    dict(key="playbook", tag="🚀", label="🚀 Playbook", note="",
+         conditions=("momentum", "breakout", "quarter", "improvement", "evidence", "stop")),
+    dict(key="no_quarter", tag="B", label="B · without 🔥",
+         note=f"B — the 🚀 recipe without the 🔥 Strong Quarter. {_NO_RECORD}",
+         conditions=("momentum", "breakout", "improvement", "evidence", "stop")),
+    dict(key="price_only", tag="C", label="C · price only",
+         note=f"C — Momentum and Breakout in the top third and the price above its stop. {_NO_RECORD}",
+         conditions=("momentum", "breakout", "stop")),
+)
+# B's and C's Rank tip (2026-10-30): they take 🚀's order but none of its record, so no order check or test of 🚀's.
+_UNRECORDED_RANK_TIP = ("PRISM's overall rank — click this header, then Sort ascending, to list by it. The list is "
+                        "sorted by Momentum, high to low, as 🚀 is; it has no record, so nothing here checks that "
+                        "order against random picks.")
+
+
+def playbook_layer_mask(df: pd.DataFrame, key: str) -> pd.Series:
+    """True where a stock meets every condition of the ladder layer `key`, ranked on the frame given (the whole
+    market, as the recipe is). The 🚀 layer's mask is the shortlist itself."""
+    conditions = next(layer["conditions"] for layer in PLAYBOOK_LAYERS if layer["key"] == key)
+    return playbook_conditions(df)[list(conditions)].all(axis=1)
+
+
+def playbook_layer_tag(df: pd.DataFrame) -> pd.Series:
+    """Each stock's TIGHTEST ladder layer, '🚀', 'B' or 'C', and '' outside C: the List column. Ranked on the frame
+    given; the layers are tried tightest first, so the first one a stock meets is its tightest."""
+    met = playbook_conditions(df)
+    return pd.Series(np.select([met[list(layer["conditions"])].all(axis=1).to_numpy() for layer in PLAYBOOK_LAYERS],
+                               [layer["tag"] for layer in PLAYBOOK_LAYERS], default=""), index=df.index, dtype=object)
+
+
+def playbook_layer_scan(scan: dict, key: str) -> dict:
+    """What 🚀's table shows for the ladder layer `key`. The 🚀 layer: the scan itself, its table unchanged. B or C: a
+    TABLE-ONLY scan dict — the layer's mask, 🚀's order, the List column after Rank and 🆕 hidden (`fixed`: a list with
+    no record has no 🆕 baseline). 🔥 shows only where it says something: B lacks only 🚀's Strong Quarter, so there its
+    ✓ falls exactly on the rows List marks 🚀 — B hides it as 🚀 does and takes 🚀's widths, which give its 40px to
+    Stock and Sector; C shows it with the shared widths. Core keeps its 1,030px either way (List takes New's 55px). No
+    recipe words, record inputs or exit reasons: it is in no SCANS, and only the table reads it. Its key is the
+    layer's, so each list is its own table widget."""
+    if key == PLAYBOOK_LAYERS[0]["key"]:
+        return scan
+    layer = next(layer for layer in PLAYBOOK_LAYERS if layer["key"] == key)
+    lacks_only_quarter = set(PLAYBOOK_LAYERS[0]["conditions"]) - set(layer["conditions"]) == {"quarter"}
+    return dict(key=key, order=scan.get("order"), mask=lambda df: playbook_layer_mask(df, key),
+                fixed=("_new", "_strong_q") if lacks_only_quarter else ("_new",), extra=("_layer",),
+                widths=scan.get("widths", {}) if lacks_only_quarter else {})
+
+
 def scan_designed_on(scan: dict) -> str:
     """The day this scan's recipe was chosen: windows starting after it are out of sample."""
     return scan.get("designed_on", DESIGNED_ON)
@@ -675,6 +732,8 @@ TABLE_COLUMNS = ("rank", "_new", "name", "market_category", "sector", "composite
 TABLE_WIDTHS = {"rank": 50, "_new": 55, "name": 175, "market_category": 75, "sector": 95,
                 "composite_score": 75, "momentum_score": 85, "improvement_score": 100, "_strong_q": 40,
                 "_measured_flags": 125, "weinstein_stage": 90, "_liq_cr": 65, "_cycle": 60,
+                # List (2026-10-30): the 🚀 ladder's B and C tables, in New's 55px (New is hidden there).
+                "_layer": 55,
                 # 📈 Technical (2026-10-13): the Deep Scanner's widths for the same columns, Breakout as a
                 # number like Momentum here; "🔥 OVERHEATED" fits 110.
                 "close_price": 80, "dist_to_vstop": 60, "d49_momentum_quality": 110, "rsi_14d": 50,
@@ -695,18 +754,23 @@ TREND_SHORT = {"📈 Stage 2 Advancing": "📈 Stage 2", "🔄 Stage 1 Basing": 
 
 
 # Columns a scan may ADD to the shared table (2026-10-07), each placed after an anchor column. Only a
-# scan that lists one in `extra` shows it; the others keep exactly the shared table.
-EXTRA_COLUMNS = {"_cycle": "_strong_q"}
+# scan that lists one in `extra` shows it; the others keep exactly the shared table. List (2026-10-30): the 🚀
+# ladder's B and C tables name each row's tightest layer, right after Rank in both views.
+EXTRA_COLUMNS = {"_cycle": "_strong_q", "_layer": "rank"}
 
 
 def table_columns(scan: dict, view: str = SCAN_VIEWS[0]) -> tuple:
     """The columns this scan shows in `view`. 🏆 Core: every table column except those its recipe fixes,
-    plus its own extra columns, each right after its anchor. 📈 Technical: TECHNICAL_COLUMNS, the same
-    for every scan (none of them is fixed by a recipe)."""
+    plus its own extra columns, each right after its anchor. 📈 Technical: TECHNICAL_COLUMNS except the
+    fixed ones (none is fixed by a recipe; the ladder's B and C hide New), plus an extra only where the view
+    shows its anchor (2026-10-30): List after Rank, while 🌱's Cycle ↓, anchored on 🔥, stays out."""
     if view == SCAN_VIEWS[1]:
-        return tuple(c for c in TECHNICAL_COLUMNS if c not in scan.get("fixed", ()))
-    cols = [c for c in TABLE_COLUMNS if c not in scan.get("fixed", ())]
-    for extra in scan.get("extra", ()):
+        cols = [c for c in TECHNICAL_COLUMNS if c not in scan.get("fixed", ())]
+        extras = [e for e in scan.get("extra", ()) if EXTRA_COLUMNS[e] in cols]
+    else:
+        cols = [c for c in TABLE_COLUMNS if c not in scan.get("fixed", ())]
+        extras = scan.get("extra", ())
+    for extra in extras:
         cols.insert(cols.index(EXTRA_COLUMNS[extra]) + 1, extra)
     return tuple(cols)
 
@@ -733,8 +797,13 @@ def scan_table(df: pd.DataFrame, scan: dict, members_at_latest=None, min_cr=None
     `result_window_days` (the days since that baseline): result_age_days counts days since the last
     declared result and is negative for one only scheduled, so 0 <= age < window is "declared since the
     baseline" — the rule Movers uses. The two clocks differ on purpose: technical legs move daily,
-    fundamentals only when a result lands, so 🆕 + 📄 together means the stock entered on a fresh result."""
-    out = df.loc[scan["mask"](df)].copy()
+    fundamentals only when a result lands, so 🆕 + 📄 together means the stock entered on a fresh result.
+    On the 🚀 ladder's B and C tables (2026-10-30) List names each row's tightest layer, ranked on the whole
+    market like the recipe, never on the narrowed list; only a table that shows it carries it."""
+    keep = scan["mask"](df)
+    out = df.loc[keep].copy()
+    if "_layer" in scan.get("extra", ()):
+        out["_layer"] = playbook_layer_tag(df)[keep].to_numpy()
     out["_liq_cr"] = traded_value_cr(out)
     if min_cr is not None:
         out = out[out["_liq_cr"] >= min_cr]
@@ -754,7 +823,8 @@ def scan_table(df: pd.DataFrame, scan: dict, members_at_latest=None, min_cr=None
     out["_cycle"] = np.where(cycle_shortened(out), "✓", "")
     if "weinstein_stage" in out.columns:
         out["weinstein_stage"] = out["weinstein_stage"].replace(TREND_SHORT)
-    shown = [*TABLE_COLUMNS, *(c for c in TECHNICAL_COLUMNS if c not in TABLE_COLUMNS), *EXTRA_COLUMNS]
+    shown = [*TABLE_COLUMNS, *(c for c in TECHNICAL_COLUMNS if c not in TABLE_COLUMNS),
+             *(c for c in EXTRA_COLUMNS if c in out.columns)]
     for c in shown:
         if c not in out.columns:
             out[c] = np.nan
@@ -819,6 +889,7 @@ def table_config(members_date_label: str, scan: dict = None) -> dict:
              else "on the last archived month-end copy")
     return {
         "rank": cc.NumberColumn("Rank", format="%.0f", width=w["rank"], help=(
+            _UNRECORDED_RANK_TIP if "_layer" in (scan or {}).get("extra", ()) else      # 🚀's B or C
             "PRISM's overall rank — click this header, then Sort ascending, to list by it. The list is "
             "sorted by Momentum, high to low (since 2026-10-13); the card's order check records whether "
             "that order keeps beating random picks. Inside this scan the top of the Rank did not beat the "
@@ -831,6 +902,12 @@ def table_config(members_date_label: str, scan: dict = None) -> dict:
                                    f"🆕 📄 together = it entered on a new result; 🆕 alone = it entered on "
                                    f"price movement (technical legs move daily — check it is not flickering "
                                    f"across the line)."),
+        # List (2026-10-30): the 🚀 ladder's B and C tables only (PLAYBOOK_LAYERS).
+        "_layer": cc.TextColumn("List", width=w["_layer"], help=(
+            "The tightest of the three lists the stock is in: 🚀 = the whole 🚀 recipe · B = all of it but the 🔥 "
+            "Strong Quarter · C = price only — Momentum and Breakout in the top third of the market and the price "
+            "above its stop. Each list holds the one before it. B and C have no record of their own: Kite's ladder "
+            "test compares the three lists blind until May 2027, and a record here would score them early.")),
         "name": cc.TextColumn("Stock", width=w["name"]),
         # "Category" (2026-10-14): the user's word and the data vendor's own ("Market Category"); the Deep
         # Scanner shows the same column as Market Cap.

@@ -135,8 +135,11 @@ def _scans_block():
 def test_the_tab_lets_the_reader_switch_views_and_shows_the_chosen_one():
     src = ast.unparse(_scans_block())
     assert "st.segmented_control('Column View', list(SCAN_VIEWS), default='🏆 Core', key='scan_view')" in src
-    assert "column_order=list(scan_table_columns(_sc_sel, _sc_view))" in src, "the table shows the chosen view"
-    assert "scan_tbl_{_sc_sel['key']}_{_sc_view}_{_sc_ids}" in src.replace('"', "'"), (
+    # Repointed 2026-10-30, not loosened: the view applies to the chosen LIST of the selected scan (_sc_tbl_scan is
+    # _sc_sel itself, or 🚀's B or C — tests/test_scan_ladder.py), whose key the widget key now carries.
+    assert "_sc_tbl_scan = _sc_sel" in src and "_sc_tbl_scan = playbook_layer_scan(_sc_sel, _sc_layer)" in src
+    assert "column_order=list(scan_table_columns(_sc_tbl_scan, _sc_view))" in src, "the table shows the chosen view"
+    assert "scan_tbl_{_sc_tbl_scan['key']}_{_sc_view}_{_sc_ids}" in src.replace('"', "'"), (
         "a new view is a new widget, so a row pick from one view never carries into the other")
 
 

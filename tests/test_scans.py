@@ -723,8 +723,12 @@ def test_the_list_comes_before_the_footnotes_and_the_caption_does_not_overpromis
     assert "load it into the Tear-Sheet tab" in src and "open its Tear-Sheet" not in src
     # Repointed 2026-10-13, not loosened: the table now shows this scan's columns IN THE CHOSEN VIEW
     # (🏆 Core / 📈 Technical, tests/test_scan_views.py); the scan is still what decides them.
-    assert "column_order=list(scan_table_columns(_sc_sel, _sc_view))" in src, "the table shows this scan's columns"
-    assert "scan_table_config(_sc_new_label, _sc_sel)" in src, "and this scan's widths"
+    # Repointed 2026-10-30, not loosened: the table shows this scan's chosen LIST — the selected scan itself, or on 🚀
+    # its B or C (tests/test_scan_ladder.py) — so its columns and widths come from _sc_tbl_scan, which is _sc_sel
+    # unless 🚀's List control says otherwise.
+    assert "_sc_tbl_scan = _sc_sel" in src and "_sc_tbl_scan = playbook_layer_scan(_sc_sel, _sc_layer)" in src
+    assert "column_order=list(scan_table_columns(_sc_tbl_scan, _sc_view))" in src, "the table shows this scan's columns"
+    assert "scan_table_config(_sc_new_label, _sc_tbl_scan)" in src, "and this scan's widths"
 
 
 def test_the_tab_reads_the_whole_market_and_never_the_sidebar_frame():
