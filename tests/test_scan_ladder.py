@@ -11,8 +11,9 @@ fingerprints a scan can see them.
 
 Pinned here: the 🚀 layer IS the shortlist; 🚀 ⊆ B ⊆ C; each layer read from playbook_conditions itself; the List tag
 is the tightest layer, ranked on the whole market; the ladder is no scan; the B and C tables (List after Rank in both
-views, no 🆕, 🔥 shown, 🚀's 1,030px Core budget and its order); 🚀's table and 🌱's exactly as they were; where
-app.py draws the control; and the 📖 guide's one paragraph on it. tests/test_scans_tab_runs.py runs it in the real tab.
+views, no 🆕, 🔥 only where it says something, 🚀's 1,030px Core budget and its order, a Rank tip that claims no record);
+🚀's table and 🌱's exactly as they were; where app.py draws the control; and the 📖 guide's one paragraph on it.
+tests/test_scans_tab_runs.py runs it in the real tab.
 
 Run with: pytest tests/test_scan_ladder.py -v
 """
@@ -219,24 +220,38 @@ _WIDE_TECH = ("rank", "_layer", "name", "close_price", "_liq_cr", "dist_to_vstop
 
 
 @pytest.mark.parametrize("key", WIDE)
-def test_b_and_c_show_the_list_after_rank_the_quarter_and_no_new_mark(key):
+def test_b_and_c_show_the_list_after_rank_and_no_new_mark(key):
     wide = S.playbook_layer_scan(PLAY, key)
-    assert S.table_columns(wide, CORE) == _WIDE_CORE
+    want = _WIDE_CORE if key == "price_only" else tuple(c for c in _WIDE_CORE if c != "_strong_q")
+    assert S.table_columns(wide, CORE) == want
     assert S.table_columns(wide, TECH) == _WIDE_TECH
     for view in S.SCAN_VIEWS:
         cols = S.table_columns(wide, view)
         assert cols[cols.index("rank") + 1] == "_layer" and "_new" not in cols, view
-    assert "_strong_q" in S.table_columns(wide, CORE), "🔥 varies on B and C, so it shows"
+
+
+def test_the_quarter_column_shows_only_where_it_says_something():
+    """B lacks only 🚀's 🔥 Strong Quarter, so on B its ✓ falls exactly on the rows List marks 🚀: the column says
+    nothing new, and on screen (2026-10-30) its 40px cut B's stock and sector names. So B hides it, as 🚀 does, and
+    takes 🚀's widths; on C it is information (test_the_quarter_column_varies_on_the_price_only_list)."""
+    b = S.playbook_layer_scan(PLAY, "no_quarter")
+    t = S.scan_table(_market(7), b)
+    assert len(t) > 0 and (t["_strong_q"] == "✓").tolist() == (t["_layer"] == "🚀").tolist()
+    assert "_strong_q" not in S.table_columns(b, CORE)
+    assert "_strong_q" in S.table_columns(S.playbook_layer_scan(PLAY, "price_only"), CORE)
 
 
 @pytest.mark.parametrize("key", WIDE)
 def test_b_and_c_keep_the_rockets_core_budget(key):
-    """List takes New's 55px and 🔥 its own 40px back (the 40px 🚀 moves to Stock and Sector stay with 🔥)."""
+    """List takes New's 55px. On B, 🔥 is hidden and its 40px go to Stock and Sector with 🚀's own widths; on C, 🔥
+    keeps them and Stock and Sector take the shared widths."""
     wide = S.playbook_layer_scan(PLAY, key)
     w = S.table_widths(wide)
     rocket = sum(S.table_widths(PLAY)[c] for c in S.table_columns(PLAY, CORE))
     assert sum(w[c] for c in S.table_columns(wide, CORE)) == rocket == 1030
     assert w["_layer"] == S.TABLE_WIDTHS["_new"] == 55
+    own = S.table_widths(PLAY if key == "no_quarter" else {})
+    assert (w["name"], w["sector"]) == (own["name"], own["sector"]), "B as wide as 🚀's names; C the shared widths"
     assert sum(w[c] for c in S.table_columns(wide, TECH)) + 44 <= 1074, "📈 Technical fits a 1536px laptop"
     cfg = S.table_config("30 Sep", wide)
     for view in S.SCAN_VIEWS:
@@ -245,17 +260,20 @@ def test_b_and_c_keep_the_rockets_core_budget(key):
 
 
 def test_the_note_says_what_the_list_is_and_that_it_has_no_record():
-    """The one line under the control while B or C is chosen (app.py draws it): what the list is, that it has no
-    record until the ladder test is read, and whose record the 📊 panel above is."""
+    """The line under the control while B or C is chosen (app.py draws it): what the list is, that it has no record of
+    its own (so the 📊 record above is 🚀's), and which test judges it. No internal addendum number and no promise of
+    a record after May (the review of 2026-10-30). ONE line on a 1536px laptop: B's 148 characters fit there and C's
+    200 wrapped (measured 2026-10-30), so each note keeps within 148."""
     notes = {layer["key"]: layer["note"] for layer in S.PLAYBOOK_LAYERS}
     assert notes["playbook"] == "", "🚀 is the scan its record measured: no note"
     assert notes["no_quarter"].startswith("B — ") and "without the 🔥 Strong Quarter" in notes["no_quarter"]
-    assert notes["price_only"].startswith("C — price only") and "top third" in notes["price_only"]
+    assert notes["price_only"].startswith("C — ") and "Momentum and Breakout in the top third" in notes["price_only"]
     assert "above its stop" in notes["price_only"]
     for key in WIDE:
-        for words in ("No record", "Kite's ladder test (36)", "May 2027", "the 📊 record above is 🚀's"):
+        for words in ("No record of its own", "Kite's ladder test", "May 2027"):
             assert words in notes[key], (key, words)
-        assert len(notes[key]) <= 220, f"{key}: one or two lines under the control"
+        assert "(36)" not in notes[key] and "until" not in notes[key], f"{key}: no number, no promise of a record"
+        assert len(notes[key]) <= 148, f"{key}: one line under the control ({len(notes[key])} characters)"
 
 
 def test_the_list_header_explains_every_letter():
@@ -263,8 +281,20 @@ def test_the_list_header_explains_every_letter():
     assert cfg["label"] == "List"
     for layer in S.PLAYBOOK_LAYERS:
         assert f"{layer['tag']} = " in cfg["help"], layer["tag"]
-    for words in ("Strong Quarter", "top third", "stop", "no record", "May 2027"):
+    for words in ("Strong Quarter", "top third", "stop", "no record", "May 2027", "blind"):
         assert words in cfg["help"], words
+    assert "(36)" not in cfg["help"], "the screen names no internal addendum number"
+
+
+@pytest.mark.parametrize("key", WIDE)
+def test_the_rank_tip_on_b_and_c_claims_no_record_of_its_own(key):
+    """B and C take 🚀's order but not its record: their Rank tip names no order check and no 2026-10-06 test (both
+    are 🚀's alone; the review of 2026-10-30 found 🚀's tip on them), while 🚀's own tip keeps both."""
+    tip = S.table_config("30 Sep", S.playbook_layer_scan(PLAY, key))["rank"]["help"]
+    assert "order check" not in tip and "2026-10-06" not in tip, tip
+    assert "no record" in tip and "Momentum, high to low" in tip, tip
+    rocket = S.table_config("30 Sep", PLAY)["rank"]["help"]
+    assert "order check" in rocket and "2026-10-06" in rocket
 
 
 @pytest.mark.parametrize("key,tags", [("no_quarter", {"🚀", "B"}), ("price_only", {"🚀", "B", "C"})])
@@ -352,10 +382,14 @@ def test_the_list_sits_between_the_scan_and_its_filters_on_the_rocket_only():
     assert "_sc_tbl_scan = playbook_layer_scan(_sc_sel, _sc_layer)" in src
     assert "scan_tbl_{_sc_tbl_scan['key']}_{_sc_view}_{_sc_ids}" in src.replace('"', "'"), (
         "the widget key follows the list, so a row pick on one list never carries into another")
+    assert "_sc_sig = f'{_sc_tbl_scan['key']}|{_sc_ids}|{_sc_name}'" in src.replace('"', "'"), (
+        "a row pick is keyed on the list shown: keyed on 🚀's, the same stock picked again on B after a filter left B "
+        "showing 🚀's stocks repeats the signature, and the click silently does nothing (review 2026-10-30, M5)")
 
 
 def test_the_list_is_a_choice_the_clear_never_resets():
-    """Like the scan choice: the tab's 🧹 Clear empties the filters, never the list; and nothing in app.py writes it."""
+    """The tab's 🧹 Clear empties the filters, never the list; and nothing in app.py writes it. (Leaving 🚀 does reset
+    it: tests/test_scans_tab_runs.py.)"""
     tree = ast.parse(_APP)
     node = next(n for n in tree.body if isinstance(n, ast.Assign)
                 and ast.unparse(n.targets[0]) == "_SCAN_FILTER_DEFAULTS")

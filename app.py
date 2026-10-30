@@ -967,7 +967,8 @@ with tabs[1]:
     # Quarter and C on price alone, each with its whole-market count. They are the lists of Kite's frozen ladder test
     # (36), so they carry NO record (ui_scans.PLAYBOOK_LAYERS): the cards, 📊 record and 📖 guide above stay 🚀's, and
     # B or C marks no 🆕 and shows no Left. Drawn on 🚀 only, between the scan and its filters (scan → list → filters →
-    # columns → table); a list choice like the scan choice, so the 🧹 Clear never resets it (tests/test_scan_ladder.py).
+    # columns → table). The 🧹 Clear never resets it, but leaving 🚀 does: Streamlit drops the state of a control it does
+    # not draw, so 🚀 reopens on its own recorded list (tests/test_scan_ladder.py, tests/test_scans_tab_runs.py).
     _sc_tbl_scan = _sc_sel
     if _sc_sel["key"] == "playbook":
         _sc_layers = {_l["key"]: _l for _l in PLAYBOOK_LAYERS}

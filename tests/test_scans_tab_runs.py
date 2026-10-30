@@ -548,7 +548,8 @@ def test_b_and_c_list_their_stocks_with_one_note_and_no_record_marks(tmp_path, k
 
 def test_the_list_control_is_the_rockets_alone_and_never_reaches_another_scan(tab):
     """RUN: on 🌱 there is no List control and 🌱's table is its own whatever was chosen on 🚀; back on 🚀 the control
-    returns and the table is the list it shows."""
+    returns on 🚀's own list (Streamlit drops the state of a control it did not draw: 🚀 reopens on the list its record
+    measures) and the table is the list it shows."""
     from ui import ui_scans as S
     _control(tab, "scan_layer").set_value("price_only").run()
     tab.button(key="scan_open_compounder").click().run()
@@ -562,6 +563,7 @@ def test_the_list_control_is_the_rockets_alone_and_never_reaches_another_scan(ta
     assert not tab.exception, [e.value for e in tab.exception]
     ctl, df = _control(tab, "scan_layer"), _frame()
     assert ctl is not None
+    assert ctl.value == "playbook", "leaving 🚀 resets the list; back on 🚀 it reopens on 🚀's own"
     assert sorted(tab.dataframe[0].value["name"]) == sorted(df.loc[S.playbook_layer_mask(df, ctl.value), "name"])
 
 

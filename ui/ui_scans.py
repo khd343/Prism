@@ -351,8 +351,9 @@ SCANS = (
 # carry NO record: they are no scan — not in SCANS, so scan_records_job, tools/scan_records.py, the Playbook feed,
 # Kite's v2 lists and scan_records.json never see them (tests/test_scan_ladder.py). A record would publicly score the
 # comparison that test must judge blind until it is read in May 2027. Tightest first; `conditions` are the columns of
-# playbook_conditions, so the 🚀 layer (all six) is the shortlist itself. `note` is the line under the control.
-_NO_RECORD = "No record: a plain list until Kite's ladder test (36) is read in May 2027; the 📊 record above is 🚀's."
+# playbook_conditions, so the 🚀 layer (all six) is the shortlist itself. `note` is the line under the control: ONE
+# line on a 1536px laptop (≤ 148 characters, measured 2026-10-30), with no addendum number and no promise of a record.
+_NO_RECORD = "No record of its own: Kite's ladder test judges these lists in May 2027."
 PLAYBOOK_LAYERS = (
     dict(key="playbook", tag="🚀", label="🚀 Playbook", note="",
          conditions=("momentum", "breakout", "quarter", "improvement", "evidence", "stop")),
@@ -360,10 +361,13 @@ PLAYBOOK_LAYERS = (
          note=f"B — the 🚀 recipe without the 🔥 Strong Quarter. {_NO_RECORD}",
          conditions=("momentum", "breakout", "improvement", "evidence", "stop")),
     dict(key="price_only", tag="C", label="C · price only",
-         note=f"C — price only: Momentum and Breakout in the top third of the market and the price above its stop. "
-              f"{_NO_RECORD}",
+         note=f"C — Momentum and Breakout in the top third and the price above its stop. {_NO_RECORD}",
          conditions=("momentum", "breakout", "stop")),
 )
+# B's and C's Rank tip (2026-10-30): they take 🚀's order but none of its record, so no order check or test of 🚀's.
+_UNRECORDED_RANK_TIP = ("PRISM's overall rank — click this header, then Sort ascending, to list by it. The list is "
+                        "sorted by Momentum, high to low, as 🚀 is; it has no record, so nothing here checks that "
+                        "order against random picks.")
 
 
 def playbook_layer_mask(df: pd.DataFrame, key: str) -> pd.Series:
@@ -384,14 +388,18 @@ def playbook_layer_tag(df: pd.DataFrame) -> pd.Series:
 def playbook_layer_scan(scan: dict, key: str) -> dict:
     """What 🚀's table shows for the ladder layer `key`. The 🚀 layer: the scan itself, its table unchanged. B or C: a
     TABLE-ONLY scan dict — the layer's mask, 🚀's order, the List column after Rank and 🆕 hidden (`fixed`: a list with
-    no record has no 🆕 baseline), 🔥 shown (it varies there) and the shared widths, so Core keeps its 1,030px: List
-    takes New's 55px, and 🔥 keeps the 40px that 🚀 gives to Stock and Sector. No recipe words, record inputs, widths
-    or exit reasons: it is in no SCANS, and only the table reads it. Its key is the layer's, so each list is its own
-    table widget."""
+    no record has no 🆕 baseline). 🔥 shows only where it says something: B lacks only 🚀's Strong Quarter, so there its
+    ✓ falls exactly on the rows List marks 🚀 — B hides it as 🚀 does and takes 🚀's widths, which give its 40px to
+    Stock and Sector; C shows it with the shared widths. Core keeps its 1,030px either way (List takes New's 55px). No
+    recipe words, record inputs or exit reasons: it is in no SCANS, and only the table reads it. Its key is the
+    layer's, so each list is its own table widget."""
     if key == PLAYBOOK_LAYERS[0]["key"]:
         return scan
+    layer = next(layer for layer in PLAYBOOK_LAYERS if layer["key"] == key)
+    lacks_only_quarter = set(PLAYBOOK_LAYERS[0]["conditions"]) - set(layer["conditions"]) == {"quarter"}
     return dict(key=key, order=scan.get("order"), mask=lambda df: playbook_layer_mask(df, key),
-                fixed=("_new",), extra=("_layer",))
+                fixed=("_new", "_strong_q") if lacks_only_quarter else ("_new",), extra=("_layer",),
+                widths=scan.get("widths", {}) if lacks_only_quarter else {})
 
 
 def scan_designed_on(scan: dict) -> str:
@@ -881,6 +889,7 @@ def table_config(members_date_label: str, scan: dict = None) -> dict:
              else "on the last archived month-end copy")
     return {
         "rank": cc.NumberColumn("Rank", format="%.0f", width=w["rank"], help=(
+            _UNRECORDED_RANK_TIP if "_layer" in (scan or {}).get("extra", ()) else      # 🚀's B or C
             "PRISM's overall rank — click this header, then Sort ascending, to list by it. The list is "
             "sorted by Momentum, high to low (since 2026-10-13); the card's order check records whether "
             "that order keeps beating random picks. Inside this scan the top of the Rank did not beat the "
@@ -897,8 +906,8 @@ def table_config(members_date_label: str, scan: dict = None) -> dict:
         "_layer": cc.TextColumn("List", width=w["_layer"], help=(
             "The tightest of the three lists the stock is in: 🚀 = the whole 🚀 recipe · B = all of it but the 🔥 "
             "Strong Quarter · C = price only — Momentum and Breakout in the top third of the market and the price "
-            "above its stop. Each list holds the one before it. B and C have no record: plain lists until Kite's "
-            "ladder test (36) is read in May 2027.")),
+            "above its stop. Each list holds the one before it. B and C have no record of their own: Kite's ladder "
+            "test compares the three lists blind until May 2027, and a record here would score them early.")),
         "name": cc.TextColumn("Stock", width=w["name"]),
         # "Category" (2026-10-14): the user's word and the data vendor's own ("Market Category"); the Deep
         # Scanner shows the same column as Market Cap.
