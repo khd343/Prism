@@ -759,8 +759,10 @@ SHAREHOLDING_BASELINE_DAYS = 205
 # two MidSmallcap 400 indices: the Kite Playbook trades mid and small caps only, and its frozen test is
 # judged against Nifty MidSmallcap 400 with its Momentum Quality 100 as the reference — so PRISM shows the
 # same yardstick. No scan card's declared benchmark changed (ui_scans.SCANS, fixed 2026-10-08).
+# Nifty500 Shariah added 1 Nov 2026 by the operator: Kite trades only Shariah stocks, so this is its real market.
 BENCHMARK_INDICES = {
     "NSE:CNX500": "Nifty 500",
+    "NSE:NIFTY500SH": "Nifty500 Shariah",
     "NSE:SMALLCA250": "Nifty Smallcap 250",
     "NSE:NFMICRO250": "Nifty Microcap 250",
     "NSE:MIDSMAL400": "Nifty MidSmallcap 400",

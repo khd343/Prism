@@ -14,6 +14,7 @@ Pinned here: the one stage rule, the index table, the one-load plumbing, and the
 """
 import ast
 import os
+import re
 import sys
 
 import numpy as np
@@ -69,8 +70,8 @@ def test_can_slim_m_reads_the_scoring_regime_before_the_detected_one():
 def _tech_rows():
     """The Technicals tab as the loader hands it over: a stock, every declared index in a scrambled
     order, and an undeclared index-like row (no market cap / sector / industry). One price per declared
-    index, alternating above and below its averages, so the fixture follows config (nine since
-    2026-10-13) instead of a hardcoded count."""
+    index, alternating above and below its averages, so the fixture follows config (ten since
+    2026-11-01) instead of a hardcoded count."""
     ids = ["NSE:TCS", *reversed(list(BENCHMARK_INDICES)), "NSE:NEWINDEX"]
     n = len(ids)
     close = [4000.0] + [110.0 if i % 2 == 0 else 90.0 for i in range(len(BENCHMARK_INDICES))] + [50.0]
@@ -139,6 +140,47 @@ def test_the_box_leads_with_the_market_and_shows_every_index_stage():
     assert "font-weight:800" in h.split(">Nifty 500<")[0][-200:], "the market row is the bold one"
     nifty = _bench().set_index("company_id").loc[M.MARKET_ID, "stage"]
     assert f"border-left:4px solid {M._stage_colour(nifty, M.COLORS)}" in h, "the edge follows the Nifty 500"
+
+
+# ── Nifty500 Shariah (2026-11-01): Kite trades only Shariah stocks, so this is its real market ───────────────
+SH = "NSE:NIFTY500SH"
+_NAN = re.compile(r"\b(nan|None)\b", re.I)
+
+
+def test_the_shariah_index_has_its_short_name():
+    assert M.SHORT_NAMES[SH] == "Shariah 500"
+
+
+def test_shariah_500_renders_second_with_its_full_name_as_the_tooltip():
+    h = M.market_box_html(_bench(), "SIDEWAYS")
+    pos = [h.index(f">{n}<") for n in ("Nifty 500", "Shariah 500", "Smallcap 250")]
+    assert pos == sorted(pos), "the market, then the Shariah 500, then the rest as before"
+    assert 'title="Nifty500 Shariah: ' in h
+
+
+def test_a_missing_shariah_row_is_left_out_and_nothing_reads_nan():
+    """Copies before 2 Nov 2026 have no Nifty500 Shariah row: the box leaves it out, exactly as it left out
+    the two MidSmall indices on copies before 13 Oct, and every other row renders as before."""
+    tech = _tech_rows()
+    h = M.market_box_html(de.benchmark_table({"technical": tech[tech["company_id"] != SH]}), "SIDEWAYS")
+    assert ">Shariah 500<" not in h and "Nifty500 Shariah" not in h
+    pos = [h.index(f">{M.SHORT_NAMES[i]}<") for i in BENCHMARK_INDICES if i != SH]
+    assert pos == sorted(pos)
+    assert not _NAN.search(h)
+
+
+@pytest.mark.parametrize("blank", ["close_price", "sma_30w", "sma_200d"])
+def test_a_blank_shariah_input_reads_unknown_never_nan(blank):
+    """The row is there but a number the stage needs is blank: the ❔ Unknown every stock and index reads,
+    muted, never 'nan', 'None', 'Stage nan' or an empty badge."""
+    tech = _tech_rows()
+    tech.loc[tech["company_id"] == SH, blank] = np.nan
+    bench = de.benchmark_table({"technical": tech})
+    assert bench.set_index("company_id").loc[SH, "stage"] == "❔ Unknown"
+    h = M.market_box_html(bench, "SIDEWAYS")
+    row = h.split('title="Nifty500 Shariah: ')[1].split("</div>")[0]
+    assert ">Shariah 500<" in row and ">❔ Unknown<" in row and M.COLORS["text_muted"] in row
+    assert not _NAN.search(h)
 
 
 def test_the_box_labels_the_regime_as_shown_not_applied(monkeypatch):

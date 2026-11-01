@@ -20,6 +20,7 @@ from config import BENCHMARK_INDICES, COLORS, REGIME_DRIVES_SCORING
 # (config.BENCHMARK_INDICES is the one list; a test keeps the two in step).
 SHORT_NAMES = {
     "NSE:CNX500": "Nifty 500",
+    "NSE:NIFTY500SH": "Shariah 500",
     "NSE:SMALLCA250": "Smallcap 250",
     "NSE:NFMICRO250": "Microcap 250",
     "NSE:MIDSMAL400": "MidSmall 400",
