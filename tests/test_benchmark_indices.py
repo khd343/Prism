@@ -1,7 +1,7 @@
 """
 test_benchmark_indices.py
 =========================
-The benchmark indices are not stocks (2026-10-08; nine since 2026-10-13).
+The benchmark indices are not stocks (2026-10-08; nine since 2026-10-13, ten since 2026-11-01).
 
 The user added seven NSE indices (Nifty 500, Smallcap 250, Microcap 250, Nifty500 Momentum 50,
 Nifty200 Momentum 30, Nifty200 Quality 30, Smallcap250 Momentum Quality 100) to the PRISM watchlists,
@@ -36,9 +36,14 @@ def test_the_benchmarks_are_declared_by_the_vendors_ids():
     Playbook trades mid and small caps only and its frozen test is judged against exactly these two.
     Ids and names read from the sync's own fetch that day (a local-mode run, nothing uploaded); before
     they were declared, the safety net already set both aside and the 2,710 stocks scored identically
-    on all 759 columns to the same fetch with the two rows deleted."""
+    on all 759 columns to the same fetch with the two rows deleted.
+
+    Ten since 2026-11-01: Nifty500 Shariah, added by the operator because Kite trades only Shariah stocks.
+    Id and name read from the sync's local-mode fetch of 1 Nov 2026 (nothing uploaded): one row per tab,
+    market cap, sector and industry 'null', close and both averages filled. It follows the market."""
     assert BENCHMARK_INDICES == {
         "NSE:CNX500": "Nifty 500",
+        "NSE:NIFTY500SH": "Nifty500 Shariah",
         "NSE:SMALLCA250": "Nifty Smallcap 250",
         "NSE:NFMICRO250": "Nifty Microcap 250",
         "NSE:MIDSMAL400": "Nifty MidSmallcap 400",
@@ -48,6 +53,20 @@ def test_the_benchmarks_are_declared_by_the_vendors_ids():
         "NSE:NS250MQ100": "Nifty Smallcap250 Momentum Quality 100",
         "NSE:NMS400MQ10": "Nifty MidSmallcap400 Momentum Quality 100",
     }
+    assert list(BENCHMARK_INDICES)[:2] == ["NSE:CNX500", "NSE:NIFTY500SH"], "the Shariah 500 follows the market"
+
+
+def test_the_shariah_index_is_set_aside_by_its_id_not_only_by_its_shape(capsys):
+    """Declared, Nifty500 Shariah leaves the universe even in a frame without market cap, sector and industry
+    (an archived vintage, matched by id only), and the merge no longer names it an unknown index."""
+    by_id = pd.DataFrame({"company_id": ["NSE:TCS", "NSE:NIFTY500SH"], "name": ["TCS", "Nifty500 Shariah"]})
+    assert de.benchmark_rows(by_id).tolist() == [False, True]
+    out = de._set_aside_benchmarks(pd.DataFrame({
+        "company_id": ["NSE:TCS", "NSE:NIFTY500SH"], "name": ["TCS", "Nifty500 Shariah"],
+        "sector": ["IT Software", np.nan], "industry": ["IT - Software", np.nan], "market_cap": [1.2e6, np.nan]}))
+    assert out["company_id"].tolist() == ["NSE:TCS"]
+    log = capsys.readouterr().out
+    assert "1 benchmark index row(s) set aside" in log and "not in config.BENCHMARK_INDICES" not in log
 
 
 def _rows():
