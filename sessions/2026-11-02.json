@@ -1,0 +1,56 @@
+{
+  "schema": 1,
+  "session": "2026-11-02",
+  "rows": 217,
+  "columns": [
+    "symbol",
+    "name",
+    "sector",
+    "industry",
+    "cap",
+    "composite_score",
+    "crs_52w",
+    "dist_to_vstop",
+    "momentum_score",
+    "breakout_score",
+    "traded_value_cr",
+    "rsi_14d",
+    "stage",
+    "close_price",
+    "equity_shares"
+  ],
+  "csv_sha256": "d6fedd293614706c43b38999b9c5e3cfbf7c9f9ae4ff558a5b91e12d26aeaa7e",
+  "recipe": "playbook",
+  "recipe_fingerprint": "da869c1c0a1c43d7",
+  "engine_commit": "68b38e0b5cfcf52345902a35ddd7bbefc4247e05",
+  "source_title": "PRISM 2026-11-02 Mon",
+  "source_sha256": "b8f85d09c16847610c73f018506d81f86391be34ad4ebf7a5e3d7c9c6a0387a6",
+  "origin": "recorded",
+  "trigger": "dispatch",
+  "published_at": "2026-11-02T19:23:37+05:30",
+  "counts": {
+    "cap": {
+      "": 0,
+      "LARGE": 35,
+      "MEGA": 2,
+      "MICRO": 40,
+      "MID": 44,
+      "NANO": 0,
+      "SMALL": 96
+    },
+    "stage": {
+      "": 11,
+      "1": 9,
+      "2": 186,
+      "3": 11,
+      "4": 0
+    }
+  },
+  "checks": {
+    "passed": 15,
+    "warnings": [
+      "Industry names: 1 unmapped (0.1% of stocks): ['Aluminium Proxies']",
+      "Sector names: 1 without a fallback tier: ['Aluminium']"
+    ]
+  }
+}
