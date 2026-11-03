@@ -16,10 +16,13 @@ its recipe, not a switch), and picking 🌱 shows exactly the recipe's matches; 
 "Left 🌱" — who left since the baseline and why, a note while there is no baseline, nothing on a stale
 record or on scans without measured exits. And the 🚀 ladder (2026-10-30, tests/test_scan_ladder.py): the List
 control on 🚀 only, its live counts, B and C listed with their note and no record marks, the 🧹 leaving it alone.
+And Exchange (2026-11-03), right of Shariah: the market holds BSE ids, so a pick narrows the list, never the cards.
 """
 import ast
+import html
 import json
 import os
+import re
 import sys
 import textwrap
 
@@ -49,7 +52,8 @@ _HARNESS = textwrap.dedent('''
     rng = np.random.default_rng(7)
     n = 300
     df = pd.DataFrame({{
-        "company_id": [f"NSE:T{{k:03d}}" for k in range(n)], "name": [f"Test {{k:03d}}" for k in range(n)],
+        "company_id": [f"{{'BSE' if k % 5 == 2 else 'NSE'}}:T{{k:03d}}" for k in range(n)],   # 60 on BSE (2026-11-03)
+        "name": [f"Test {{k:03d}}" for k in range(n)],
         "sector": rng.choice(["Alpha", "Beta", "Gamma", "Delta", "Eps", "Zeta", "Eta"], n),
         "rank": rng.permutation(n) + 1, "composite_score": rng.uniform(20, 90, n),
         "momentum_score": rng.uniform(0, 100, n), "breakout_score": rng.uniform(0, 100, n),
@@ -172,15 +176,18 @@ def _frame():
     return ns["df"]
 
 
-def _expected(scan, min_cr=None, stages=(), caps=(), zones=(), shariah=None):
+def _expected(scan, min_cr=None, stages=(), caps=(), zones=(), shariah=None, exchange=None):
     """The names the tab should list: the recipe on the whole market, the liquidity floor, then the
     tab's filters — all empty unless told otherwise (2026-10-13: the user removed the ₹1 Cr a day and
-    Stage 1 + 2 defaults the day they shipped). Shariah (2026-10-16) is matched by equality."""
+    Stage 1 + 2 defaults the day they shipped). Shariah (2026-10-16) is matched by equality, Exchange
+    (2026-11-03) by the company id's prefix."""
     from ui import ui_scans as S
     df = _frame()
     kept = df[df["company_id"].isin(set(S.scan_table(df, scan, min_cr=min_cr)["company_id"]))]
     if shariah:
         kept = kept[kept["shariah_status"] == shariah]
+    if exchange:
+        kept = kept[kept["company_id"].str.startswith(f"{exchange}:")]
     for col, picks in (("weinstein_stage", stages), ("market_category", caps), ("buy_zone_label", zones)):
         if picks:
             kept = kept[kept[col].isin(picks)]
@@ -368,9 +375,121 @@ def test_the_shariah_filter_keeps_only_its_status_and_opens_on_all(tab):
     assert tab.selectbox(key="scan_shariah").value == "All"
 
 
+# ── Exchange (2026-11-03, the operator's brief): right of Shariah, NSE or BSE from the company id ──────────────
+def _card_counts(at):
+    """Each scan card's count, as the card shows it ('<n> now')."""
+    from ui import ui_scans as S
+    out = {}
+    for s in S.SCANS:
+        card = next(m.value for m in at.markdown if f'{s["emoji"]} {html.escape(s["name"])}</span>' in m.value)
+        out[s["key"]] = int(re.search(r">([\d,]+)<span[^>]*> now</span>", card).group(1).replace(",", ""))
+    return out
+
+
+def test_the_exchange_filter_opens_on_all_and_keeps_only_its_exchange(tab):
+    """RUN: Exchange opens on All — the whole scan — with each option's live count in Shariah's form and the sidebar's
+    help; a pick keeps exactly the ids with its prefix, the caption names it in plain words, and 🧹 returns it to All."""
+    from ui import ui_scans as S
+    from ui.ui_discovery import _EXCHANGE_HELP
+    comp = next(s for s in S.SCANS if s["key"] == "compounder")
+    tab.button(key="scan_open_compounder").click().run()
+    every, nse, bse = _expected(comp), _expected(comp, exchange="NSE"), _expected(comp, exchange="BSE")
+    assert nse and bse and len(nse) + len(bse) == len(every), "the list holds both exchanges"
+    sel = tab.selectbox(key="scan_exchange")
+    assert sel.value == "All" and sel.label == "Exchange" and sel.help == _EXCHANGE_HELP
+    assert list(sel.options) == [f"All  ·  {len(every)}", f"NSE  ·  {len(nse)}", f"BSE  ·  {len(bse)}"]
+    assert not [b for b in tab.button if b.key == "scan_clear"], "All is no filter"
+    sel.set_value("NSE").run()
+    assert not tab.exception, [e.value for e in tab.exception]
+    assert sorted(tab.dataframe[0].value["name"]) == nse
+    cap = next(c.value for c in tab.caption if "sorted by Rank" in c.value)
+    assert cap.startswith(f"{len(nse)} of {len(every)} stocks (NSE only) · "), cap
+    tab.selectbox(key="scan_exchange").set_value("BSE").run()
+    assert sorted(tab.dataframe[0].value["name"]) == bse
+    clear = [b for b in tab.button if b.key == "scan_clear"]
+    assert clear, "🧹 shows once Exchange leaves All"
+    clear[0].click().run()
+    assert not tab.exception, [e.value for e in tab.exception]
+    assert tab.selectbox(key="scan_exchange").value == "All"
+    assert sorted(tab.dataframe[0].value["name"]) == every
+
+
+def test_the_exchange_narrows_the_list_never_the_cards_or_the_recipe(tab):
+    """The recipe ranks the WHOLE market (the code's own rule). With Exchange on NSE the table is the whole market's
+    matches that are on NSE — not the recipe re-run on NSE's stocks alone, which lists other names in this market — and
+    the cards and 🚀's List keep their whole-market counts, which the caption counts against."""
+    from ui import ui_scans as S
+    df = _frame()
+    nse = df["company_id"].str.startswith("NSE:")
+    whole, layers = {s["key"]: int(s["mask"](df).sum()) for s in S.SCANS}, _layer_counts()
+    assert whole != {s["key"]: int((s["mask"](df) & nse).sum()) for s in S.SCANS}, "teeth: NSE alone counts less"
+    assert layers != {k: int((S.playbook_layer_mask(df, k) & nse).sum()) for k in layers}, "teeth, for the List"
+    tab.selectbox(key="scan_exchange").set_value("NSE").run()
+    assert not tab.exception, [e.value for e in tab.exception]
+    assert _card_counts(tab) == whole, "a filter on the list never reaches the cards"
+    shown = [" ".join(p for p in (o.content_icon, o.content) if p) for o in _control(tab, "scan_layer").options]
+    assert shown == [f"{layer['label']} · {layers[layer['key']]:,}" for layer in S.PLAYBOOK_LAYERS], "nor 🚀's List"
+    comp = next(s for s in S.SCANS if s["key"] == "compounder")
+    tab.button(key="scan_open_compounder").click().run()
+    assert not tab.exception, [e.value for e in tab.exception]
+    want = _expected(comp, exchange="NSE")
+    resliced = sorted(df.loc[df["company_id"].isin(set(S.scan_table(df[nse], comp)["company_id"])), "name"])
+    assert resliced != want, "teeth: the recipe re-run on NSE alone lists other stocks in this market"
+    assert sorted(tab.dataframe[0].value["name"]) == want
+    assert _card_counts(tab) == whole
+    cap = next(c.value for c in tab.caption if "sorted by Rank" in c.value)
+    assert cap.startswith(f"{len(want)} of {whole['compounder']} stocks (NSE only) · "), cap
+
+
+def test_the_exchange_counts_what_shariah_kept_and_shariah_counts_the_whole_list(tab):
+    """The cascade (2026-11-03): Shariah → Exchange → Market cap → Stage → Buy Zone. Exchange's counts are the stocks
+    Shariah kept; Shariah, before it, still counts the whole list whatever Exchange holds."""
+    from ui import ui_scans as S
+    comp = next(s for s in S.SCANS if s["key"] == "compounder")
+    tab.button(key="scan_open_compounder").click().run()
+    tab.selectbox(key="scan_shariah").set_value("Shariah").run()
+    kept = _expected(comp, shariah="Shariah")
+    nse, bse = _expected(comp, shariah="Shariah", exchange="NSE"), _expected(comp, shariah="Shariah", exchange="BSE")
+    assert 0 < len(bse) < len(_expected(comp, exchange="BSE")), "teeth: Shariah really narrows the BSE stocks"
+    assert list(tab.selectbox(key="scan_exchange").options) == [f"All  ·  {len(kept)}", f"NSE  ·  {len(nse)}",
+                                                                 f"BSE  ·  {len(bse)}"]
+    tab.selectbox(key="scan_shariah").set_value("All").run()
+    tab.selectbox(key="scan_exchange").set_value("BSE").run()
+    assert not tab.exception, [e.value for e in tab.exception]
+    assert len(_expected(comp, shariah="Shariah", exchange="BSE")) < len(kept), "teeth"
+    assert f"✅ Shariah  ·  {len(kept)}" in tab.selectbox(key="scan_shariah").options, "Shariah counts the whole list"
+
+
+def test_an_exchange_with_no_stock_reads_zero_and_shows_the_tabs_empty_message(tab):
+    """Empty states read plainly. 🚀's matches here are all on NSE, so its option reads 'BSE  ·  0'; on 🌱, Shariah's
+    Doubtful pick leaves no BSE stock. Choosing it shows the tab's own empty-list message, never an error or a table."""
+    from ui import ui_scans as S
+    play = S.SCANS[0]
+    assert _expected(play) and not _expected(play, exchange="BSE")
+    ex = tab.selectbox(key="scan_exchange")
+    assert list(ex.options) == [f"All  ·  {len(_expected(play))}", f"NSE  ·  {len(_expected(play))}", "BSE  ·  0"]
+    ex.set_value("BSE").run()
+    assert not tab.exception and not tab.error, [e.value for e in tab.exception]
+    assert not tab.dataframe
+    assert [i.value for i in tab.info] == [f"None of these {len(_expected(play))} stocks passes BSE only — widen one of "
+                                           f"the picks in this row."]
+    comp = next(s for s in S.SCANS if s["key"] == "compounder")
+    tab.button(key="scan_open_compounder").click().run()
+    tab.selectbox(key="scan_shariah").set_value("Doubtful").run()
+    assert not tab.exception, [e.value for e in tab.exception]
+    doubtful = _expected(comp, shariah="Doubtful")
+    assert doubtful and not _expected(comp, shariah="Doubtful", exchange="BSE"), "Shariah leaves no BSE stock"
+    assert tab.selectbox(key="scan_exchange").options[-1] == "BSE  ·  0"
+    assert not tab.dataframe and not tab.error
+    assert [i.value for i in tab.info] == [f"None of these {len(_expected(comp))} stocks passes ❔ Doubtful + BSE only "
+                                           f"— widen one of the picks in this row."]
+
+
 def test_clear_returns_every_control_to_its_default(tab):
-    """Every control's default is empty (2026-10-13), so 🧹 empties the row — and leaves the view alone."""
+    """Every control's default is empty (2026-10-13), so 🧹 empties the row — and leaves the view alone. Exchange
+    (2026-11-03) goes back to All, exactly as the others go back to theirs."""
     tab.selectbox(key="scan_liq").set_value(5.0).run()
+    tab.selectbox(key="scan_exchange").set_value("NSE").run()
     tab.multiselect(key="scan_stage").set_value(["📉 Stage 4 Declining"]).run()
     tab.multiselect(key="scan_cap").set_value(["Mid Cap"]).run()
     clear = [b for b in tab.button if b.key == "scan_clear"]
@@ -378,6 +497,7 @@ def test_clear_returns_every_control_to_its_default(tab):
     clear[0].click().run()
     assert not tab.exception, [e.value for e in tab.exception]
     assert tab.selectbox(key="scan_liq").value is None, "back to Any"
+    assert tab.selectbox(key="scan_exchange").value == "All"
     assert tab.multiselect(key="scan_stage").value == []
     assert tab.multiselect(key="scan_cap").value == [] and tab.multiselect(key="scan_zone").value == []
     assert _control(tab, "scan_view").value == "🏆 Core", "the view is not a filter"
