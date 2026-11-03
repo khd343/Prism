@@ -18,6 +18,9 @@ The Shariah screen on screen (2026-10-16): ONE vocabulary and ONE filter on ever
   <details> "How this is checked" and the footnote. The Reference tab explains it, every number from config.
   Every CSV download carries shariah_status and shariah_reason.
 
+  The Exchange control (2026-11-03, section 8) is built the same way and drawn right after it on both surfaces:
+  All · NSE · BSE, read from the company id's prefix, live counts, default All. Kite buys NSE only.
+
 Run with: pytest tests/test_shariah_ui.py -v
 """
 import ast
@@ -328,3 +331,79 @@ def test_the_full_downloads_keep_every_column():
     from ui.ui_export import stamp_snapshot
     f = pd.DataFrame({"name": ["A"], "shariah_status": ["Shariah"], "shariah_reason": ["r"]})
     assert {"shariah_status", "shariah_reason"} <= set(stamp_snapshot(f, "2026-10-15", "sheet").columns)
+
+
+# ── 8. The Exchange control: built like Shariah's, drawn right after it (2026-11-03) ──────────────────────────
+# Kite buys NSE only. A stock's exchange is its company_id's prefix ("NSE:" / "BSE:"; ui_scans.CHECK_ID): a pick keeps
+# the ids that start with it, and a missing id is neither.
+def test_the_exchange_mask_keeps_exactly_the_ids_with_its_prefix():
+    from ui.ui_discovery import EXCHANGE_ALL, EXCHANGE_OPTIONS, exchange_mask
+    assert EXCHANGE_OPTIONS == ("All", "NSE", "BSE") and EXCHANGE_ALL == EXCHANGE_OPTIONS[0]
+    f = pd.DataFrame({"name": list("ABCDEF"), "company_id": ["NSE:A", "BSE:B", np.nan, "BSE:NSE", None, "NSE:F"]},
+                     index=[5, 3, 9, 0, 7, 1])
+    assert f.loc[exchange_mask(f, "NSE"), "name"].tolist() == ["A", "F"]
+    assert f.loc[exchange_mask(f, "BSE"), "name"].tolist() == ["B", "D"], "the prefix, never a contains"
+    assert exchange_mask(f, "All").tolist() == [True] * 6, "All keeps every row, a missing id included"
+    bare = pd.DataFrame({"name": ["A", "B"]})
+    assert exchange_mask(bare, "All").all() and not exchange_mask(bare, "NSE").any(), "no ids: nothing but All"
+
+
+def _exchange_app():
+    import pandas as _pd
+    import streamlit as _st
+
+    from ui.ui_discovery import exchange_filter, exchange_mask
+
+    df = _pd.DataFrame({"name": list("ABCD"), "company_id": ["NSE:A", "BSE:B", "NSE:C", None]})
+    pick = exchange_filter("Exchange", "k", df, help="the exchange")
+    _st.text(f"PICK={pick}")
+    _st.text(f"KEPT={sorted(df.loc[exchange_mask(df, pick), 'name'])}")
+
+
+def _run_exchange(state=None):
+    from streamlit.testing.v1 import AppTest
+    at = AppTest.from_function(_exchange_app)
+    for k, v in (state or {}).items():
+        at.session_state[k] = v
+    at.run(timeout=30)
+    assert not at.exception, at.exception
+    return at, {t.value.split("=", 1)[0]: t.value.split("=", 1)[1] for t in at.text}
+
+
+def test_the_exchange_control_opens_on_all_with_live_counts_like_shariahs():
+    at, out = _run_exchange()
+    assert out == {"PICK": "All", "KEPT": "['A', 'B', 'C', 'D']"}
+    sel = at.selectbox(key="k")
+    assert sel.options == ["All  ·  4", "NSE  ·  2", "BSE  ·  1"], "Shariah's label form: '<word>  ·  <count>'"
+    assert sel.help == "the exchange"
+
+
+def test_an_exchange_pick_keeps_only_its_exchange():
+    assert _run_exchange({"k": "NSE"})[1] == {"PICK": "NSE", "KEPT": "['A', 'C']"}
+    assert _run_exchange({"k": "BSE"})[1] == {"PICK": "BSE", "KEPT": "['B']"}
+
+
+def test_a_round_tripped_exchange_label_is_recovered_to_its_value():
+    """The 2026-09-21 class, as for Shariah: a label whose count has moved still applies its pick."""
+    assert _run_exchange({"k": "NSE  ·  2190"})[1] == {"PICK": "NSE", "KEPT": "['A', 'C']"}
+    assert _run_exchange({"k": "BSE  ·  0"})[1] == {"PICK": "BSE", "KEPT": "['B']"}
+
+
+def test_the_exchange_control_is_built_like_shariahs():
+    tree = ast.parse(_src("ui/ui_discovery.py"))
+    fn = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "exchange_filter")
+    src = ast.unparse(fn)
+    assert src.index("st.session_state.setdefault(key") < src.index("st.selectbox("), "the Steel repro"
+    assert "recover_labels(" in src and "_fmt_pick(" in src, "the same recovery and the same label form"
+    assert "exchange_mask(" in src, "each option's count is the rows its pick keeps"
+
+
+def test_both_tabs_draw_the_one_exchange_control_right_after_shariah():
+    disc, app = _src("ui/ui_discovery.py"), _src("app.py")
+    assert 'exchange_filter("Exchange", "sb_exchange", _cf' in disc
+    assert 'exchange_filter("Exchange", "scan_exchange", _cf' in app
+    assert "EXCHANGE_OPTIONS" not in app, "the Scans row builds no option list of its own"
+    assert app.count("exchange_filter(") == 1 and disc.count("exchange_filter(") == 2   # the def + the call
+    assert (disc.index('shariah_filter("Shariah screen"') < disc.index('exchange_filter("Exchange"')
+            < disc.index('"Market Category"'))
+    assert app.index('shariah_filter("Shariah"') < app.index('exchange_filter("Exchange"')

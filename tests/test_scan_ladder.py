@@ -371,8 +371,9 @@ def test_the_list_sits_between_the_scan_and_its_filters_on_the_rocket_only():
     kw = {k.arg: ast.unparse(k.value) for k in seg[0].keywords}
     assert kw["key"] == "'scan_layer'" and "format_func" in kw
     guide = next(n for n in calls if ast.unparse(n.func) == "st.expander" and "How it works" in ast.unparse(n))
+    # The Shariah line: Shariah alone [2.1, 7.9] until 2026-11-03, now Shariah and Exchange (tests/test_scan_filters.py).
     filters = [n for n in calls if ast.unparse(n.func) in ("st.checkbox", "st.selectbox", "_scan_filter_row")
-               or ast.unparse(n) == "st.columns([2.1, 7.9])"]
+               or ast.unparse(n) == "st.columns([2.7, 1.9, 5.4])"]
     assert len(filters) == 4
     assert guide.lineno < seg[0].lineno < min(n.lineno for n in filters)
     guard = next(n for n in ast.walk(block) if isinstance(n, ast.If) and seg[0] in ast.walk(n))

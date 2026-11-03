@@ -1,7 +1,7 @@
 """
-test_scan_filters.py — the 🎯 Scans tab's own filters: Liquidity · Shariah · Market cap · Weinstein Stage · Buy Zone
-(2026-10-13, the user's choice; Shariah joined 2026-10-16, the operator's brief), every one opening empty — Shariah
-on All, which is no filter.
+test_scan_filters.py — the 🎯 Scans tab's own filters: Liquidity · Shariah · Exchange · Market cap · Weinstein Stage ·
+Buy Zone (2026-10-13, the user's choice; Shariah joined 2026-10-16 and Exchange, on Shariah's line, 2026-11-03 — the
+operator's briefs), every one opening empty — Shariah and Exchange on All, which is no filter.
 
 Until today the tab carried the Market Pulse lens row (Sector · Wealth tier · Market cap · Catalyst) beside
 Liquidity. All of those also live in the sidebar, which reaches this list through the 🎯 opt-in, so the
@@ -60,10 +60,18 @@ def _shariah_labels():
             and ast.unparse(c.func) == "shariah_filter"]
 
 
-def test_the_tab_offers_exactly_five_filters_of_its_own():
-    """Four of the user's (2026-10-13) and Shariah (2026-10-16), drawn by the control the sidebar uses."""
-    labels = _labels(_scans_block()) + _shariah_labels() + _row_labels()
-    assert sorted(labels) == sorted(["Liquidity", "Shariah", "Market cap", "Weinstein Stage", "Buy Zone"]), labels
+def _exchange_labels():
+    """The label of the Exchange control the row draws — the sidebar's own (ui_discovery.exchange_filter)."""
+    return [c.args[0].value for c in ast.walk(_fn("_scan_filter_row")) if isinstance(c, ast.Call)
+            and ast.unparse(c.func) == "exchange_filter"]
+
+
+def test_the_tab_offers_exactly_six_filters_of_its_own():
+    """Four of the user's (2026-10-13), Shariah (2026-10-16) and Exchange (2026-11-03), the last two drawn by the
+    controls the sidebar uses. REPOINTED 2026-11-03 from five: Exchange joined."""
+    labels = _labels(_scans_block()) + _shariah_labels() + _exchange_labels() + _row_labels()
+    assert sorted(labels) == sorted(["Liquidity", "Shariah", "Exchange", "Market cap", "Weinstein Stage",
+                                     "Buy Zone"]), labels
     calls = {ast.unparse(n.func) for n in ast.walk(_scans_block()) if isinstance(n, ast.Call)}
     assert "_mp_lens_row" not in calls, "Sector, Wealth tier and Catalyst live in the sidebar (via 🎯)"
 
@@ -75,16 +83,23 @@ def test_the_filters_read_left_to_right_liquidity_first():
     assert src.index("'Liquidity'") < src.index("_scan_filter_row("), "Liquidity is the first control"
     row = ast.unparse(_fn("_scan_filter_row"))
     assert row.index("shariah_filter(") < row.index("for i, (label"), "Shariah opens the row, after Liquidity"
+    # 2026-11-03: Shariah → Exchange → Market cap → Stage → Buy Zone. Exchange is drawn on the stocks Shariah kept and
+    # applied before the multiselects are counted.
+    assert (row.index("shariah_filter(") < row.index("shariah_mask(") < row.index("exchange_filter(")
+            < row.index("exchange_mask(") < row.index("for i, (label")), "Exchange comes right after Shariah"
 
 
 def test_every_control_opens_empty():
     """REPOINTED 2026-10-13, the user's call: the ₹1 Cr a day / Stage 1 + 2 defaults were removed. 2026-10-16:
-    Shariah joined, opening on All — no filter — so nobody's view changed (the operator's brief)."""
+    Shariah joined, opening on All — no filter — so nobody's view changed (the operator's brief). 2026-11-03: Exchange
+    joined the same way."""
     from ui.shariah_view import SHARIAH_ALL
+    from ui.ui_discovery import EXCHANGE_ALL
     node = next(n for n in _TREE.body if isinstance(n, ast.Assign)
                 and ast.unparse(n.targets[0]) == "_SCAN_FILTER_DEFAULTS")
-    assert ast.literal_eval(node.value) == {"scan_liq": None, "scan_shariah": SHARIAH_ALL, "scan_cap": [],
-                                            "scan_stage": [], "scan_zone": []}
+    assert ast.literal_eval(node.value) == {"scan_liq": None, "scan_shariah": SHARIAH_ALL,
+                                            "scan_exchange": EXCHANGE_ALL, "scan_cap": [], "scan_stage": [],
+                                            "scan_zone": []}
 
 
 def test_the_options_are_the_sidebars_one_definition():
@@ -103,3 +118,24 @@ def test_the_clear_returns_each_control_to_its_default_and_leaves_the_view_alone
     defaults = ast.literal_eval(next(n for n in _TREE.body if isinstance(n, ast.Assign)
                                      and ast.unparse(n.targets[0]) == "_SCAN_FILTER_DEFAULTS").value)
     assert "scan_view" not in defaults, "the Column View is a display choice, not a filter"
+
+
+def test_exchange_shares_the_shariah_line_and_adds_no_row():
+    """2026-11-03: Exchange sits on Shariah's line, right of it (the one line split into two slots), so the table
+    starts where it did: the tab still draws three rows of columns — the cards, the Shariah line, the filter row."""
+    block = _scans_block()
+    cols = [n for n in ast.walk(block) if isinstance(n, ast.Call) and ast.unparse(n.func) == "st.columns"]
+    assert len(cols) == 3, [ast.unparse(c) for c in cols]
+    line = [ast.unparse(n) for n in ast.walk(block) if isinstance(n, ast.Assign)
+            and ast.unparse(n).startswith("_sc_sh, _sc_ex = st.columns(")]
+    assert len(line) == 1, "Shariah and Exchange take the two slots of one line"
+    call = next(n for n in ast.walk(block) if isinstance(n, ast.Call) and ast.unparse(n.func) == "_scan_filter_row")
+    assert [ast.unparse(a) for a in call.args[1:]] == ["_sc_slots", "_sc_sh", "_sc_ex"]
+
+
+def test_the_exchange_reaches_only_the_finished_list():
+    """The recipe ranks the whole market and the cards count it, so Exchange is drawn and applied inside the row
+    alone, which is handed the finished list (tests/test_scans_tab_runs.py runs it)."""
+    row = ast.unparse(_fn("_scan_filter_row"))
+    for name in ("exchange_filter(", "exchange_mask("):
+        assert _APP.count(name) == 1 and name in row, name

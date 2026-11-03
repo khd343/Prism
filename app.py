@@ -155,7 +155,8 @@ from ui import (render_moat_growth_matrix, render_fisher_module,
                 render_reference, render_concepts, render_flags, render_frameworks,
                 render_wcs_studies, build_reference_markdown)
 from ui.ui_discovery import (render_discovery_sidebar, clear_all_filters, keep_selected,
-                             _BUY_ZONE_ORDER, _WEIN_ORDER, shariah_filter, shariah_label, shariah_mask)
+                             _BUY_ZONE_ORDER, _WEIN_ORDER, shariah_filter, shariah_label, shariah_mask,
+                             exchange_filter, exchange_mask)
 from ui.shariah_view import shariah_pill_html
 from ui.ui_scanner import _SCANNER_HEADER_TIPS, ds_view_columns
 from ui.ui_components import _RAW_GLOSSARY
@@ -864,24 +865,33 @@ def _mp_lens_row(frame, prefix, extra_keys=(), with_tier=True):
 # opt-in. Every control opens EMPTY (the user's call, 2026-10-13 — it first shipped opening on ₹1 Cr a day
 # and Stage 1 + 2, and the user removed both defaults the same day), so the list opens on the whole scan;
 # the caption names whatever narrows it, and 🧹 Clear empties the row. Shariah (2026-10-16, the operator's brief)
-# joined the row first: the one control the sidebar draws too, opening on All.
-_SCAN_FILTER_DEFAULTS = {"scan_liq": None, "scan_shariah": "All", "scan_cap": [], "scan_stage": [], "scan_zone": []}
+# joined the row first: the one control the sidebar draws too, opening on All. Exchange (2026-11-03, the operator's
+# brief: Kite buys NSE only) joined right after it the same way.
+_SCAN_FILTER_DEFAULTS = {"scan_liq": None, "scan_shariah": "All", "scan_exchange": "All", "scan_cap": [],
+                         "scan_stage": [], "scan_zone": []}
 
 
-def _scan_filter_row(frame, slots, shariah_slot):
+def _scan_filter_row(frame, slots, shariah_slot, exchange_slot):
     """Market cap · Weinstein Stage · Buy Zone · 🧹 in slots[1:] (Liquidity, slots[0], is drawn by the tab first
     and applied by scan_table, the floor's one rule), and Shariah in `shariah_slot`, its own line just above
-    (2026-10-16). Cascading: Shariah first, through the sidebar's own control (ui_discovery.shariah_filter — the
-    same words, counts and label recovery, matched by equality), then the rest left to right through the shared
-    _mp_ms; each control's options and live counts come from the stocks the controls before it kept, and a stored
-    pick the cascade has narrowed out stays, at a count of 0. Narrows the FINISHED list only — the recipe already
-    ran on the whole market. Returns (kept frame, words for the caption)."""
+    (2026-10-16), with Exchange in `exchange_slot` right of it (2026-11-03). Cascading: Shariah first, through the
+    sidebar's own control (ui_discovery.shariah_filter — the same words, counts and label recovery, matched by
+    equality), then Exchange, through the sidebar's own too (ui_discovery.exchange_filter — NSE or BSE from the company
+    id's prefix), then the rest left to right through the shared _mp_ms; each control's options and live counts come
+    from the stocks the controls before it kept, and a stored pick the cascade has narrowed out stays, at a count of
+    0. Narrows the FINISHED list only — the recipe already ran on the whole market. Returns (kept frame, words for
+    the caption)."""
     _cf, why = frame, []
     with shariah_slot:
         _sh = shariah_filter("Shariah", "scan_shariah", _cf)
     if _sh != _SCAN_FILTER_DEFAULTS["scan_shariah"]:
         _cf = _cf[shariah_mask(_cf, _sh)]
         why.append(shariah_label(_sh))
+    with exchange_slot:
+        _ex = exchange_filter("Exchange", "scan_exchange", _cf)
+    if _ex != _SCAN_FILTER_DEFAULTS["scan_exchange"]:
+        _cf = _cf[exchange_mask(_cf, _ex)]
+        why.append(f"{_ex} only")
     spec = (("Market cap", "scan_cap", "market_category", _MP_CAP_ORDER,
              "Market-cap tiers (the sheet's Market Category). Pick several; counts reflect the "
              "controls to the left."),
@@ -1006,7 +1016,11 @@ with tabs[1]:
     # hold a fifth control at 1536px — measured that day in the browser with five slots, Shariah (191px) clipped
     # "⛔ Non-Shariah  ·  95", Market cap (140px) "Small Cap  ·  43", Buy Zone (180px) "🟡 Standard Zone  ·  10", and
     # two Stage pills wrapped onto a second line. So the row keeps its measured widths and Shariah gets ~210px.
-    _sc_sh = st.columns([2.1, 7.9])[0]
+    # Exchange (2026-11-03) sits right of Shariah on that line, so it adds no row. Measured that day in the browser on the
+    # live sheet with the widest common picks ("⛔ Non-Shariah  ·  91" is 136px of text, "NSE  ·  71" 54px, each box
+    # adds 32px of icons): at 1536px Shariah 277px and Exchange 192px (109 / 106px to spare), at 1280px 208px and 143px
+    # (40 / 57px). Shariah's old 2.1 share would be ~167px at 1280px, too narrow for its label, hence 2.7.
+    _sc_sh, _sc_ex = st.columns([2.7, 1.9, 5.4])[:2]
     _sc_slots = st.columns([1.4, 1.8, 3.5, 2.3, 1.0])
     with _sc_slots[0]:
         # "Any" is the value None, which Streamlit (>= 1.27) also reads as "nothing chosen" and shows its
@@ -1026,7 +1040,7 @@ with tabs[1]:
     _sc_base = scan_table(df, _sc_tbl_scan, min_cr=_sc_min,
                           keep_ids=set(filt['company_id'].astype(str)) if _sc_scoped else None)
     _sc_kept, _sc_narrow = _scan_filter_row(
-        df[df["company_id"].astype(str).isin(set(_sc_base["company_id"]))], _sc_slots, _sc_sh)
+        df[df["company_id"].astype(str).isin(set(_sc_base["company_id"]))], _sc_slots, _sc_sh, _sc_ex)
     _sc_tbl = scan_table(df, _sc_tbl_scan, members_at_latest=_sc_members, min_cr=_sc_min,
                          keep_ids=set(_sc_kept["company_id"].astype(str)), result_window_days=_sc_window)
     _sc_total = _sc_layer_n[_sc_layer] if _sc_unrecorded else _sc_counts[_sc_sel["key"]]

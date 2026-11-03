@@ -591,6 +591,7 @@ def _all_filters_app():
         "name": ["A", "B", "C"],
         # ── 🏢 Universe — Shariah sits inside Non-Shariah, so picking B's value must not keep A and C
         "shariah_status":    lab("Non-Shariah", "Shariah"),
+        "company_id":        ["NSE:A", "BSE:B", "NSE:C"],     # Exchange reads the prefix: B alone is on BSE
         "market_category":   lab("Mega Cap", "Nano Cap"),
         "vol_sma_20d":       [1e5, 1e3, 1e5],                 # × ₹1,000 = ₹10 / ₹0.1 / ₹10 Cr a day
         "close_price":       [1000.0, 1000.0, 1000.0],
@@ -643,6 +644,7 @@ def _all_filters_app():
 # control sits at its show-all default, so a case measures that filter alone.
 _FILTER_CASES = [
     ("sb_shariah",     {"sb_shariah": "Shariah"},                    ["B"]),       # equality, never contains
+    ("sb_exchange",    {"sb_exchange": "BSE"},                       ["B"]),       # the company id's prefix
     ("sb_mcap",        {"sb_mcap": ["Mega Cap"]},                    ["A", "C"]),
     ("sb_liq",         {"sb_liq": 1.0},                              ["A", "C"]),
     ("sb_sector",      {"sb_sector": "P"},                           ["A", "C"]),
@@ -708,6 +710,78 @@ def test_the_filter_case_table_covers_every_registered_filter():
     missing = sorted(registered - covered)
     assert not missing, f"registered filters with no behavioural case: {missing}"
     assert not sorted(covered - registered), "a case names a key that is not a registered filter"
+
+
+# ── 🏛️ Exchange (2026-11-03, the operator's brief): NSE or BSE from the company id, right after Shariah ─────────
+def test_the_exchange_is_registered_like_shariah():
+    """Chip, 🏢 Universe badge, funnel total and choke point, each beside Shariah's; and Shariah's active-state rule:
+    the show-all value is 'All', which never counts as an active filter."""
+    keys = [k for k, _h, _kind in _CHIP_META]
+    assert ("sb_exchange", "Exchange", "sel") in _CHIP_META and keys.index("sb_exchange") == keys.index("sb_shariah") + 1
+    assert _compute_active_chips({"sb_exchange": "NSE"}, rf_max=28) == [("sb_exchange", "Exchange: NSE")]
+    assert _compute_active_chips({"sb_exchange": "All"}, rf_max=28) == []
+    grp = next(l for l in _DISC.splitlines() if '_grp("🏢 Universe"' in l)
+    assert '"sb_shariah", "sb_exchange"' in grp, "the group badge must count it"
+    i = _DISC.rindex("_active_n(")
+    assert '"sb_shariah", "sb_exchange"' in _DISC[i:_DISC.index(")", i)], "missing from the funnel total"
+    assert 'if k in ("sb_sector", "sb_industry", "sb_shariah", "sb_exchange"):' in _DISC, "'All' would count as active"
+    assert '_narrow(_cf, exchange_mask(_cf, sel_exchange), "Exchange")' in _DISC, "through the choke point"
+
+
+def _sidebar_run(**state):
+    """The REAL sidebar over _all_filters_app's three rows (A and C on NSE, B on BSE)."""
+    from streamlit.testing.v1 import AppTest
+    at = AppTest.from_function(_all_filters_app)
+    for k, v in state.items():
+        at.session_state[k] = v
+    at.run(timeout=30)
+    assert not at.exception, f"sidebar raised: {at.exception}"
+    return at
+
+
+def _kept(at):
+    return next(t.value for t in at.text if t.value.startswith("KEPT="))
+
+
+def test_the_sidebar_exchange_counts_what_shariah_kept_and_narrows_every_count_after_it():
+    """RUN: Exchange sits after Shariah and before Market Category. Its own counts are the stocks Shariah kept, Shariah
+    (before it) still counts every stock, and Market Category counts only what Exchange kept."""
+    from ui.ui_discovery import _EXCHANGE_HELP
+    at = _sidebar_run()
+    ex = at.selectbox(key="sb_exchange")
+    assert ex.label == "Exchange" and ex.help == _EXCHANGE_HELP and ex.value == "All"
+    assert ex.options == ["All  ·  3", "NSE  ·  2", "BSE  ·  1"]
+    assert at.multiselect(key="sb_mcap").options == ["Mega Cap  ·  2", "Nano Cap  ·  1"]
+    at = _sidebar_run(sb_exchange="BSE")
+    assert _kept(at) == "KEPT=['B']"
+    assert at.multiselect(key="sb_mcap").options == ["Nano Cap  ·  1"], "Market Category counts what Exchange kept"
+    assert at.selectbox(key="sb_shariah").options[0] == "All  ·  3", "Shariah, before it, counts every stock"
+    at = _sidebar_run(sb_shariah="Shariah")                  # keeps B, the one BSE stock
+    assert at.selectbox(key="sb_exchange").options == ["All  ·  1", "NSE  ·  0", "BSE  ·  1"]
+    at = _sidebar_run(sb_shariah="Shariah", sb_exchange="NSE")
+    assert _kept(at) == "KEPT=[]", "an empty intersection is empty, never widened"
+    assert "⚠️ <strong>Exchange</strong> removed the last stocks" in " ".join(m.value for m in at.sidebar.markdown)
+
+
+def test_the_exchange_chip_shows_when_set_and_clear_all_removes_it():
+    """RUN: at All nothing counts it; set, the 🏢 Universe badge and the funnel count it and its chip names it; its ✕
+    drops it, and 🧹 Clear all filters returns it to All (clear_all_filters deletes every sb_* key, this one included)."""
+    at = _sidebar_run()
+    assert not [b for b in at.button if b.key == "chip_sb_exchange"]
+    assert "🏢 Universe" in [e.label for e in at.expander], "at All the group badge counts nothing"
+    assert "No filters — full universe" in " ".join(m.value for m in at.sidebar.markdown)
+    at = _sidebar_run(sb_exchange="NSE")
+    assert [b.label for b in at.button if b.key == "chip_sb_exchange"] == ["✕  Exchange: NSE"]
+    assert "🏢 Universe  ·  1" in [e.label for e in at.expander]
+    assert "1 filter active" in " ".join(m.value for m in at.sidebar.markdown)
+    at.button(key="chip_sb_exchange").click().run(timeout=30)
+    assert not at.exception, f"sidebar raised: {at.exception}"
+    assert at.selectbox(key="sb_exchange").value == "All" and _kept(at) == "KEPT=['A', 'B', 'C']", "its ✕ drops it"
+    at = _sidebar_run(sb_exchange="BSE")
+    at.button(key="sb_clear").click().run(timeout=30)
+    assert not at.exception, f"sidebar raised: {at.exception}"
+    assert at.selectbox(key="sb_exchange").value == "All" and _kept(at) == "KEPT=['A', 'B', 'C']"
+    assert not [b for b in at.button if b.key == "chip_sb_exchange"]
 
 
 def test_the_rejected_candidates_stay_out():
