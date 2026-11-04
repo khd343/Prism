@@ -1,0 +1,64 @@
+# 📈 Index closes — NSE's own daily index file for the sidebar's market box (ui/index_closes_job.py, 2026-11-04).
+# Display only: it keeps index_closes.csv on the branch index-closes (never main), and the app reads it for each
+# index's stage and its line against the 200-week average. No score, scan, record or Kite reads it.
+# A day NSE has no file for (a holiday, a weekend, or not published yet) adds nothing and the run stays green; a file
+# that is not NSE's index table turns it red, and GitHub emails the owner.
+name: Index closes
+
+on:
+  schedule:
+    - cron: "45 14 * * 1-5"    # 20:15 IST, after NSE's file is out; GitHub's crons land hours late, still that night
+    - cron: "15 1 * * 2-6"     # 06:45 IST the next morning: a backstop for a dropped evening
+  workflow_dispatch:
+    inputs:
+      backfill_from:
+        description: "YYYY-MM-DD: also ask NSE for every day from here (blank = the usual last week)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: index-closes
+  cancel-in-progress: false
+
+jobs:
+  closes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45        # a four-year back-fill is ~1,600 polite requests; a night's run takes a minute
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/checkout@v7
+        with:
+          ref: index-closes
+          path: closes
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install the engine
+        run: pip install -r requirements.txt -c .github/constraints.txt
+
+      # An input reaches a script only through env, never pasted into it (stockscans-sync's review, 2026-10-22).
+      - name: Ask NSE for the days the branch lacks
+        id: closes
+        env:
+          BACKFILL_FROM: ${{ inputs.backfill_from }}
+          PYTHONUTF8: "1"
+        run: python -m ui.index_closes_job --out closes --backfill-from "$BACKFILL_FROM"
+
+      - name: Commit and push them
+        if: steps.closes.outputs.changed == 'true'
+        working-directory: closes
+        env:
+          MSG: ${{ steps.closes.outputs.message }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .gitattributes README.md index_closes.csv
+          git commit -m "$MSG"
+          git push origin HEAD:index-closes
