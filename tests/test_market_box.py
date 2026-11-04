@@ -284,6 +284,35 @@ def test_an_index_nse_lacks_keeps_the_sheets_stage_and_says_so():
     assert _cell_tip(h, "Nifty MidSmallcap 400") == "⚠️ Stage 3 Top · from the sheet: NSE had no close for it"
 
 
+def test_an_index_whose_nse_closes_stopped_keeps_the_sheets_stage_and_says_so():
+    """Review, 4 Nov 2026: an index NSE renames or drops keeps its last close on the branch for ever, so its numbers
+    would have sat under "NSE closes · <today>" for months. More than INDEX_CLOSES_STALE_DAYS before the sheet's date,
+    a row is the sheet's again and says why; with no sheet row it is left out."""
+    old = {"NSE:MIDSMAL400": dict(last_date=_date(2026, 10, 27), vs_200w=33.3)}
+    h = M.market_box_html(_sheet("⚠️ Stage 3 Top"), "SIDEWAYS", _view(old), ref_day=D)
+    assert h.split(">MidSmall 400<")[1].split("</span>")[0].endswith(">—") and ">+33.3%<" not in h
+    assert _html.unescape(_cell_tip(h, "Nifty MidSmallcap 400")) == (
+        "⚠️ Stage 3 Top · from the sheet: NSE's closes for it stop at 27 Oct 2026")
+    assert ">MidSmall 400<" not in M.market_box_html(pd.DataFrame(), "SIDEWAYS", _view(old), ref_day=D)
+    week = {"NSE:MIDSMAL400": dict(last_date=_date(2026, 10, 28), vs_200w=33.3)}
+    assert ">+33.3%<" in M.market_box_html(_sheet(), "SIDEWAYS", _view(week), ref_day=D), "a week behind is NSE's"
+
+
+def test_the_source_line_says_it_reads_on_or_before_the_sheets_date():
+    """Review, 4 Nov 2026: in the evening the sheet is often a session ahead of NSE's newest kept close; the line under
+    the rows gives that close's date, and its tooltip says how the date is chosen."""
+    h = _html.unescape(M.market_box_html(_sheet(), "SIDEWAYS", _view(day=_date(2026, 11, 3)), ref_day=D))
+    assert "NSE closes · 3 Nov 2026" in h and "on or before the sheet's date" in h
+
+
+def test_no_text_in_the_box_is_smaller_than_the_design_systems_sub_label():
+    """docs/ui_design_system.md: the scale's smallest size is the 0.62rem sub-label (review, 4 Nov 2026: the column
+    labels were 0.58)."""
+    for nse in (_view(), None):
+        h = M.market_box_html(_sheet(), "SIDEWAYS", nse, ref_day=D)
+        assert min(float(s) for s in re.findall(r"font-size:([\d.]+)rem", h)) >= 0.62
+
+
 @pytest.mark.parametrize("nse,why", [(None, "NSE's index closes could not be read"),
                                      (pd.DataFrame(columns=X.VIEW_COLUMNS), "NSE's index closes could not be read"),
                                      ("stale", "NSE's index closes stop at 21 Oct 2026")])

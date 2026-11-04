@@ -775,18 +775,18 @@ BENCHMARK_INDICES = {
 
 # ── The market box from NSE's own index file (2026-11-04) ──
 # Every number in the sidebar's market box is NSE's: its daily index file (ind_close_all, one per session; 404 on a
-# day with none), kept each evening on its own branch by ui/index_closes_job.py and read by the app. The vendor's
+# day with none), kept each night on its own branch by ui/index_closes_job.py and read by the app. The vendor's
 # history for Nifty500 Shariah was measured wrong on 3 Nov 2026 against NSE's files (200-day 7,835.0 against 6,824.3)
 # while the other nine matched within 1%. Each row adds vs 200W, the close against the simple average of its last
 # INDEX_WEEKS_LONG weekly closes — Kite's shadow-book gate for MidSmall 400 (addendum 37, rule 8): on 4 Nov 2026 it
-# read 17,628.6 here and Kite's 17,626.9 on 3 Nov (4 Nov's close counts in the current week). Display only.
+# read 17,628.7 here (4 Nov's close counts in the current week), and on 3 Nov 17,626.9, Kite's own figure. Display only.
 NSE_INDEX_FILE_URL = "https://nsearchives.nseindia.com/content/indices/ind_close_all_{:%d%m%Y}.csv"
 INDEX_CLOSES_BRANCH = "index-closes"
 INDEX_CLOSES_URL = "https://raw.githubusercontent.com/khd343/Prism/index-closes/index_closes.csv"
 INDEX_CLOSES_START = "2022-06-01"   # >200 weeks before Nov 2026; younger indices simply start later (measured 4 Nov:
                                     # Momentum 50 Jun 2024, Smallcap250 MQ100 Dec 2023, MidSmall400 MQ100 Feb 2024)
 INDEX_CLOSES_STALE_DAYS = 7         # NSE never shuts for a week: older than this before the sheet's date, the box
-                                    # shows the sheet's stages and says why
+                                    # shows the sheet's stages (one index or all) and says why, and the job alarms
 INDEX_WEEKS_LONG = 200
 
 # ── Asymmetric Governance Risk Shield ──

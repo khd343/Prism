@@ -15,7 +15,8 @@ second column, vs 200W, gives the close against the simple average of its last 2
 the line Kite's shadow book gates on for MidSmall 400 (addendum 37, rule 8). The vendor's history for
 Nifty500 Shariah was measured wrong on 3 Nov 2026; NSE's is the index's own. When NSE's closes cannot
 be read, or stop more than config.INDEX_CLOSES_STALE_DAYS before the sheet's date, the box shows the
-sheet's stages exactly as before and says why the column is missing.
+sheet's stages exactly as before and says why the column is missing; an index whose own closes stop
+that long before (NSE renamed or dropped it) keeps the sheet's stage, and says so.
 """
 import html
 from datetime import datetime
@@ -49,8 +50,9 @@ _VS_TIP = (f"vs 200W: how far the index's NSE close sits above (green) or below 
            f"last {INDEX_WEEKS_LONG} weekly closes — a week's close is its last session's, and the current week "
            "counts with its latest close. The line Kite's shadow book gates on for MidSmall 400. An index with "
            f"fewer than {INDEX_WEEKS_LONG} weeks of NSE closes shows —. Display only: it changes no score.")
-_SRC_TIP = ("Every number in this box is NSE's own, from its daily index file, kept each evening by PRISM's "
-            "Index closes job — on the sheet's date when the sheet carries one.")
+_SRC_TIP = ("Every number in this box is NSE's own, from its daily index file, which PRISM's Index closes job "
+            "keeps each night: each index's newest close on or before the sheet's date (the newest kept when the "
+            "sheet has no date). The date here is that close's — in the evening often a session behind the sheet.")
 _NEEDED = {"company_id", "close", "stage", "vs_200w", "sma_200w", "weeks", "last_date"}
 
 
@@ -78,12 +80,11 @@ def _day(d) -> str:
     return f"{d.day} {d:%b %Y}"
 
 
-def _usable(nse, ref_day):
+def _usable(nse, ref):
     """(NSE's view, None) when it can lead the box, else (None, why not)."""
     if nse is None or nse.empty or not _NEEDED <= set(nse.columns):
         return None, "NSE's index closes could not be read"
     newest = max(nse["last_date"])
-    ref = ref_day or datetime.now(IST).date()
     if (ref - newest).days > INDEX_CLOSES_STALE_DAYS:
         return None, f"NSE's index closes stop at {_day(newest)}"
     return nse, None
@@ -131,15 +132,17 @@ def _sheet_box(rows: pd.DataFrame, regime: str, why: str, c: dict) -> str:
     return _frame(edge, body, regime, c)
 
 
-def _nse_box(view: pd.DataFrame, sheet, regime: str, c: dict) -> str:
-    """Each index's stage and vs 200W from NSE's numbers, in one grid so the columns line up; an index NSE has no
-    close for keeps the sheet's stage, says so, and shows —."""
+def _nse_box(view: pd.DataFrame, sheet, regime: str, c: dict, ref) -> str:
+    """Each index's stage and vs 200W from NSE's numbers, in one grid so the columns line up. An index NSE has no
+    close for, or whose closes stop more than INDEX_CLOSES_STALE_DAYS before `ref`, keeps the sheet's stage, says why,
+    and shows —; with no sheet row it is left out, so a stale number never sits under NSE's date."""
     esc = html.escape
     n_by = view.set_index("company_id")
     s_by = sheet.drop_duplicates("company_id").set_index("company_id") if sheet is not None else None
     rows = []                                          # (id, stage, vs text, vs colour, tooltip)
     for cid, full in BENCHMARK_INDICES.items():        # the ten declared indices, not the stock matrix
-        if cid in n_by.index:
+        last = n_by.at[cid, "last_date"] if cid in n_by.index else None
+        if last is not None and (ref - last).days <= INDEX_CLOSES_STALE_DAYS:
             r = n_by.loc[cid]
             stage = str(r["stage"])
             txt, col = _vs(r["vs_200w"], c)
@@ -153,10 +156,11 @@ def _nse_box(view: pd.DataFrame, sheet, regime: str, c: dict) -> str:
             rows.append((cid, stage, txt, col, f"{full}: {stage} · {line} · {where}"))
         elif s_by is not None and cid in s_by.index:
             stage = str(s_by.at[cid, "stage"])
-            rows.append((cid, stage, "—", c["text_muted"], f"{full}: {stage} · from the sheet: NSE had no close for it"))
+            why = f"NSE's closes for it stop at {_day(last)}" if last is not None else "NSE had no close for it"
+            rows.append((cid, stage, "—", c["text_muted"], f"{full}: {stage} · from the sheet: {why}"))
     lead_stage = next((s for cid, s, *_ in rows if cid == MARKET_ID), None)
     edge = _stage_colour(lead_stage, c) if lead_stage else c["border"]
-    label = (f'font-size:0.58rem;color:{c["text_muted"]};text-transform:uppercase;letter-spacing:0.6px;'
+    label = (f'font-size:0.62rem;color:{c["text_muted"]};text-transform:uppercase;letter-spacing:0.6px;'
              f'white-space:nowrap;')
     cells = (f'<span></span><span style="{label}text-align:right;" title="{esc(_VS_TIP)}">vs 200W</span>'
              f'<span style="{label}" title="{esc(_STAGE_TIP)}">Stage</span>')
@@ -193,9 +197,10 @@ def market_box_html(bench: pd.DataFrame, regime: str, nse: pd.DataFrame = None, 
     c = COLORS
     esc = html.escape
     sheet = bench if bench is not None and not bench.empty and "stage" in bench.columns else None
-    view, why = _usable(nse, ref_day)
+    ref = ref_day or datetime.now(IST).date()
+    view, why = _usable(nse, ref)
     if view is not None:
-        return _nse_box(view, sheet, regime, c)
+        return _nse_box(view, sheet, regime, c, ref)
     if sheet is not None:
         return _sheet_box(sheet, regime, why, c)
     colour = c["green"] if regime == "BULL" else c["red"] if regime == "BEAR" else c["gold"]

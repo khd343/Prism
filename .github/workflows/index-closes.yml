@@ -2,12 +2,17 @@
 # Display only: it keeps index_closes.csv on the branch index-closes (never main), and the app reads it for each
 # index's stage and its line against the 200-week average. No score, scan, record or Kite reads it.
 # A day NSE has no file for (a holiday, a weekend, or not published yet) adds nothing and the run stays green; a file
-# that is not NSE's index table turns it red, and GitHub emails the owner.
+# that is not NSE's index table, a close NSE changed, or a week with no new close turns it red once the good days are
+# pushed, and GitHub emails the owner.
 name: Index closes
 
 on:
   schedule:
-    - cron: "45 14 * * 1-5"    # 20:15 IST, after NSE's file is out; GitHub's crons land hours late, still that night
+    # Measured 4 Nov 2026: NSE's file was out at 22:00 IST and rewritten, with indices added, at 23:20; GitHub's crons
+    # land 3.8-5.1 h late (stockscans-sync, 16 fires). Each run reads the last week again, so an early ask is a
+    # harmless 404 and an index NSE adds late is picked up by the next.
+    - cron: "20 12 * * 1-5"    # 17:50 IST: lands ~21:40-23:00, the evening's closes
+    - cron: "45 14 * * 1-5"    # 20:15 IST: lands ~00:00-01:20, after the rewrite
     - cron: "15 1 * * 2-6"     # 06:45 IST the next morning: a backstop for a dropped evening
   workflow_dispatch:
     inputs:
@@ -62,3 +67,13 @@ jobs:
           git add .gitattributes README.md index_closes.csv
           git commit -m "$MSG"
           git push origin HEAD:index-closes
+
+      # A day NSE's file could not be read, a close NSE changed, or no new close for over a week: the good days were
+      # kept and pushed above; now the run turns red, so GitHub emails the owner.
+      - name: Fail when NSE's file needs a look
+        if: steps.closes.outputs.alarm != ''
+        env:
+          ALARM: ${{ steps.closes.outputs.alarm }}
+        run: |
+          echo "::error::$ALARM"
+          exit 1

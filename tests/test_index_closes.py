@@ -9,9 +9,10 @@ asked for the 200-week line Kite's shadow book now gates on (addendum 37, rule 8
 average of its last 200 weekly closes, a week's close = its last session's, the current week with its latest close).
 
 Pinned here: NSE's file is read strictly (its own date, its own table, the declared indices only); a close once kept
-is never rewritten; the weekly line is Kite's to the decimal (MidSmall 400 on 4 Nov: 17,628.6); an average needs its
-whole count or it is not given; the stage is the one rule every stock uses; the nightly job asks only for the days it
-lacks, never turns red on a holiday, and writes only to its own branch.
+is never rewritten; the weekly line is Kite's to the decimal (MidSmall 400 on 4 Nov: 17,628.7); an average needs its
+whole count or it is not given; the stage is the one rule every stock uses; the nightly job reads the last week again,
+never turns red on a holiday, keeps the good days when one file is bad, turns red when NSE stops writing an index, and
+writes only to its own branch.
 """
 import ast
 import csv
@@ -61,7 +62,49 @@ def test_names_match_whatever_the_case_and_spacing():
 
 def test_a_file_carrying_another_date_is_a_stale_copy_never_kept():
     assert X.parse_nse_file(_nse(D, written="03-11-2026"), D) is None
-    assert X.parse_nse_file(_nse(D, written="2026-11-04"), D) is None
+    assert X.parse_nse_file(_nse(D, written="2026-11-03"), D) is None
+
+
+@pytest.mark.parametrize("written", ["04-Nov-2026", "2026-11-04", "04/11/2026"])
+def test_an_unambiguous_other_way_of_writing_the_day_still_names_it(written):
+    """Review, 4 Nov 2026: a new date format from NSE must not turn every file into a 'stale copy' quietly."""
+    assert X.parse_nse_file(_nse(D, written=written), D) == {"NSE:CNX500": "22769.20", "NSE:NIFTY500SH": "6796.30"}
+
+
+def test_a_date_that_cannot_be_read_stops_the_run():
+    with pytest.raises(X.NseFileError, match="cannot read"):
+        X.parse_nse_file(_nse(D, written="Wednesday"), D)
+
+
+def test_the_date_is_read_on_the_declared_rows_only():
+    """An undeclared row (a bond index, say) lagging a day, or dated in no way we read, is not ours to judge: it must
+    not throw the session away or stop the run."""
+    text = (_nse(D) + "Nifty 10 yr Benchmark G-Sec,03-11-2026,1,1,1,2345.60,0,0,0,0,0,0,0\n"
+            + "Nifty Some New Index,-,1,1,1,1000.00,0,0,0,0,0,0,0\n")
+    assert X.parse_nse_file(text, D) == {"NSE:CNX500": "22769.20", "NSE:NIFTY500SH": "6796.30"}
+
+
+def test_closes_written_with_thousands_commas_are_kept_without_them():
+    text = _HEAD + "\n" + f'Nifty 500,{D:%d-%m-%Y},1,1,1,"22,769.20",0,0,0,0,0,0,0\n'
+    assert X.parse_nse_file(text, D) == {"NSE:CNX500": "22769.20"}
+
+
+def test_declared_indices_with_no_price_at_all_stop_the_run():
+    with pytest.raises(X.NseFileError, match="prices none"):
+        X.parse_nse_file(_nse(D, {"Nifty 500": "-", "Nifty500 Shariah": ""}), D)
+
+
+def test_a_declared_row_carrying_another_date_is_not_that_days_close():
+    """Each row carries its own date: an index NSE has not updated yet is left out of the day, the rest are kept."""
+    text = _nse(D, {"Nifty 500": "22769.20"}) + "Nifty500 Shariah,03-11-2026,1,1,1,6700.00,0,0,0,0,0,0,0\n"
+    assert X.parse_nse_file(text, D) == {"NSE:CNX500": "22769.20"}
+
+
+def test_a_file_the_csv_reader_refuses_is_named_not_a_crash():
+    """A block page with one enormous line breaks the CSV reader itself: that is NSE's file being wrong (named, so the
+    job keeps the other days), never an unhandled crash."""
+    with pytest.raises(X.NseFileError):
+        X.parse_nse_file(_HEAD + "\n" + "x" * 200_000 + "\n", D)
 
 
 def test_nses_month_first_date_still_names_its_own_day():
@@ -200,6 +243,31 @@ def test_a_short_gap_is_bridged():
     assert v.loc["NSE:MIDSMAL400", "weeks"] == 210 and not np.isnan(v.loc["NSE:MIDSMAL400", "sma_200w"])
 
 
+def test_a_short_gap_in_an_index_first_days_is_bridged():
+    """Bridged wherever it falls: three sessions in, a short gap is still the same series, never a stray fragment."""
+    market = _weeks(210)
+    holey = [p for i, p in enumerate(market) if i not in (3, 4, 5)]
+    v = X.box_view(_frame({"NSE:CNX500": market, "NSE:MIDSMAL400": holey})).set_index("company_id")
+    assert v.loc["NSE:MIDSMAL400", "weeks"] == 210
+
+
+def test_a_long_hole_in_an_established_index_is_bridged():
+    """Review, 4 Nov 2026: a six-session outage of the Nifty 500 itself would have restarted its series and taken its
+    200-week line away until ~2030. Only a fragment before a gap is dropped; two long runs are one series."""
+    market = _weeks(210)
+    holey = [p for i, p in enumerate(market) if not 500 <= i < 510]             # two weeks missing
+    v = X.box_view(_frame({"NSE:MIDSMAL400": market, "NSE:CNX500": holey})).set_index("company_id")
+    assert v.loc["NSE:CNX500", "weeks"] == 208 and not np.isnan(v.loc["NSE:CNX500", "sma_200w"])
+
+
+def test_the_latest_run_counts_even_when_short():
+    """An index back after a long outage shows its newest close, never the one before the outage."""
+    market = _weeks(210)
+    back = market[:600] + market[-3:]                                            # a long run, a hole, 3 sessions
+    v = X.box_view(_frame({"NSE:MIDSMAL400": market, "NSE:CNX500": back})).set_index("company_id")
+    assert v.loc["NSE:CNX500", "last_date"] == market[-1][0]
+
+
 def test_the_200_day_and_30_week_averages_are_the_plain_means():
     pts = _weeks(60)                                       # 300 sessions, close 100+week
     v = X.box_view(_frame({"NSE:CNX500": pts})).set_index("company_id").loc["NSE:CNX500"]
@@ -279,16 +347,18 @@ def test_a_history_the_app_cannot_read_gives_an_empty_frame(monkeypatch):
 
 
 # ── 4. The nightly job ───────────────────────────────────────────────────────────────────────────────────────────
-def test_the_job_asks_only_for_the_days_it_lacks():
+def test_the_job_reads_the_last_week_again_and_every_day_since():
+    """Measured 4 Nov 2026: NSE rewrites each day's file at 23:20 IST, adding 21 indices its 22:00 copy lacked (every
+    row both copies carry is identical). So each run reads again every day from LOOKBACK_DAYS before the newest kept
+    one: an index NSE writes late is still kept, and a file NSE published late is picked up."""
     start = date(2026, 10, 26)
     assert J.days_to_ask(set(), date(2026, 10, 28), start) == [date(2026, 10, 26), date(2026, 10, 27),
                                                                date(2026, 10, 28)]
     kept = {date(2026, 10, d) for d in (26, 27, 28, 29, 30)}
     got = J.days_to_ask(kept, date(2026, 11, 4), start)
-    assert got == [date(2026, 10, 31), date(2026, 11, 1), date(2026, 11, 2), date(2026, 11, 3), date(2026, 11, 4)]
-    # The look-back reaches J.LOOKBACK_DAYS before the newest kept day: a late file is asked for again.
-    gap = {date(2026, 10, 26), date(2026, 10, 28)}
-    assert date(2026, 10, 27) in J.days_to_ask(gap, date(2026, 10, 28), start)
+    assert got == [date(2026, 10, 26) + timedelta(days=i) for i in range(10)], "kept days too, never before start"
+    late = {date(2026, 11, d) for d in (2, 3, 4)}
+    assert J.days_to_ask(late, date(2026, 11, 4), start)[0] == date(2026, 10, 28), "a week before the newest day"
     assert J.days_to_ask(kept, date(2026, 11, 4), start, backfill_from=date(2026, 10, 25))[0] == date(2026, 10, 25)
 
 
@@ -304,8 +374,8 @@ class _Fetch:
 
 def test_a_first_run_writes_the_history_its_readme_and_attributes(tmp_path):
     fetch = _Fetch({date(2026, 11, 3): _nse(date(2026, 11, 3)), date(2026, 11, 4): _nse(D)})
-    changed, msg = J.run(tmp_path, date(2026, 11, 4), fetch, start=date(2026, 11, 2))
-    assert changed and "2026-11-04" in msg
+    changed, msg, alarm = J.run(tmp_path, date(2026, 11, 4), fetch, start=date(2026, 11, 2))
+    assert changed and "2026-11-04" in msg and alarm == ""
     assert X.from_csv((tmp_path / "index_closes.csv").read_text(encoding="utf-8")) == [
         ("2026-11-03", "NSE:CNX500", "22769.20"), ("2026-11-03", "NSE:NIFTY500SH", "6796.30"),
         ("2026-11-04", "NSE:CNX500", "22769.20"), ("2026-11-04", "NSE:NIFTY500SH", "6796.30")]
@@ -317,13 +387,13 @@ def test_a_second_run_with_nothing_new_changes_nothing(tmp_path):
     files = {D: _nse(D)}
     J.run(tmp_path, D, _Fetch(files), start=D)
     before = (tmp_path / "index_closes.csv").read_bytes()
-    changed, _ = J.run(tmp_path, D, _Fetch(files), start=D)
-    assert not changed and (tmp_path / "index_closes.csv").read_bytes() == before
+    changed, _, alarm = J.run(tmp_path, D, _Fetch(files), start=D)
+    assert not changed and alarm == "" and (tmp_path / "index_closes.csv").read_bytes() == before
 
 
 def test_a_holiday_or_a_file_not_out_yet_adds_nothing_and_is_not_an_error(tmp_path):
-    changed, msg = J.run(tmp_path, D, _Fetch({}), start=D)
-    assert not changed and "nothing new" in msg
+    changed, msg, alarm = J.run(tmp_path, D, _Fetch({}), start=D)
+    assert not changed and "nothing new" in msg and alarm == ""
 
 
 def test_a_stale_copy_is_skipped_with_a_warning(tmp_path, capsys):
@@ -332,9 +402,52 @@ def test_a_stale_copy_is_skipped_with_a_warning(tmp_path, capsys):
     assert "another date" in capsys.readouterr().out
 
 
-def test_a_broken_nse_file_stops_the_run(tmp_path):
-    with pytest.raises(X.NseFileError):
-        J.run(tmp_path, D, _Fetch({D: "<html>Access Denied</html>"}), start=D)
+def test_a_broken_nse_file_is_named_and_the_good_days_are_still_kept(tmp_path):
+    """Review, 4 Nov 2026: one unreadable file stopped the run before anything was written, so every later day was
+    lost with it, night after night. Now the bad day is named (the run turns red) and the good ones are kept."""
+    fetch = _Fetch({date(2026, 11, 3): "<html>Access Denied</html>", D: _nse(D)})
+    changed, _, alarm = J.run(tmp_path, D, fetch, start=date(2026, 11, 3))
+    assert changed and alarm.startswith("2026-11-03: not NSE's index table"), alarm
+    assert {d for d, _, _ in X.from_csv((tmp_path / "index_closes.csv").read_text(encoding="utf-8"))} == {"2026-11-04"}
+
+
+def test_a_day_nse_refuses_is_named_and_the_other_days_are_still_kept(tmp_path):
+    def fetch(day):
+        if day == date(2026, 11, 3):
+            raise RuntimeError("NSE's index file for 2026-11-03 could not be read: HTTP 403")
+        return _nse(day) if day == D else None
+    changed, _, alarm = J.run(tmp_path, D, fetch, start=date(2026, 11, 3))
+    assert changed and "HTTP 403" in alarm
+
+
+def test_an_index_nse_stops_writing_turns_the_run_red_after_a_week(tmp_path):
+    """Review, 4 Nov 2026: NSE moving its file (every day a 404) or renaming an index would have kept the run green for
+    ever while the box quietly fell back. An index with no new close for more than INDEX_CLOSES_STALE_DAYS days is
+    named; a long weekend is not an alarm."""
+    day0 = date(2026, 10, 28)
+    J.run(tmp_path, day0, _Fetch({day0: _nse(day0)}), start=day0)
+    assert J.run(tmp_path, date(2026, 11, 4), _Fetch({}))[2] == "", "seven days without a file"
+    renamed = {date(2026, 11, 5): _nse(date(2026, 11, 5), {"Nifty 500": "22769.20", "Nifty 500 Shariah": "6796.30"})}
+    alarm = J.run(tmp_path, date(2026, 11, 5), _Fetch(renamed))[2]
+    assert "Nifty500 Shariah since 2026-10-28" in alarm and "Nifty 500 since" not in alarm, alarm
+
+
+def test_an_index_no_longer_declared_never_raises_the_alarm(tmp_path):
+    """A close once kept stays on the branch, even for an index later taken out of config.BENCHMARK_INDICES: its
+    silence is not NSE's."""
+    (tmp_path / "index_closes.csv").write_text(X.to_csv([("2026-10-01", "NSE:GONE", "100.00")]), encoding="utf-8")
+    assert J.run(tmp_path, D, _Fetch({D: _nse(D)}))[2] == ""
+
+
+def test_an_index_nse_writes_late_is_still_kept_and_a_changed_close_is_named(tmp_path):
+    J.run(tmp_path, D, _Fetch({D: _nse(D, {"Nifty 500": "22769.20"})}), start=D)          # the 22:00 copy
+    changed, _, alarm = J.run(tmp_path, D, _Fetch({D: _nse(D)}))                         # the 23:20 rewrite
+    assert changed and alarm == ""
+    assert ("2026-11-04", "NSE:NIFTY500SH", "6796.30") in X.from_csv((tmp_path / "index_closes.csv").read_text())
+    same = {D: _nse(D, {"Nifty 500": "22769.2", "Nifty500 Shariah": "6796.3"})}
+    assert J.run(tmp_path, D, _Fetch(same))[2] == "", "the same close written another way is the same close"
+    changed, _, alarm = J.run(tmp_path, D, _Fetch({D: _nse(D, {"Nifty 500": "22000.00"})}))
+    assert not changed and "Nifty 500" in alarm and "22000.00" in alarm and "22769.20" in alarm, alarm
 
 
 def test_the_job_never_rewrites_a_kept_close(tmp_path):
@@ -344,8 +457,12 @@ def test_the_job_never_rewrites_a_kept_close(tmp_path):
 
 
 class _Resp:
-    def __init__(self, code, text=""):
-        self.status_code, self.text = code, text
+    """A reply as requests gives it: .content the bytes, .text them read as Latin-1 (a text/csv reply naming no
+    charset, as NSE's does: measured 4 Nov 2026)."""
+    def __init__(self, code, body=b""):
+        self.status_code = code
+        self.content = body if isinstance(body, bytes) else body.encode("utf-8")
+        self.text = self.content.decode("latin-1")
 
 
 class _Session:
@@ -367,14 +484,28 @@ def test_nse_is_asked_politely_and_a_404_means_no_file(monkeypatch):
         J.fetch_day(D, _Session([403, 403, 403]))
 
 
-def test_main_tells_the_workflow_whether_to_commit(tmp_path, monkeypatch):
+def test_nses_bytes_are_read_as_utf8_whatever_the_server_says(monkeypatch):
+    """requests reads a text/csv reply that names no charset as Latin-1, so a UTF-8 byte-order mark would arrive as
+    'ï»¿' and the header would not be found: the job decodes NSE's bytes itself (review, 4 Nov 2026)."""
+    monkeypatch.setattr(J.time, "sleep", lambda s: None)
+
+    class Bom:
+        def get(self, url, **kw):
+            return _Resp(200, ("﻿" + _nse(D)).encode("utf-8"))
+    assert X.parse_nse_file(J.fetch_day(D, Bom()), D)["NSE:CNX500"] == "22769.20"
+
+
+def test_main_tells_the_workflow_whether_to_commit_and_what_needs_a_look(tmp_path, monkeypatch):
     out = tmp_path / "gh_output"
     monkeypatch.setenv("GITHUB_OUTPUT", str(out))
-    monkeypatch.setattr(J, "run", lambda *a, **k: (True, "index closes: 2026-11-04 · 10 indices · 1 new day"))
     monkeypatch.setattr(J, "_session", lambda: None)
+    monkeypatch.setattr(J, "run", lambda *a, **k: (True, "index closes: 2026-11-04 · 10 indices · 1 new day", ""))
     assert J.main(["--out", str(tmp_path / "closes"), "--backfill-from", ""]) == 0
     text = out.read_text(encoding="utf-8")
-    assert "changed=true" in text and "message=index closes: 2026-11-04" in text
+    assert "changed=true\n" in text and "message=index closes: 2026-11-04" in text and text.endswith("alarm=\n")
+    monkeypatch.setattr(J, "run", lambda *a, **k: (False, "index closes: nothing new", "2026-11-03: not\nNSE's"))
+    assert J.main(["--out", str(tmp_path / "closes")]) == 0, "the push step still runs; the last step turns it red"
+    assert out.read_text(encoding="utf-8").endswith("alarm=2026-11-03: not NSE's\n"), "one line keeps GITHUB_OUTPUT whole"
 
 
 # ── 5. The workflow ──────────────────────────────────────────────────────────────────────────────────────────────
@@ -392,17 +523,47 @@ def test_the_workflow_writes_only_its_own_branch_and_only_when_something_changed
     assert re.search(r"timeout-minutes: \d+", y)
 
 
+def _scripts(y: str) -> list:
+    """Every step's shell script, whether `run: x` on one line or a `run: |` block."""
+    lines, out = y.splitlines(), []
+    for i, line in enumerate(lines):
+        m = re.match(r"(\s*)(?:- )?run: ?(.*)$", line)
+        if not m:
+            continue
+        if m.group(2).strip() not in ("|", "|-", ">", ">-"):
+            out.append(m.group(2))
+            continue
+        indent, block = len(m.group(1)), []
+        for nxt in lines[i + 1:]:
+            if nxt.strip() and len(nxt) - len(nxt.lstrip()) <= indent:
+                break
+            block.append(nxt)
+        out.append("\n".join(block))
+    return out
+
+
 def test_the_backfill_input_reaches_the_script_only_through_env():
     y = _WF.read_text(encoding="utf-8")
-    runs = re.findall(r"run: (.*)", y)
-    assert not any("${{" in r for r in runs), "an input pasted into a script runs as shell beside the token"
+    scripts = _scripts(y)
+    assert any("git push" in s for s in scripts), "block scripts are read too (review, 4 Nov 2026: they were not)"
+    assert not any("${{" in s for s in scripts), "an input pasted into a script runs as shell beside the token"
     assert "BACKFILL_FROM: ${{ inputs.backfill_from }}" in y
 
 
-def test_the_workflow_fires_after_the_evening_and_again_in_the_morning():
+def test_a_day_needing_a_look_turns_the_run_red_after_the_good_days_are_pushed():
+    y = _WF.read_text(encoding="utf-8")
+    push, alarm = y.index("git push origin HEAD:index-closes"), y.index("if: steps.closes.outputs.alarm != ''")
+    assert push < alarm, "the good days are pushed first"
+    assert "ALARM: ${{ steps.closes.outputs.alarm }}" in y[alarm:]
+    assert re.search(r'echo "::error::\$ALARM"\s+exit 1', y[alarm:])
+
+
+def test_the_workflow_fires_twice_in_the_evening_and_once_in_the_morning():
+    """Measured 4 Nov 2026: NSE's file was out at 22:00 IST and rewritten, rows added, at 23:20; GitHub's crons land
+    3.8-5.1 h late (stockscans-sync, 16 fires). An ask before the file is out is a harmless 404."""
     y = _WF.read_text(encoding="utf-8")
     crons = re.findall(r'cron: "([^"]+)"', y)
-    assert len(crons) == 2 and "workflow_dispatch:" in y, crons
+    assert len(crons) == 3 and "workflow_dispatch:" in y, crons
 
 
 def test_the_config_names_one_branch_and_its_raw_file():
