@@ -13,8 +13,9 @@ once both arms have S.REVENUE_LED_RULE['min_n'], each arm's mean and median exce
 median and the two gaps. The check (S.revenue_led_rule) HOLDS if, over the scan's first three separate finished
 windows with both arms that large, the revenue-led matches beat the rest by at least one point on the mean AND
 on the median in EVERY one; otherwise "did not hold", decided once. Three monthly windows because the archive
-keeps month-end copies: 31 Oct -> 30 Nov -> 31 Dec -> 31 Jan cover the months of Kite's windows 1 and 2. It
-decides nothing by itself: nothing reaches the list, the feed or Kite.
+keeps month-end copies: since the fresh start of 2026-11-05, 30 Nov -> 31 Dec -> 31 Jan -> 28 Feb (registered a
+month earlier, on the months of Kite's windows 1 and 2). It decides nothing by itself: nothing reaches the list,
+the feed or Kite.
 
 Run with: pytest tests/test_scan_revenue_led_check.py -v
 """
@@ -142,13 +143,12 @@ def _unseen(*windows):
 
 
 def _record(ws):
-    return {"windows": [dict(start="2026-06-17", end="2026-08-22", days=66, median_excess_pp=7.1, beat_pct=69,
-                             n=150)], "out_of_sample": ws}
+    return {"out_of_sample": ws}
 
 
 def _card(scan_key, ws):
     scan = next(s for s in S.SCANS if s["key"] == scan_key)
-    return _html.unescape(S.card_html(scan, 235, "measured", _record(ws), selected=False, latest="03 Dec"))
+    return _html.unescape(S.card_html(scan, 235, "measured", _record(ws), selected=False))
 
 
 def test_the_playbook_card_shows_the_split_and_where_the_check_stands():

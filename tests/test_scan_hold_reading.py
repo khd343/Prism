@@ -177,13 +177,11 @@ def _unseen_with_hold():
 
 
 def _playbook_record():
-    return {"windows": [dict(start="2026-06-17", end="2026-08-22", days=66, median_excess_pp=7.1, beat_pct=69,
-                             n=150)], "out_of_sample": _unseen_with_hold()}
+    return {"out_of_sample": _unseen_with_hold()}
 
 
 def test_the_full_record_shows_what_holding_20_gave_and_where_the_rule_stands():
-    h = _html.unescape(S.card_html(S.SCANS[0], 235, "measured", _playbook_record(), selected=False,
-                                   latest="03 Dec"))
+    h = _html.unescape(S.card_html(S.SCANS[0], 235, "measured", _playbook_record(), selected=False))
     for s in ("Holding 20 of them", "+12.6%", "+3.7 to +23.1", "lost money in 2%", "Rank's top 20 beat 41%",
               "RAM Rank's top 20 beat 56%", "Rank's top 20 38%", "Order check: 1 of 4"):
         assert s in h, s
@@ -196,7 +194,7 @@ def test_the_full_record_shows_what_holding_20_gave_and_where_the_rule_stands():
     assert ("🏆 Core and 📈 Technical list by momentum since 13 Oct" in line and "🔢 RAM by RAM Rank" in line
             and "the order check reads RAM Rank." in line and "only if" not in line), (
         "the check reads RAM Rank, not the order in the table — it gates nothing")
-    other = _html.unescape(S.card_html(S.SCANS[1], 235, "measured", _playbook_record(), selected=False, latest="03 Dec"))
+    other = _html.unescape(S.card_html(S.SCANS[1], 235, "measured", _playbook_record(), selected=False))
     assert "The table lists by momentum since 13 Oct" in other and "🔢 RAM" not in other, "🌬️ has no 🔢 RAM view"
 
 
@@ -207,16 +205,16 @@ def test_the_card_states_a_decided_check_in_words():
         ws = [dict(base, start=s, end=e, order=dict(base["order"], ram_pct=m, rank_pct=50))
               for (s, e), m in zip(_CHAIN, moms)]
         rec = dict(_playbook_record(), out_of_sample=ws)
-        h = _html.unescape(S.card_html(S.SCANS[0], 235, "measured", rec, selected=False, latest="03 Dec"))
+        h = _html.unescape(S.card_html(S.SCANS[0], 235, "measured", rec, selected=False))
         assert f"Order check after 4 separate windows: RAM Rank's order {word}" in h, word
 
 
 def test_the_compounder_shows_the_reading_but_no_order_check():
     comp = next(s for s in S.SCANS if s["key"] == "compounder")
     import json
-    study = json.loads(S.RECORDS_PATH.read_text(encoding="utf-8"))["scans"]["compounder"]
-    rec = dict(study, out_of_sample=_unseen_with_hold())
-    h = _html.unescape(S.card_html(comp, 320, "measured", rec, selected=False, latest="03 Dec"))
+    on_file = json.loads(S.RECORDS_PATH.read_text(encoding="utf-8"))["scans"]["compounder"]
+    rec = dict(on_file, out_of_sample=_unseen_with_hold())
+    h = _html.unescape(S.card_html(comp, 320, "measured", rec, selected=False))
     assert "Holding 20 of them" in h and "Order check" not in h, (
         "🌱 lists by Rank; only the two momentum-ordered scans are checked")
 
@@ -224,5 +222,5 @@ def test_the_compounder_shows_the_reading_but_no_order_check():
 def test_no_hold_line_before_a_window_carries_it():
     rec = _playbook_record()
     rec["out_of_sample"][0].pop("hold")
-    h = S.card_html(S.SCANS[0], 235, "measured", rec, selected=False, latest="03 Dec")
+    h = S.card_html(S.SCANS[0], 235, "measured", rec, selected=False)
     assert "Holding 20" not in h and "Order check" not in h

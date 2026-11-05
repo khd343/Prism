@@ -104,11 +104,13 @@ def _records_without_baselines() -> dict:
     """The committed records with every 🆕 baseline removed. The weekly job rewrites the baselines with
     REAL company ids, which a synthetic market does not hold, so a test that read them as committed
     would change with every job run (2026-10-08: the first 🌱 baseline put a 'Left 🌱' table of 254
-    'gone' stocks under this market). Tests about baselines inject their own (the Left 🌱 tests below)."""
+    'gone' stocks under this market). Tests about baselines inject their own (the Left 🌱 tests below).
+    Its unseen windows go too, for the same reason: the job adds them from January 2027."""
     from ui import ui_scans as S
     records = json.loads(json.dumps(S.load_records()))
     for rec in records["scans"].values():
         rec.pop("members_at_latest", None)
+        rec["out_of_sample"] = []
     return records
 
 
@@ -225,17 +227,86 @@ def test_the_view_switch_reaches_the_table(tab):
 
 def test_the_full_record_panel_follows_the_chosen_scan(tab):
     """RUN: the one 'Full record' panel under the cards names the selected scan and holds its record —
-    the windows for 🚀, the study for 🌱 (2026-10-08)."""
+    before any window, its own first date (2026-11-05): 30 Nov for 🚀, October 2027 for 🌱."""
     from ui import ui_scans as S
     panels = [e for e in tab.expander if e.label.startswith("📊 Full record")]
     assert len(panels) == 1 and S.SCANS[0]["name"] in panels[0].label
-    assert "DESIGN-PERIOD RECORD" in "".join(m.value for m in panels[0].markdown)
+    assert "No record yet. The first window starts on the 30 Nov copy." in "".join(m.value for m in panels[0].markdown)
     tab.button(key="scan_open_compounder").click().run()
     assert not tab.exception, [e.value for e in tab.exception]
     panels = [e for e in tab.expander if e.label.startswith("📊 Full record")]
     seed = next(s for s in S.SCANS if s["key"] == "compounder")
     assert len(panels) == 1 and seed["name"] in panels[0].label
-    assert "BACKTEST · IN-SAMPLE" in "".join(m.value for m in panels[0].markdown)
+    assert "The first window starts on the 31 Oct 2027 copy." in "".join(m.value for m in panels[0].markdown)
+
+
+def test_every_card_says_no_record_yet_and_no_old_heading_shows(tab):
+    """RUN (2026-11-05): each of the three cards says it has no record and when its first window starts, and nothing on the
+    tab calls a record in-sample, leaks a blank as nan or draws an empty record table."""
+    from ui import ui_scans as S
+    page = "".join(m.value for m in tab.markdown)
+    for scan in S.SCANS:
+        assert S.no_record_words(scan) in page, scan["key"]
+    for word in ("IN-SAMPLE", "in-sample", "In-sample", "DESIGN-PERIOD", "BACKTEST", "backtest"):
+        assert word not in page, word
+    assert not re.search(r"\bnan\b", page, re.I)
+    record = "".join(m.value for e in tab.expander if e.label.startswith("📊") for m in e.markdown)
+    assert "<table" not in record, "the guide beside it has its own table of ways out; a record with no window has none"
+
+
+def _kept_fields_only(members=None) -> dict:
+    """A record file holding only what stays since 2026-11-05: the fingerprints, the unseen windows and the 🆕 baseline."""
+    from ui import ui_scans as S
+    return {"version": S.RECORD_VERSION, "designed_on": S.DESIGNED_ON, "members_date": "2026-10-30",
+            "scans": {s["key"]: {"fingerprint": S.recipe_fingerprint(s), "windows": [], "out_of_sample": [],
+                                 "members_at_latest": members(s) if members else []} for s in S.SCANS}}
+
+
+def _scans_tab(tmp_path, records):
+    from streamlit.testing.v1 import AppTest
+    script = tmp_path / "scans_tab_kept.py"
+    script.write_text(_app_source(records), encoding="utf-8")
+    at = AppTest.from_file(str(script), default_timeout=60)
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+    return at
+
+
+@pytest.mark.parametrize("key", ["playbook", "leaders", "compounder"])
+def test_the_tab_runs_on_a_file_with_only_the_kept_fields(tmp_path, key):
+    """RUN: every scan's list, panels and marks, on the file as it now is: a stock on the baseline is not new and a stock off
+    it is, so the baseline still does its one job, and no record is needed for a list to show."""
+    from ui import ui_scans as S
+    df = _frame()
+    scan = next(s for s in S.SCANS if s["key"] == key)
+    matches = sorted(df.loc[scan["mask"](df), "company_id"].astype(str))
+    assert len(matches) > 2, "the harness market reaches every scan"
+    at = _scans_tab(tmp_path, _kept_fields_only(lambda s: matches[1:] if s["key"] == key else []))
+    at.button(key=f"scan_open_{key}").click().run()
+    assert not at.exception, [e.value for e in at.exception]
+    if key == "playbook":                                        # 🚀 opens on 🔢 RAM, which has no New column
+        _control(at, "scan_view").set_value("🏆 Core").run()
+        assert not at.exception, [e.value for e in at.exception]
+    table = at.dataframe[0].value
+    new = dict(zip(table["company_id"], table["_new"]))
+    assert set(new) == set(matches), "the scan lists every match, record or none"
+    assert "🆕" in new[matches[0]] and "🆕" not in new[matches[1]]
+    panels = {e.label[0]: "".join(m.value for m in e.markdown) for e in at.expander if e.label.startswith(("📊", "📖"))}
+    assert S.no_record_words(scan) in panels["📊"] and "None has finished yet" in panels["📖"]
+
+
+def test_the_first_window_on_file_reaches_the_tab(tmp_path):
+    """RUN: what the job writes reaches both cards with no design-period record beside it."""
+    from ui import ui_scans as S
+    play = S.SCANS[0]
+    records = _kept_fields_only()
+    records["scans"]["playbook"]["out_of_sample"] = [
+        dict(start="2026-11-30", end="2026-12-31", days=31, n=120, median_excess_pp=1.4, beat_pct=55, final=True,
+             fingerprint=S.recipe_fingerprint(play))]
+    at = _scans_tab(tmp_path, records)
+    page = html.unescape("".join(m.value for m in at.markdown))
+    assert "ahead in 1 of 1 unseen window: +1.4 pts before costs" in page and "NEVER SAW" in page
+    assert page.count(S.no_record_words(S.SCANS[1])) == 1, "🌬️'s card still has no record; 🚀's two have one now"
 
 
 def test_how_it_works_follows_the_chosen_scan(tab):

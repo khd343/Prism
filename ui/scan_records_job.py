@@ -10,17 +10,16 @@ every scan with the SAME recipe function the tab runs (ui/ui_scans.py — one de
 - UNSEEN windows: from each month-end copy dated after the scan's design date whose month is over
   (frozen), to the first copy at least the scan's horizon later (MIN_HORIZON_DAYS, or 365 days for
   🌱 Compounder Candidates) and to the latest copy. These are windows the
-  recipes were never chosen on — the most trustworthy record a card shows.
+  recipes were never chosen on, and they are the record a card shows.
 - 🆕 baseline: the scan's members on the latest frozen month-end copy, and its date.
 - Against the index fund you could hold instead (2026-10-08, December plan rule 23): each unseen window
   also records the scan's liquid matches as one equal-weight portfolio after a round trip, and every
   declared benchmark index's price change after a fund fee, read from the index rows each archive copy
   carries (set aside from the stocks by core.load_market, from the same download).
 
-The DESIGN-PERIOD windows (in-sample, from the saved snapshots) are written only by the local tool
-tools/scan_records.py; this job never touches them. If a recipe changed since they were measured the
-job stops with an error (GitHub emails the failure), because a new unseen record beside a stale
-design record would describe two different recipes.
+If a recipe changed since the file's fingerprint for it was written, the job stops with an error (GitHub
+emails the failure) until the new fingerprint is written there by hand (check_fresh): the cards show only
+the recipe on file, and a window measured on another would never be read.
 
 Since 2026-10-15 (the scan-records audit, before the first unseen window): every unseen window carries the
 recipe fingerprint it was measured with, a final window is final for ITS recipe, and the cards count the
@@ -46,6 +45,10 @@ stop says what the check must look like.
 Since 2026-11-05 (the operator's call): the order check reads RAM Rank, on what Kite can trade (order_reading, stored on each
 window as `order`), and hold_reading no longer reads momentum. On a copy with no RAM, or missing a filter column, that reading
 simply does not count: it never stops the run.
+
+Since 2026-11-05 (the operator's call: "Remove old record of scan record completely, and from today is the fresh"): the file holds
+no design-period windows and no study, and every record starts after S.DESIGNED_ON. So the first window starts on the 30 Nov 2026
+copy (🌱's, which start each October, on October 2027's), and the 🆕 baseline, the fingerprints and every alarm here go on as before.
 
 The file is rewritten only when a measured value changed, so a quiet week makes no commit.
 """
@@ -75,7 +78,8 @@ def rescore_snapshot(frame: pd.DataFrame) -> pd.DataFrame:
     """A saved snapshot re-scored with the CURRENT engine on everything the scans read (2026-10-15): the derived price
     inputs, Momentum with its sub-scores (Breakout among them) and Improvement. A stored score is whichever definition
     was live that day, so without this a fixed engine would be stamped with its new fingerprint and measured old.
-    tools/scan_records.py prepares the design-period snapshots with it; the unseen windows re-score whole copies."""
+    The guide's "still in the list" figures are measured on snapshots prepared with it; the unseen windows re-score whole
+    copies."""
     with contextlib.redirect_stdout(io.StringIO()):          # compute_momentum_score prints a summary line
         df = frame.copy()
         for col, values in price_trend_inputs(df).items():
@@ -296,8 +300,7 @@ def shariah_reading(early: pd.DataFrame, ret: pd.Series, match: pd.Series):
     has MIN_N matches, its median excess and beat rate, the liquid reading after the round trip (with those matches
     as one equal-weight portfolio, to set beside the window's index readings) and holding S.HOLD_K of them. None
     when the copy carries no label: a reading on absent evidence would be invented. The job re-scores every archive
-    copy with today's engine, which writes the label; the design-period snapshots predate it, so the slice starts
-    with the first unseen window."""
+    copy with today's engine, which writes the label."""
     if "shariah_status" not in early.columns:
         return None
     cap = early["market_category"] if "market_category" in early.columns else pd.Series(np.nan, index=early.index)
@@ -470,7 +473,7 @@ def window_problem(early: pd.DataFrame, late: pd.DataFrame, scan: dict, start: s
     """Why a window's DATA cannot be trusted, in words for the failure email; '' when it can (2026-10-18). Read on every
     window, measured or not, so a broken copy can neither vanish (measure_window's None) nor be frozen as a final
     window on the stocks it kept: most of the market's share counts moved between the two copies (a unit or column
-    change, not corporate actions — the most in-sample was 7% over 108 days — and forward_returns would set those
+    change, not corporate actions — the most on the saved snapshots was 7% over 108 days — and forward_returns would set those
     stocks aside), or most of the scan's matches have no price at one end (a copy lost rows or prices). A recipe that
     matches few stocks, or none, is no data problem: copy_problem tests each copy's inputs instead."""
     fr = forward_returns(early, late, "company_id")
@@ -514,12 +517,14 @@ def members(frame: pd.DataFrame, scan: dict) -> list:
 
 
 def check_fresh(existing: dict) -> None:
-    """Refuse to add unseen evidence beside a design-period record of a different recipe."""
+    """Refuse to add unseen evidence while the file's fingerprint names a different recipe: its cards would read "stale".
+    Writing the new fingerprint by hand is the decision that the change was meant; check_recipe_dates then guards its windows."""
     for scan in S.SCANS:
         rec = (existing.get("scans") or {}).get(scan["key"])
-        if not rec or rec.get("fingerprint") != S.recipe_fingerprint(scan):
-            raise SystemExit(f"{scan['key']}: the recipe changed since its design-period record was "
-                             f"measured — run tools/scan_records.py locally first.")
+        current = S.recipe_fingerprint(scan)
+        if not rec or rec.get("fingerprint") != current:
+            raise SystemExit(f"{scan['key']}: the recipe changed since its fingerprint in {S.RECORDS_PATH.name} was written. "
+                             f"If the change is meant, write its new fingerprint there by hand: {current}.")
 
 
 def check_recipe_dates(existing: dict, fingerprints: dict) -> None:
@@ -596,7 +601,7 @@ def main() -> int:
                          "sheet's id (the part of its address between /d/ and /edit).")
     existing = S.load_records()
     if not existing:
-        raise SystemExit(f"{S.RECORDS_PATH.name} is missing or unreadable — run tools/scan_records.py first.")
+        raise SystemExit(f"{S.RECORDS_PATH.name} is missing or unreadable — restore it from git; nothing was measured.")
     check_fresh(existing)
     # The recipe each window is measured with (2026-10-15): stamped on every window, final per recipe.
     fps = {s["key"]: S.recipe_fingerprint(s) for s in S.SCANS}

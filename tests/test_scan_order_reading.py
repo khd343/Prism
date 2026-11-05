@@ -56,7 +56,7 @@ _SCAN = {"key": "toy", "mask": lambda d: d["flag"] == 1}
 _BY_KEY = {s["key"]: s for s in S.SCANS}
 _FILTER_WORDS = "Shariah, NSE, Mega to Small, ₹1 Cr a day, up to ₹5,000 a share, 0–25% above the V-Stop, Stage 1 or 2"
 _NOT_IN_DATA = "The price band, ASM, GSM and the SME lot size are not in PRISM's data"
-_FROM_RAM = "Older windows have no RAM, so the check counts from the first window that has it"
+_FROM_RAM = "A window on a copy with no RAM does not count, so the check counts from the first window that has it"
 
 
 def _market(n=40):
@@ -437,9 +437,8 @@ def _text(h: str) -> str:
 
 
 def _card(key, windows):
-    rec = {"windows": [dict(start="2026-06-17", end="2026-08-22", days=66, median_excess_pp=7.1, beat_pct=69, n=150)],
-           "out_of_sample": windows}
-    t = _text(S.card_html(_BY_KEY[key], 235, "measured", rec, selected=False, latest="03 Dec"))
+    rec = {"out_of_sample": windows}
+    t = _text(S.card_html(_BY_KEY[key], 235, "measured", rec, selected=False))
     return t[t.index("Holding 20 of them"):]
 
 
@@ -458,7 +457,7 @@ def test_the_card_says_what_the_check_reads_and_names_the_filters_once(key):
 @pytest.mark.parametrize("key", [*_CHECKED, "compounder"])
 def test_the_holding_twenty_sentence_no_longer_mentions_momentum(key):
     rec = dict(_RECORDS["scans"][key], out_of_sample=[_window()])
-    t = _text(S.card_html(_BY_KEY[key], 235, "measured", rec, selected=False, latest="03 Dec"))
+    t = _text(S.card_html(_BY_KEY[key], 235, "measured", rec, selected=False))
     t = t[t.index("Holding 20 of them"):t.index("From the Mega")]
     assert "momentum" not in t.lower() and "Rank's top 20 beat 41% of them" in t
 
@@ -472,7 +471,7 @@ def test_the_card_says_whose_order_is_whose():
 
 def test_the_compounder_card_says_nothing_of_the_check():
     rec = dict(_RECORDS["scans"]["compounder"], out_of_sample=[_window()])
-    t = _text(S.card_html(_BY_KEY["compounder"], 320, "measured", rec, selected=False, latest="03 Dec"))
+    t = _text(S.card_html(_BY_KEY["compounder"], 320, "measured", rec, selected=False))
     t = t[t.index("Holding 20 of them"):]
     assert not re.search(r"\bRAM\b|Kite can trade|Order check", t), t
 
@@ -512,7 +511,7 @@ def test_todays_records_file_still_loads_and_renders():
     for scan in S.SCANS:
         state, rec = S.record_state(_RECORDS, scan)
         assert state == "measured", scan["key"]
-        assert S.card_html(scan, 235, state, rec, selected=False, latest="03 Dec") and G.guide_html(scan, rec, state)
+        assert S.card_html(scan, 235, state, rec, selected=False) and G.guide_html(scan, rec, state)
     assert G.reference_html(_RECORDS) and G.guide_markdown(_RECORDS)
 
 
@@ -710,6 +709,10 @@ def test_a_sealed_guide_says_so():
 
 
 def test_todays_records_file_renders_under_the_seal():
+    """The file holds no window yet, so no card speaks of the check; the first window the job writes carries the seal."""
     records = S.load_records()["scans"]
     for key in _CHECKED:
-        assert "Order check: sealed until May 2027" in _card(key, records[key]["windows"])
+        empty = _text(S.card_html(_BY_KEY[key], 235, "measured", dict(records[key], out_of_sample=[]), selected=False))
+        assert "No record yet" in empty and "Order check" not in empty
+        sealed = dict(k=20, n=49, sealed=True)
+        assert "Order check: sealed until May 2027" in _card(key, [_window(order=sealed)])

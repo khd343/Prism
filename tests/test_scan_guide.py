@@ -75,56 +75,40 @@ def test_the_stamp_follows_the_recipe_and_every_setting_the_guide_explains():
     assert re.fullmatch(r"[0-9a-f]{16}", base)
 
 
-# ── 1b. A backtest's method never outlives its study (2026-10-14, the user's ask: "so in future we can
-# check and do it again") ─────────────────────────────────────────────────────────────────────────────
-# The StockScans columns, formulas and traps the 🌱 study used — verified 2026-10-14 against the 🌱 commit
-# (e4193c5), the record's own notes, tools/compounder_years.py and the 2026-10-03 code it reproduced.
+# ── 1b. A backtest's method never outlives its study (2026-10-14; 2026-11-05: the study is gone and the method
+# with it, both in git's history at b19d485) ─────────────────────────────────────────────────────────────────
+# The StockScans columns, formulas and traps the 🌱 study used: no guide names them any more.
 _METHOD_WORDS = ("PAT 3 Years Back", "PAT 4 Years Back", "Revenue 3 Years Back", "Revenue 4 Years Back",
                  "OPM 3 Years Back", "OPM 5 Years Back", "Returns 1Y", "Returns 2Y", "Returns 3Y", "Listed Days",
-                 "FY21 → FY23", "median", "26%", "(1 + R3)³ ÷ (1 + R2)² − 1", "(1 + R2)² ÷ (1 + R1) − 1",
+                 "FY21 → FY23", "(1 + R3)³ ÷ (1 + R2)² − 1", "(1 + R2)² ÷ (1 + R1) − 1",
                  "Returns Vs Nifty 500 3Y", "per-year", "tools/compounder_years.py")
 
 
 def test_a_backtest_method_never_outlives_its_study():
     recs = _RECORDS["scans"]
     for key, g in G.GUIDES.items():
-        study, method = (recs.get(key) or {}).get("study"), g.get("backtest")
-        if study is None:
-            assert method is None, f"{key}: a backtest method, but its record holds no study"
-            continue
-        assert method and method.get("items"), f"{key}: its record is a study — say how it was run"
-        assert method["written_for"] == G.study_stamp(study), (
-            f"{key}: the study changed since its method was written. Re-read every line of GUIDES['{key}']"
-            f"['backtest'] against the new study, then set written_for={G.study_stamp(study)}")
+        assert not (recs.get(key) or {}).get("study"), f"{key}: its record holds a study again"
+        assert not g.get("backtest"), f"{key}: a backtest method, but its record holds no study"
 
 
-def test_the_study_stamp_follows_every_number_and_note():
-    study = _rec("compounder")["study"]
-    base = G.study_stamp(study)
-    assert re.fullmatch(r"[0-9a-f]{16}", base) and G.study_stamp(json.loads(json.dumps(study))) == base
-    assert G.study_stamp(dict(reversed(list(study.items())))) == base, (
-        "the weekly job may re-save the records with its keys in another order — that is not a new study")
-    for change in ({"n_match": 183}, {"source": "another export"}, {"definition_note": "other legs"},
-                   {"years": study["years"][:2]}):
-        assert G.study_stamp(dict(study, **change)) != base, change
+def test_the_guide_follows_the_record_date_when_it_moves():
+    t = _guide("playbook", _rec("playbook"), designed_on="2026-12-15")
+    assert "Record starts: 15 Dec 2026 — its first window starts on the 31 Dec 2026 copy." in t, "read, never typed"
+    assert "after 15 Dec 2026" in t and "2026-11-30" not in t and "30 Nov" not in t
 
 
-def test_the_method_names_every_column_formula_and_trap():
-    text = " ".join(G.GUIDES["compounder"]["backtest"]["items"])
-    missing = [w for w in _METHOD_WORDS if w not in text]
-    assert not missing, f"the 🌱 method never mentions {missing}"
-    assert G.GUIDES["compounder"]["backtest"]["items"][0].startswith("**"), "it opens on a named step"
+def test_no_guide_names_the_methods_columns_any_more():
+    for key in G.GUIDES:
+        text = _guide(key, _rec(key))
+        found = [w for w in _METHOD_WORDS if w in text]
+        assert not found, (key, found)
 
 
-def test_the_method_shows_under_the_record_and_only_for_a_study():
-    comp = _guide("compounder", _rec("compounder"))
-    assert "How the backtest was run" in comp and comp.index("Its record") < comp.index("How the backtest was run")
-    assert comp.index("How the backtest was run") < comp.index("What it cannot see")
-    for key in ("playbook", "leaders"):
-        assert "How the backtest was run" not in _guide(key, _rec(key)), f"{key} is measured on snapshots"
-    t = _text(G.reference_html(_RECORDS, "Returns 2Y"))
-    assert "Compounder Candidates" in t and "How the backtest was run" in t, "the Reference search finds it"
-    assert "#### How the backtest was run" in G.guide_markdown(_RECORDS), "the download carries it"
+def test_the_method_shows_nowhere():
+    for key in G.GUIDES:
+        assert "How the backtest was run" not in _guide(key, _rec(key)), key
+    assert G.reference_html(_RECORDS, "Returns 2Y") == "", "the Reference search finds nothing of it"
+    assert "How the backtest was run" not in G.guide_markdown(_RECORDS), "nor does the download carry it"
 
 
 def test_every_guide_fills_every_part():
@@ -287,7 +271,7 @@ def test_the_index_the_dates_and_the_recipe_line_are_written_from_the_scan():
         t = _guide(s["key"], _rec(s["key"]))
         assert BENCHMARK_INDICES[s["benchmark"]] in t, s["key"]
         assert s["recipe"] in t, s["key"]
-        assert S._first_unseen_due(s) in t, s["key"]
+        assert G._first_start(s) in t, s["key"]
     moved = _guide("playbook", benchmark="NSE:CNX500")
     assert "Compared with Nifty 500" in moved and "Nifty500 Momentum 50" not in moved
     assert "starting each October" in _guide("compounder") and "every month-end" in _guide("playbook")
@@ -350,50 +334,45 @@ def test_every_table_view_and_every_measured_flag_is_explained():
 
 
 # ── 4. The record is read from the records file, honestly ────────────────────────────────────────────
-def test_the_design_record_is_read_from_the_records_file():
+def test_a_design_record_left_in_a_file_is_not_quoted():
+    """The file's `windows` are empty since 2026-11-05, and the guide no longer reads them: a local tool or a hand
+    edit that wrote some back changes not one word."""
     for key in ("playbook", "leaders"):
-        rec = _rec(key)
-        ws = rec["windows"]
-        t = _guide(key, rec)
-        ex, bt = [w["median_excess_pp"] for w in ws], [w["beat_pct"] for w in ws]
-        assert f"{min(ex):+.1f} to {max(ex):+.1f} points" in t, key
-        assert f"{min(bt)}–{max(bt)}%" in t, key
-        net = [w["net"] for w in ws]
-        assert f"{min(n['median_excess_pp'] for n in net):+.1f} to {max(n['median_excess_pp'] for n in net):+.1f}" in t
-        k = S.non_overlapping(ws)
-        assert f"they are {k} separate stretches" in t, "overlapping windows must be called what they are"
-        assert "In every window" in t, "every committed design window beat the market's median stock"
+        rec = dict(_rec(key), out_of_sample=[])
+        clean = _guide(key, rec)
+        rec["windows"] = [dict(start="2026-06-17", end="2026-08-22", days=66, median_excess_pp=8.8, beat_pct=70, n=148,
+                               net=dict(min_cr=2.0, cost_pp=1.0, n=119, median_excess_pp=6.6, beat_pct=66))]
+        assert _guide(key, rec) == clean, key
 
 
-def test_every_window_is_claimed_only_when_every_window_beat():
-    rec = _rec("playbook")
-    rec["windows"][0]["median_excess_pp"] = -1.2
-    t = _guide("playbook", rec)
-    assert "In every window" not in t and "-1.2 to" in t
+def test_the_guide_claims_no_result_before_a_window_has_finished():
+    t = _guide("playbook", dict(_rec("playbook"), out_of_sample=[]))
+    for claim in ("In every window", "beat the market's median stock —", "separate stretches", "finished so far"):
+        assert claim not in t, claim
 
 
-def test_the_study_record_is_read_from_the_records_file():
-    rec = _rec("compounder")
-    st_ = rec["study"]
-    t = _guide("compounder", rec)
-    assert f"{st_['match_cagr_pct']:+.1f}% a year against {st_['rest_cagr_pct']:+.1f}%" in t
-    assert f"{st_['n_match']:,} against {st_['n_rest']:,}" in t
-    for y in st_["years"]:
-        assert f"{y['label']} {y['match_excess_pp']:+.1f} (the rest {y['rest_excess_pp']:+.1f})" in t
-    assert st_["caveats"] in t and st_["cleanest"]["label"] in t
+def test_a_study_left_in_a_file_is_not_quoted():
+    rec = dict(_rec("compounder"), out_of_sample=[])
+    clean = _guide("compounder", rec)
+    rec["study"] = dict(title="3-year backtest", match_cagr_pct=20.4, rest_cagr_pct=4.4, match_doubled_pct=40.7,
+                        rest_doubled_pct=20.8, n_match=182, n_rest=1325, caveats="Survivors only", definition_note="legs",
+                        **{"from": "Oct 2023", "to": "Oct 2026"})
+    assert _guide("compounder", rec) == clean
 
 
 def test_no_numbers_from_a_record_nobody_can_vouch_for():
     rec = _rec("playbook")
-    best = f"{max(w['median_excess_pp'] for w in rec['windows']):+.1f}"
+    rec["out_of_sample"] = [dict(start="2026-11-30", end="2026-12-31", days=31, n=120, median_excess_pp=8.8, beat_pct=55,
+                                 final=True)]
+    assert "1 finished so far" in _guide("playbook", rec), "with a current record the window counts"
     for state, words in (("stale", "measured again"), ("unverified", "could not be checked"),
                          ("unmeasured", "Not measured yet")):
         t = _guide("playbook", rec, state)
-        assert best not in t and "None has finished" not in t and words in t, state
+        assert "finished so far" not in t and "None has finished" not in t and words in t, state
 
 
 def test_the_unseen_record_and_the_order_check_follow_the_records():
-    rec = _rec("playbook")
+    rec = dict(_rec("playbook"), out_of_sample=[])
     assert "None has finished yet" in _guide("playbook", rec)
     assert "So far 0 of" in _guide("playbook", rec)
     order = dict(k=20, n=60, ram_pct=80, rank_pct=50)

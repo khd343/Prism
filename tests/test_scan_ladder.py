@@ -294,13 +294,13 @@ def test_the_list_header_explains_every_letter():
 
 @pytest.mark.parametrize("key", WIDE)
 def test_the_rank_tip_on_b_and_c_claims_no_record_of_its_own(key):
-    """B and C take 🚀's order but not its record: their Rank tip names no order check and no 2026-10-06 test (both
-    are 🚀's alone; the review of 2026-10-30 found 🚀's tip on them), while 🚀's own tip keeps both."""
+    """B and C take 🚀's order but not its record: their Rank tip names no order check (🚀's alone; the review of
+    2026-10-30 found 🚀's tip on them), while 🚀's own tip keeps it. Neither names the 2026-10-06 test (2026-11-05)."""
     tip = S.table_config("30 Sep", S.playbook_layer_scan(PLAY, key))["rank"]["help"]
     assert "order check" not in tip and "2026-10-06" not in tip, tip
     assert "no record" in tip and "Momentum, high to low" in tip, tip
     rocket = S.table_config("30 Sep", PLAY)["rank"]["help"]
-    assert "order check" in rocket and "2026-10-06" in rocket
+    assert "order check" in rocket and "2026-10-06" not in rocket
 
 
 @pytest.mark.parametrize("key,tags", [("no_quarter", {"🚀", "B"}), ("price_only", {"🚀", "B", "C"})])
