@@ -294,8 +294,9 @@ TECHNICAL_COLS = {
     "SMA 50D":   "sma_50d",    # Criterion 5: 50D > 150D + 200D (right stacking)
     "SMA 30W":   "sma_30w",    # Criterion 2+3: price > 150D MA; 150D > 200D (30W × 5 = 150 trading days)
     # RAM (2026-11-05): another job fills these four each night from NSE's own files. DISPLAY ONLY: the Tear-Sheet's RAM
-    # line, the Deep Scanner and the 🎯 Scans show them; no score, tier, verdict, framework, recipe or record reads them
-    # (tests/test_ram_display.py). Blank when not ranked; RAM Date alone is filled when RAM ran and did not rank a stock.
+    # line, the Deep Scanner and the 🎯 Scans show them; no score, tier, verdict, framework or recipe reads them, and of the
+    # records only the order check, which decides nothing, reads RAM Rank (tests/test_ram_display.py). Blank when not
+    # ranked; RAM Date alone is filled when RAM ran and did not rank a stock.
     # `RAM Pct`, never `RAM %`: the sheet's own matcher folds a header to letters and digits, so RAM % would read as RAM.
     "RAM":      "ram_score",
     "RAM Rank": "ram_rank",

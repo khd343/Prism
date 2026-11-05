@@ -1330,3 +1330,60 @@ def test_the_slice_agrees_with_an_independent_recalculation(seed):
     assert cut["median_excess_pp"] == pytest.approx(round(float(ex[sub].median()), 1))
     assert cut["beat_pct"] == int(round(float((ex[sub] > 0).mean() * 100)))
 
+
+# ── 10. The order check's reading can never stop the run (2026-11-05) ─────────────────────────────────────────────────
+# order_reading runs on every window of every copy, the old ones with no RAM among them, in the same run that carries the
+# Archive alarm. A crash in it would turn a green Monday red, or read as something other than what it is. The reading
+# itself: tests/test_scan_order_reading.py.
+def _tradable_frames():
+    """_liquid_frames as copies Kite can trade: its 30 priced matches each pass every filter, and carry RAM Rank and Rank."""
+    early, late = _liquid_frames()
+    early = early.assign(company_id="NSE:" + early["company_id"], shariah_status="Shariah", market_category="Small Cap",
+                         dist_to_vstop=10.0, weinstein_stage="📈 Stage 2 Advancing", ram_rank=np.arange(1.0, len(early) + 1),
+                         rank=np.arange(float(len(early)), 0.0, -1.0))
+    return early, late.assign(company_id="NSE:" + late["company_id"])
+
+
+def _written_windows(monkeypatch, early, late):
+    written, measured = _job_on_fake_archive(monkeypatch, _records([]), frames=(early, late))
+    windows = written["scans"]["toy"]["out_of_sample"]
+    assert measured and len(windows) == 2, "the run reached the end and wrote both windows"
+    return windows
+
+
+def test_the_job_writes_the_order_reading_on_a_copy_with_ram(monkeypatch):
+    for w in _written_windows(monkeypatch, *_tradable_frames()):
+        assert w["order"]["n"] == 30 and w["order"]["ram_pct"] is not None and w["order"]["rank_pct"] is not None
+        assert "momentum_pct" not in w["hold"]
+
+
+def test_a_copy_with_no_ram_never_stops_the_run(monkeypatch):
+    early, late = _tradable_frames()
+    windows = _written_windows(monkeypatch, early.drop(columns="ram_rank"), late)
+    for w in windows:
+        assert w["order"]["n"] == 30 and w["order"]["ram_pct"] is None and w["order"]["rank_pct"] is not None
+    assert S.order_rule(windows)["counted"] == 0, "a window with no RAM does not count, and the next one can"
+
+
+@pytest.mark.parametrize("column", ["shariah_status", "market_category", "vol_sma_20d", "dist_to_vstop", "weinstein_stage"])
+def test_a_copy_missing_a_filter_column_never_stops_the_run(monkeypatch, column):
+    """The two filter columns left out here, company_id and close_price, are what a window itself is measured on: without
+    them the copy cannot get this far (copy_problem, forward_returns), and the reading alone reads n = 0 (its own test)."""
+    early, late = _tradable_frames()
+    for w in _written_windows(monkeypatch, early.drop(columns=column), late):
+        assert w["order"]["n"] == 0 and not {"ram_pct", "rank_pct"} & set(w["order"])
+        assert w["n"] == 30, "and the window itself is read as ever"
+
+
+@pytest.mark.parametrize("copy", ["with RAM", "no RAM", "no filter column"])
+def test_the_archive_alarm_still_fires_first_on_every_copy(monkeypatch, copy):
+    early, late = _tradable_frames()
+    if copy != "with RAM":
+        early = early.drop(columns="ram_rank" if copy == "no RAM" else ["shariah_status", "weinstein_stage"])
+    written, measured = {}, []
+    with pytest.raises(SystemExit, match="stopped taking copies"):
+        _job_on_fake_archive(monkeypatch, _records([]), today=date(2026, 12, 20), frames=(early, late), written=written,
+                             measured=measured)
+    assert (written, measured) == ({}, []), "nothing measured, nothing written"
+    assert J.MAX_ARCHIVE_AGE_DAYS == 10
+

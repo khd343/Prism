@@ -38,7 +38,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from config import BENCHMARK_INDICES, COLORS
+from config import BENCHMARK_INDICES, COLORS, SHARIAH_STATUSES
 from core.data_engine import price_trend_inputs, traded_value_cr   # ONE liquidity number (moved there 2026-10-09)
 from core.data_engine import ram_date_text, ram_day                 # 🔢 RAM's date words, the Tear-Sheet's own
 from core.forward_returns import MIN_HORIZON_DAYS
@@ -80,7 +80,7 @@ FUND_FEE_PCT_YR = 0.2
 # times with a FIXED seed, from the matches a Rs 1 lakh account can hold — a Mega, Large, Mid or Small
 # cap (HOLD_CAPS) AND one share at most HOLD_MAX_PRICE (13 of 185 buyable stocks cost more on 2026-10-12)
 # — after NET_COST_PP: the typical result, its 10th-90th range, how often it lost money, and where the
-# top HOLD_K by momentum and by Rank land among those picks.
+# top HOLD_K by Rank lands among those picks (by momentum too, until the order check moved to RAM Rank, 2026-11-05).
 # HOLD_CAPS replaced a NET_MIN_CR (Rs 2 Cr a day) floor on this reading the same day, before any unseen
 # window (the user's call): at ~Rs 5,000 a stock, turnover is not what limits a Rs 1 lakh account. The
 # after-costs and index-fund readings keep NET_MIN_CR. Measured 2026-10-13: NEITHER rule keeps out SME
@@ -108,14 +108,24 @@ HOLD_DRAWS = 2000
 HOLD_SEED = 20261013
 # The order check (2026-10-13). Written before any unseen window as the rule that would SWITCH a scan's
 # table to momentum order; the same day, still before any result, the operator switched 🚀 and 🌬️ to
-# momentum order (SCANS `order`), so it now CHECKS the order in use, its bar unchanged: over the scan's
-# FIRST `windows` separate (non-overlapping), finished unseen windows with at least `min_n` holdable
-# matches, momentum's top HOLD_K must beat on average at least `min_avg_pct`% of the random picks AND
-# average above Rank's top HOLD_K — "held"; otherwise "did not hold", which goes to the operator as
-# evidence (nothing switches back by itself; December plan rule 27). Luck alone passes a 70% average over
-# four windows about 1 time in 12 (8.6%); "3 of 4 above half" would pass 31% of the time. 🌱 lists by
-# Rank and is not checked (its 3-year study found momentum inside it flips year to year).
+# momentum order (SCANS `order`), so it then CHECKED the order in use, its bar unchanged. Since 2026-11-05 (the
+# operator's call, before any unseen window had a result) it reads RAM Rank instead, on what Kite can trade
+# (scan_records_job.order_reading), whichever way the table lists: over the scan's FIRST `windows` separate
+# (non-overlapping), finished unseen windows with at least `min_n` such stocks, RAM Rank's top HOLD_K must beat on
+# average at least `min_avg_pct`% of the random picks AND average above Rank's top HOLD_K — "held"; otherwise "did
+# not hold", which goes to the operator as evidence (nothing switches by itself; December plan rule 27). A window
+# with no RAM has no place to count, so the check starts again from the first window that has it. Luck alone passes
+# a 70% average over four windows about 1 time in 12 (8.6%); "3 of 4 above half" would pass 31% of the time. 🌱 lists
+# by Rank and is not checked (its 3-year study found momentum inside it flips year to year).
 ORDER_RULE = dict(scans=("playbook", "leaders"), windows=4, min_avg_pct=70.0, min_n=30)
+# Kite's buy filters beyond HOLD_CAPS, SHARIAH_MIN_CR and HOLD_MAX_PRICE, as far as PRISM can see them
+# (kite_v2/engine/select.py and rules.py read zone_lo, zone_hi and stages the same way): an NSE stock, 0-25% above its
+# V-Stop inclusive, Weinstein stage 1 or 2, in the codes the feed writes (playbook_feed_job.STAGE_CODES).
+ORDER_EXCHANGE = "NSE"
+ORDER_ZONE = (0.0, 25.0)
+ORDER_STAGES = ("1", "2")
+ORDER_NOT_IN_DATA = "The price band, ASM, GSM and the SME lot size are not in PRISM's data."
+ORDER_FROM_RAM = "Older windows have no RAM, so the check counts from the first window that has it"
 # The revenue-led check (registered 2026-10-15, before any unseen window has a result). Inside 🚀, do the matches
 # that are also revenue_led (the test 🌱 uses) beat the rest? A Kite-side plan proposed trading that in Kite's window
 # 2; the frozen go-rule needs the SAME design in two windows in a row, so the operator kept Kite as it is and chose to
@@ -755,7 +765,8 @@ TECHNICAL_COLUMNS = ("rank", "_new", "name", "close_price", "_liq_cr", "dist_to_
 # 🔢 RAM (2026-11-05, the operator's call): a list you act on answers one question, so the 🚀 Playbook, B and C open on one
 # table of their own, by RAM Rank, strongest first, no RAM last. Core and Technical stay as they are, on every list. Price
 # is there because one share must fit the account. Display only: only the tab reads this view and its order, and no
-# list, record, order check, feed or fingerprint moves (tests/test_ram_display.py). It takes the 1,030px with nothing
+# list, record, feed or fingerprint moves (tests/test_ram_display.py); the order check sorts RAM Rank on its own frame
+# (scan_records_job.order_reading). It takes the 1,030px with nothing
 # shrunk: every name on the three lists fits 280 (4 Nov), so Stock 312 and Sector 170, which shows 82-84% of its names in
 # full where 125 showed 73% (seen cut in the browser: "Capital Goods - Elec", "Air Transport Servic").
 RAM_VIEW = "🔢 RAM"
@@ -942,7 +953,7 @@ def table_config(members_date_label: str, scan: dict = None) -> dict:
             _UNRECORDED_RANK_TIP if "_layer" in (scan or {}).get("extra", ()) else      # 🚀's B or C
             "PRISM's overall rank — click this header, then Sort ascending, to list by it. The list is "
             "sorted by Momentum, high to low (since 2026-10-13); the card's order check records whether "
-            "that order keeps beating random picks. Inside this scan the top of the Rank did not beat the "
+            "RAM Rank's order keeps beating random picks. Inside this scan the top of the Rank did not beat the "
             "rest in the 2026-10-06 test, so every match is the scan." if momentum_ordered(scan or {}) else
             "PRISM's overall rank. The list is sorted by it for reading only: inside this scan the top of "
             "the Rank did not beat the rest in the 2026-10-06 test, so every match is the scan.")),
@@ -1049,10 +1060,12 @@ def non_overlapping(ws) -> int:
 def order_rule(ws) -> dict:
     """ORDER_RULE applied to a scan's unseen windows: state 'pending' until it has ORDER_RULE['windows']
     separate (non-overlapping, earliest end first — the same greedy choice as non_overlapping), finished
-    windows carrying a hold reading of at least min_n matches; then 'held' or 'did not hold' on those
-    first windows only, so a later window can never reopen it. counted = windows that count so far."""
-    usable = [w for w in ws if w.get("final") and int((w.get("hold") or {}).get("n", 0)) >= ORDER_RULE["min_n"]
-              and w["hold"].get("momentum_pct") is not None and w["hold"].get("rank_pct") is not None]
+    windows whose order reading has at least min_n stocks and places both RAM Rank and Rank; then 'held' or
+    'did not hold' on those first windows only, so a later window can never reopen it. A window from before the
+    reading, or from a copy with no RAM, does not count. counted = windows that count so far."""
+    read = lambda w: w.get("order") or {}
+    usable = [w for w in ws if w.get("final") and int(read(w).get("n", 0)) >= ORDER_RULE["min_n"]
+              and read(w).get("ram_pct") is not None and read(w).get("rank_pct") is not None]
     picked, last = [], ""
     for w in sorted(usable, key=lambda w: (w["end"], w["start"])):
         if w["start"] >= last and len(picked) < ORDER_RULE["windows"]:
@@ -1060,10 +1073,10 @@ def order_rule(ws) -> dict:
             last = w["end"]
     out = dict(counted=len(picked), state="pending")
     if len(picked) == ORDER_RULE["windows"]:
-        mom = float(np.mean([float(w["hold"]["momentum_pct"]) for w in picked]))
-        rank = float(np.mean([float(w["hold"]["rank_pct"]) for w in picked]))
-        held = mom >= ORDER_RULE["min_avg_pct"] and mom > rank
-        out.update(state="held" if held else "did not hold", mom_avg=mom, rank_avg=rank)
+        ram = float(np.mean([float(w["order"]["ram_pct"]) for w in picked]))
+        rank = float(np.mean([float(w["order"]["rank_pct"]) for w in picked]))
+        held = ram >= ORDER_RULE["min_avg_pct"] and ram > rank
+        out.update(state="held" if held else "did not hold", ram_avg=ram, rank_avg=rank)
     return out
 
 
@@ -1088,11 +1101,20 @@ def revenue_led_rule(ws) -> dict:
     return out
 
 
+def order_pool_words() -> str:
+    """What the order check's pool passes, from the settings the job reads: one line for the card and the guide."""
+    first, last = (str(HOLD_CAPS[i]).replace(" Cap", "") for i in (0, -1))
+    return (f"{SHARIAH_STATUSES[0]}, {ORDER_EXCHANGE}, {first} to {last}, ₹{SHARIAH_MIN_CR:g} Cr a day, up to "
+            f"₹{HOLD_MAX_PRICE:,.0f} a share, {ORDER_ZONE[0]:g}–{ORDER_ZONE[1]:g}% above the V-Stop, "
+            f"Stage {' or '.join(ORDER_STAGES)}")
+
+
 def _hold_line(scan: dict, ws, c: dict, esc) -> str:
     """Under the unseen record: per window, HOLD_K matches a Rs 1 lakh account can hold, picked at random
-    — the typical result after costs and its 10th-90th range — and where momentum's and Rank's top HOLD_K
-    land among those picks; then, for the scans ORDER_RULE checks, where the check stands. Empty until a
-    window carries the reading."""
+    — the typical result after costs and its 10th-90th range — and where Rank's top HOLD_K lands among those
+    picks; then, for the scans ORDER_RULE checks, where RAM Rank's and Rank's top HOLD_K land among random picks of
+    what Kite can trade, "–" for a window with no such reading, and where the check stands. Empty until a window
+    carries the reading."""
     rows = [w for w in ws if "median_pp" in (w.get("hold") or {})]
     if not rows:
         return ""
@@ -1101,30 +1123,31 @@ def _hold_line(scan: dict, ws, c: dict, esc) -> str:
                      f'{float(w["hold"]["p90_pp"]):+.1f})' for w in rows)
     loss = " / ".join(f'{int(w["hold"]["loss_pct"])}%' for w in rows)
     pct = lambda v: "–" if v is None else f"{int(v)}%"
-    mom = " / ".join(pct(w["hold"].get("momentum_pct")) for w in rows)
     rnk = " / ".join(pct(w["hold"].get("rank_pct")) for w in rows)
     h0 = rows[0]["hold"]
     names = [str(v).replace(" Cap", "") for v in h0.get("caps", HOLD_CAPS)]
     caps = ", ".join(names[:-1]) + " and " + names[-1] if len(names) > 1 else "".join(names)
     rule = note = ""
     if scan.get("key") in ORDER_RULE["scans"]:
-        # 2026-11-05: on a list that opens on 🔢 RAM the sentence says whose order is whose; the check reads momentum's.
-        lists, which = (("🏆 Core and 📈 Technical list by momentum since 13 Oct, chosen before any of these windows, and "
-                         f"{RAM_VIEW} by RAM Rank", "momentum's order") if RAM_VIEW in scan_views(scan) else
-                        ("The table lists by momentum since 13 Oct, chosen before any of these windows", "that order"))
-        note = (f' {lists}; the order '
-                f'check records whether {which} keeps beating random picks — it holds if its top {k} '
-                f'beats {ORDER_RULE["min_avg_pct"]:.0f}%+ of them on average over {ORDER_RULE["windows"]} '
-                f'separate windows, and beats Rank\'s.')
+        # 2026-11-05: the check reads RAM Rank whichever way the table lists, so the sentence says whose order is whose.
+        lists = (f"🏆 Core and 📈 Technical list by momentum since 13 Oct and {RAM_VIEW} by RAM Rank"
+                 if RAM_VIEW in scan_views(scan) else "The table lists by momentum since 13 Oct")
+        note = (f' {lists}; the order check reads RAM Rank. What Kite can trade: {order_pool_words()}. {ORDER_NOT_IN_DATA} '
+                f'The check holds if RAM Rank\'s top {k} beats {ORDER_RULE["min_avg_pct"]:.0f}%+ of random picks of those '
+                f'stocks on average over {ORDER_RULE["windows"]} separate windows, and beats Rank\'s. {ORDER_FROM_RAM}, and '
+                f'only with {ORDER_RULE["min_n"]}+ of those stocks.')
+        placed = lambda key: " / ".join(pct((w.get("order") or {}).get(key)) for w in rows)
         v = order_rule(ws)
-        rule = (f' · Order check: {v["counted"]} of {ORDER_RULE["windows"]} separate windows in'
-                if v["state"] == "pending" else
-                f' · Order check after {ORDER_RULE["windows"]} separate windows: momentum order {v["state"]} '
-                f'(its top {k} beat {v["mom_avg"]:.0f}% of random picks on average, Rank\'s '
-                f'{v["rank_avg"]:.0f}%)')
+        rule = (f' · Among what Kite can trade, RAM Rank\'s top {k} beat {placed("ram_pct")} of random picks, '
+                f'Rank\'s top {k} {placed("rank_pct")}'
+                + (f' · Order check: {v["counted"]} of {ORDER_RULE["windows"]} separate windows in'
+                   if v["state"] == "pending" else
+                   f' · Order check after {ORDER_RULE["windows"]} separate windows: RAM Rank\'s order {v["state"]} '
+                   f'(its top {k} beat {v["ram_avg"]:.0f}% of random picks on average, Rank\'s '
+                   f'{v["rank_avg"]:.0f}%)'))
     return (f'<div style="font-size:0.7rem;color:{c["text_secondary"]};margin-top:5px;">Holding {k} of them, '
             f'picked at random: {esc(res)} after costs · lost money in {esc(loss)} of picks · '
-            f'momentum\'s top {k} beat {esc(mom)} of them, Rank\'s top {k} {esc(rnk)}{esc(rule)}</div>'
+            f'Rank\'s top {k} beat {esc(rnk)} of them{esc(rule)}</div>'
             f'<div style="font-size:0.66rem;color:{c["text_muted"]};margin-top:2px;">From the {esc(caps)} cap '
             f'matches with one share at most ₹{float(h0["max_price"]):,.0f} (what ₹1 lakh across {k} can hold, '
             f'whatever they trade a day), {int(h0["draws"]):,} random picks each window with a fixed seed, a '

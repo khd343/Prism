@@ -299,7 +299,7 @@ def test_the_measurement_settings_are_read_not_typed(monkeypatch):
     monkeypatch.setattr(S, "NET_COST_PP", 1.5)
     monkeypatch.setattr(S, "ORDER_RULE", dict(S.ORDER_RULE, windows=6, min_avg_pct=75.0))
     t = _text(G.reference_html(_RECORDS))
-    for s in ("Holding 25", "top 25 by momentum", "₹7,000", "1.5-point round trip", "first 6 separate",
+    for s in ("Holding 25", "top 25 by RAM Rank", "₹7,000", "1.5-point round trip", "first 6 separate",
               "at least 75%"):
         assert s in t, s
 
@@ -396,12 +396,12 @@ def test_the_unseen_record_and_the_order_check_follow_the_records():
     rec = _rec("playbook")
     assert "None has finished yet" in _guide("playbook", rec)
     assert "So far 0 of" in _guide("playbook", rec)
-    hold = dict(k=20, n=60, momentum_pct=80, rank_pct=50)
+    order = dict(k=20, n=60, ram_pct=80, rank_pct=50)
     chain = [("2026-10-31", "2026-11-30"), ("2026-11-30", "2026-12-31"), ("2026-12-31", "2027-01-29"),
              ("2027-01-29", "2027-02-26")]
-    rec["out_of_sample"] = [dict(start=a, end=b, final=True, hold=hold) for a, b in chain]
+    rec["out_of_sample"] = [dict(start=a, end=b, final=True, order=order) for a, b in chain]
     t = _guide("playbook", rec)
-    assert "4 finished so far" in t and "Decided: momentum order held" in t
+    assert "4 finished so far" in t and "Decided: RAM Rank's order held" in t
     assert "Order check" not in _guide("compounder", _rec("compounder")), "🌱 is not order-checked"
 
 

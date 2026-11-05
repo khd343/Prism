@@ -8,7 +8,9 @@ record and no fingerprint, and the Playbook feed keeps its own order (rows by sy
 Measured before the call (docs/december-2026-plan.md rule 26 E-F): on windows that do not overlap, the top
 25 by momentum sat at the 93/63/83rd percentile of random picks inside the Playbook and 68/69/79 inside
 Leading-Sector; the top 25 by Rank at 38/33/73 and 38/60/46. ORDER_RULE, written the same day to decide
-that switch, now CHECKS the order in use with its bar unchanged (tests/test_scan_hold_reading.py).
+that switch, then CHECKED the order in use with its bar unchanged (tests/test_scan_hold_reading.py). Since
+2026-11-05 it reads RAM Rank on these same two scans, whichever way their tables list
+(tests/test_scan_order_reading.py).
 
 Run with: pytest tests/test_scan_order.py -v
 """
@@ -56,10 +58,10 @@ def test_the_compounder_keeps_rank_order():
     assert _ids(S.scan_table(_frame(), _every("compounder"))) == "ADEFHCGB"
 
 
-def test_the_order_check_measures_exactly_the_order_in_use():
+def test_the_order_check_runs_on_exactly_the_scans_listed_by_momentum():
     momentum = sorted(k for k, s in _BY_KEY.items() if S.momentum_ordered(s))
     assert momentum == ["leaders", "playbook"] == sorted(S.ORDER_RULE["scans"]), (
-        "the scans listed by momentum are the ones whose order the card checks — no more, no fewer")
+        "the scans listed by momentum are the ones the card's order check runs on — no more, no fewer")
 
 
 def test_the_sorted_column_is_on_screen_in_both_views():

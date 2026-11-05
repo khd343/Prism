@@ -43,6 +43,10 @@ window leaves it like a split, its kept-in reading recorded beside (as_recorded)
 that cannot be read stops the run, and so does a month about to be written final with a fall not yet checked — the
 stop says what the check must look like.
 
+Since 2026-11-05 (the operator's call): the order check reads RAM Rank, on what Kite can trade (order_reading, stored on each
+window as `order`), and hold_reading no longer reads momentum. On a copy with no RAM, or missing a filter column, that reading
+simply does not count: it never stops the run.
+
 The file is rewritten only when a measured value changed, so a quiet week makes no commit.
 """
 import contextlib
@@ -172,14 +176,44 @@ def index_returns(bench_early, bench_late, days: int) -> dict:
     return {k: round(float(r[k]), 2) for k in BENCHMARK_INDICES if k in r.index}
 
 
+def _col(early: pd.DataFrame, c: str) -> pd.Series:
+    """A column of the copy, blank when the copy has none: a filter on a missing column passes nothing and raises nothing."""
+    return early[c] if c in early.columns else pd.Series(np.nan, index=early.index)
+
+
+def _number(early: pd.DataFrame, c: str) -> pd.Series:
+    return pd.to_numeric(_col(early, c), errors="coerce")
+
+
+def _random_picks(early: pd.DataFrame, ret: pd.Series, ok: pd.Series) -> tuple:
+    """What hold_reading and order_reading share: the stocks `ok` keeps, in company_id order, with their return, Rank and RAM
+    Rank, and S.HOLD_DRAWS random picks of S.HOLD_K of them, equal-weighted, less S.NET_COST_PP. A FIXED seed over that
+    order, so a window always reads the same."""
+    held = pd.DataFrame({"company_id": early["company_id"].astype(str), "ret": ret, "rank": _number(early, "rank"),
+                         "ram": _number(early, "ram_rank")})[ok]
+    held = held.sort_values("company_id").reset_index(drop=True)
+    r = held["ret"].to_numpy()
+    rng = np.random.default_rng(S.HOLD_SEED)
+    picks = rng.random((S.HOLD_DRAWS, len(r))).argsort(axis=1)[:, :S.HOLD_K]
+    return held, r[picks].mean(axis=1) - S.NET_COST_PP
+
+
+def _placed(held: pd.DataFrame, sims: np.ndarray, col: str):
+    """The share of the picks that `col`'s top S.HOLD_K beat, low first, ties by company id, blanks dropped; None when
+    fewer than S.HOLD_K have a value."""
+    top = held.dropna(subset=[col]).sort_values([col, "company_id"])
+    if len(top) < S.HOLD_K:
+        return None
+    return int(round(float((sims < top["ret"].head(S.HOLD_K).mean() - S.NET_COST_PP).mean() * 100)))
+
+
 def hold_reading(early: pd.DataFrame, ret: pd.Series, match: pd.Series) -> dict:
-    """"What if you held S.HOLD_K of them?" (2026-10-13, ui_scans.HOLD_* and ORDER_RULE). From the matches
+    """"What if you held S.HOLD_K of them?" (2026-10-13, ui_scans.HOLD_*). From the matches
     that are a Mega, Large, Mid or Small cap (S.HOLD_CAPS, whatever they trade a day) and whose one share
     costs at most S.HOLD_MAX_PRICE at the window's start — what a Rs 1 lakh account can hold — S.HOLD_DRAWS
     random picks of S.HOLD_K, equal-weighted, less S.NET_COST_PP: their
     median, 10th and 90th percentile and the share that lost money; and the share of those picks that
-    momentum's top S.HOLD_K and Rank's top S.HOLD_K each beat. A FIXED seed over the matches in
-    company_id order, so a window always reads the same. Only n when fewer than MIN_N can be held."""
+    Rank's top S.HOLD_K beat. Only n when fewer than MIN_N can be held."""
     price = pd.to_numeric(early["close_price"], errors="coerce")
     cap = early["market_category"] if "market_category" in early.columns else pd.Series(np.nan, index=early.index)
     ok = match & cap.isin(S.HOLD_CAPS) & (price <= S.HOLD_MAX_PRICE)
@@ -187,25 +221,40 @@ def hold_reading(early: pd.DataFrame, ret: pd.Series, match: pd.Series) -> dict:
                draws=S.HOLD_DRAWS, n=int(ok.sum()))
     if out["n"] < MIN_N:
         return out
-    col = lambda c: (pd.to_numeric(early[c], errors="coerce") if c in early.columns
-                     else pd.Series(np.nan, index=early.index))
-    held = pd.DataFrame({"company_id": early["company_id"].astype(str), "ret": ret,
-                         "mom": col("momentum_score"), "rank": col("rank")})[ok]
-    held = held.sort_values("company_id").reset_index(drop=True)
-    r = held["ret"].to_numpy()
-    rng = np.random.default_rng(S.HOLD_SEED)
-    picks = rng.random((S.HOLD_DRAWS, len(r))).argsort(axis=1)[:, :S.HOLD_K]
-    sims = r[picks].mean(axis=1) - S.NET_COST_PP
-
-    def placed(col: str, ascending: bool):
-        top = held.dropna(subset=[col]).sort_values([col, "company_id"], ascending=[ascending, True])
-        if len(top) < S.HOLD_K:
-            return None
-        return int(round(float((sims < top["ret"].head(S.HOLD_K).mean() - S.NET_COST_PP).mean() * 100)))
-
+    held, sims = _random_picks(early, ret, ok)
     out.update(median_pp=round(float(np.median(sims)), 1), p10_pp=round(float(np.percentile(sims, 10)), 1),
                p90_pp=round(float(np.percentile(sims, 90)), 1), loss_pct=int(round(float((sims < 0).mean() * 100))),
-               momentum_pct=placed("mom", False), rank_pct=placed("rank", True))
+               rank_pct=_placed(held, sims, "rank"))
+    return out
+
+
+def order_reading(early: pd.DataFrame, ret: pd.Series, match: pd.Series) -> dict:
+    """What ORDER_RULE reads (2026-11-05, the operator's call): does RAM Rank's order beat random picks of what Kite can
+    trade? The pool is the scan's matches that pass Kite's buy filters as far as PRISM can see them: the Shariah label, by
+    equality as shariah_reading reads it; an NSE id; S.HOLD_CAPS; S.SHARIAH_MIN_CR a day or more; one share at most
+    S.HOLD_MAX_PRICE; S.ORDER_ZONE above the V-Stop, both ends in, as kite_v2/engine/select.py reads its zone; and
+    S.ORDER_STAGES, in the feed's own codes. The price band, ASM, GSM and the SME lot size are not in PRISM's data. A blank,
+    or a column the copy lacks, passes nothing, so such a copy reads n = 0 and the run goes on.
+
+    It records its size and the filters' values (a final window is written once). From MIN_N stocks: hold_reading's draws on
+    this pool, and the share of them that RAM Rank's top S.HOLD_K and Rank's top S.HOLD_K each beat (ram_pct, rank_pct;
+    ram_pct is that share, not the sheet's RAM %), None when fewer than S.HOLD_K have that rank. STAGE_CODES is imported
+    here, not at the top: that module imports this one."""
+    from ui.playbook_feed_job import STAGE_CODES
+    pool = (match & _col(early, "shariah_status").eq(SHARIAH_STATUSES[0])
+            & _col(early, "company_id").astype(str).str.startswith(f"{S.ORDER_EXCHANGE}:", na=False)
+            & _col(early, "market_category").isin(S.HOLD_CAPS)
+            & (S.traded_value_cr(early) >= S.SHARIAH_MIN_CR)
+            & (_number(early, "close_price") <= S.HOLD_MAX_PRICE)
+            & _number(early, "dist_to_vstop").between(*S.ORDER_ZONE)
+            & _col(early, "weinstein_stage").map(STAGE_CODES).isin(S.ORDER_STAGES))
+    out = dict(k=S.HOLD_K, shariah=SHARIAH_STATUSES[0], exchange=S.ORDER_EXCHANGE, caps=list(S.HOLD_CAPS),
+               min_cr=S.SHARIAH_MIN_CR, max_price=S.HOLD_MAX_PRICE, zone=list(S.ORDER_ZONE), stages=list(S.ORDER_STAGES),
+               cost_pp=S.NET_COST_PP, draws=S.HOLD_DRAWS, n=int(pool.sum()))
+    if out["n"] < MIN_N:
+        return out
+    held, sims = _random_picks(early, ret, pool)
+    out.update(ram_pct=_placed(held, sims, "ram"), rank_pct=_placed(held, sims, "rank"))
     return out
 
 
@@ -314,6 +363,7 @@ def _readings(early: pd.DataFrame, ret: pd.Series, in_scan: pd.Series, scan: dic
                beat_pct=int(round(float((excess[match] > 0).mean() * 100))),
                n=int(match.sum()), **head, net=net)
     out["hold"] = hold_reading(early, ret, match)
+    out["order"] = order_reading(early, ret, match)
     cut = shariah_reading(early, ret, match)
     if cut is not None:
         out["shariah"] = cut
@@ -348,7 +398,7 @@ def measure_window(early: pd.DataFrame, late: pd.DataFrame, scan: dict, start: s
     Hand checks (the operator's demerger rule, 2026-10-18): `checks` (S.load_checks) decide each fall (fall_status). A
     stock a check shows with a demerger inside the window, named fall or not, leaves every reading below like a split:
     from the matches and from the market's median, so a window reads one market in every scan. The matches among
-    them are named (set_aside: [id, ex-date, subject]) with the headline, hold and revenue_led read with them kept in
+    them are named (set_aside: [id, ex-date, subject]) with the headline, hold, order and revenue_led read with them kept in
     beside the readings (as_recorded, shown, never what a registered rule reads); a fall checked with none stays
     (checked); the rest are to_check, and main never writes such a window final.
 
@@ -359,6 +409,9 @@ def measure_window(early: pd.DataFrame, late: pd.DataFrame, scan: dict, start: s
 
     revenue_led (2026-10-15), for the scans S.REVENUE_LED_RULE names: the matches split by revenue_led
     (revenue_led_reading), the reading the revenue-led check decides on.
+
+    order (2026-11-05), on every window: RAM Rank's and Rank's top S.HOLD_K among random picks of what Kite can trade
+    (order_reading), the reading the order check decides on.
 
     shariah (2026-10-17): the same window read on its Shariah matches of the four caps (shariah_reading);
     report-only, no registered rule reads it."""
@@ -383,7 +436,7 @@ def measure_window(early: pd.DataFrame, late: pd.DataFrame, scan: dict, start: s
     if set_aside:
         out["set_aside"] = set_aside
         seen = _readings(early, ret, in_scan, scan, start, end, bench_early, bench_late, head)
-        out["as_recorded"] = {k: seen[k] for k in ("median_excess_pp", "beat_pct", "n", "hold", "revenue_led")
+        out["as_recorded"] = {k: seen[k] for k in ("median_excess_pp", "beat_pct", "n", "hold", "order", "revenue_led")
                               if k in seen}
     if checked:
         out["checked"] = checked

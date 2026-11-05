@@ -415,8 +415,8 @@ def _order(scan: dict) -> list:
         out.insert(0, f"The table opens on the {S.RAM_VIEW} view, by RAM Rank, strongest first, no RAM last; 🏆 Core and 📈 "
                       f"Technical read as below.")
     if scan["key"] in S.ORDER_RULE["scans"]:
-        out.append(f"The order check (see Its record, below) records whether the top {S.HOLD_K} by momentum "
-                   f"keeps beating random picks.")
+        out.append(f"The order check (see Its record, below) reads RAM Rank, whichever way the table lists: whether the "
+                   f"top {S.HOLD_K} by RAM Rank, among what Kite can trade, keeps beating random picks.")
     return out
 
 
@@ -488,18 +488,25 @@ def _unseen(scan: dict, rec, state: str) -> list:
             f"Scans tab), written once and never re-measured."]
 
 
+def _order_check_words() -> str:
+    """What the order check asks, written from its settings: one text for each checked scan's guide and the general section."""
+    rule = S.ORDER_RULE
+    return (f"among what Kite can trade ({S.order_pool_words()}), over the first {rule['windows']} separate unseen "
+            f"windows with RAM and at least {rule['min_n']} such stocks, does the top {S.HOLD_K} by RAM Rank beat at "
+            f"least {rule['min_avg_pct']:.0f}% of random picks of them on average, and beat the top {S.HOLD_K} by "
+            f"Rank? \"Held\" or \"did not hold\" — evidence about the order, never an automatic switch. "
+            f"{S.ORDER_NOT_IN_DATA} {S.ORDER_FROM_RAM}.")
+
+
 def _order_check(scan: dict, rec, state: str) -> list:
     if scan["key"] not in S.ORDER_RULE["scans"]:
         return []
     rule = S.ORDER_RULE
-    text = (f"**Order check:** over the first {rule['windows']} separate unseen windows, does the top "
-            f"{S.HOLD_K} by momentum beat at least {rule['min_avg_pct']:.0f}% of random picks on average, and "
-            f"beat the top {S.HOLD_K} by Rank? \"Held\" or \"did not hold\" — evidence about the order, never "
-            f"an automatic switch.")
+    text = f"**Order check:** {_order_check_words()}"
     if state == "measured":
         v = S.order_rule((rec or {}).get("out_of_sample") or [])
         text += (f" So far {v['counted']} of {rule['windows']} windows are in." if v["state"] == "pending" else
-                 f" Decided: momentum order {v['state']} (its top {S.HOLD_K} beat {v['mom_avg']:.0f}% of random "
+                 f" Decided: RAM Rank's order {v['state']} (its top {S.HOLD_K} beat {v['ram_avg']:.0f}% of random "
                  f"picks on average, Rank's {v['rank_avg']:.0f}%).")
     return [text]
 
@@ -593,20 +600,17 @@ def general_sections(scans=None) -> list:
             f"- **Holding {S.HOLD_K}:** for each unseen window, {S.HOLD_DRAWS:,} random picks of {S.HOLD_K} "
             f"stocks from the {_caps_words()} cap matches with one share at most ₹{S.HOLD_MAX_PRICE:,.0f} — what "
             f"₹1 lakh spread across {S.HOLD_K} stocks can hold — after the round trip: the typical result, its "
-            f"10th–90th percentile range, how often a pick lost money, and where the top {S.HOLD_K} by momentum "
-            f"and by Rank land among the random picks.",
+            f"10th–90th percentile range, how often a pick lost money, and where the top {S.HOLD_K} by Rank lands "
+            f"among the random picks.",
             "On June–October 2026 data, random picks of 10 Playbook stocks ranged from 0 to +29% (10th–90th "
             "percentile) and picks of 20 from +4.7 to +24%: how many stocks you hold changed the result far "
             "more than which order you picked them in.",
-            f"- **Order check** ({checked}): over the first {rule['windows']} separate unseen windows with at "
-            f"least {rule['min_n']} holdable matches, does the top {S.HOLD_K} by momentum beat at least "
-            f"{rule['min_avg_pct']:.0f}% of random picks on average, and beat the top {S.HOLD_K} by Rank? "
-            f"\"Held\" or \"did not hold\" — evidence about the order, never an automatic switch.",
+            f"- **Order check** ({checked}): {_order_check_words()}",
         ]),
         ("How to read the table", [
             *(f"- **{view}** — {VIEW_WHAT[view]}" for view in S.SCAN_VIEWS),
             f"- **{S.RAM_VIEW}** — the 🚀 lists open on this view, sorted by RAM Rank, strongest first, no RAM last; 🏆 Core and "
-            f"📈 Technical read as before, and the order check still measures Momentum's top picks.",
+            f"📈 Technical read as before. The order check reads RAM Rank too, on what Kite can trade, whichever view is open.",
             "- **Filters** only hide rows of the finished list. The recipe always ranks the whole market, so a "
             "filter can never put a stock into a scan.",
             "- **🆕** — not in the scan on the last archived month-end copy. **📄** — its quarterly result was "
