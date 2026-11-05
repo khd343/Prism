@@ -293,6 +293,14 @@ TECHNICAL_COLS = {
     "SMA 200D":  "sma_200d",   # Criterion 1: price > 200D MA (long-term trend gate)
     "SMA 50D":   "sma_50d",    # Criterion 5: 50D > 150D + 200D (right stacking)
     "SMA 30W":   "sma_30w",    # Criterion 2+3: price > 150D MA; 150D > 200D (30W × 5 = 150 trading days)
+    # RAM (2026-11-05): another job fills these four each night from NSE's own files. DISPLAY ONLY: the Tear-Sheet's RAM
+    # line, the Deep Scanner and the 🎯 Scans show them; no score, tier, verdict, framework, recipe or record reads them
+    # (tests/test_ram_display.py). Blank when not ranked; RAM Date alone is filled when RAM ran and did not rank a stock.
+    # `RAM Pct`, never `RAM %`: the sheet's own matcher folds a header to letters and digits, so RAM % would read as RAM.
+    "RAM":      "ram_score",
+    "RAM Rank": "ram_rank",
+    "RAM Pct":  "ram_pct",
+    "RAM Date": "ram_date",
     # MOMENTUM CONFIRMATION
     "RSI 14D": "rsi_14d",
     "Returns Vs Nifty 500 3M": "ret_vs_n500_3m",
@@ -816,14 +824,25 @@ def merge_datasets(datasets: Dict[str, pd.DataFrame]) -> pd.DataFrame:
     return master
 
 
+def ram_date_text(cells: pd.Series) -> pd.Series:
+    """RAM Date as 'YYYY-MM-DD' text, NaN where blank or unreadable: the one reading, for the loader and the Tear-Sheet.
+
+    The sheet's job writes 2026-11-03, but Google Sheets may turn that into a real date cell, so the XLSX load can hand
+    text, a datetime or a blank. ISO only: 03/11/2026 could be either month, and a session is never guessed. Without
+    the format, to_datetime would also count a bare number as nanoseconds from 1970, and the screen would say 1 Jan."""
+    return pd.to_datetime(cells.astype(object), errors="coerce", format="ISO8601").dt.strftime("%Y-%m-%d")
+
+
 def coerce_numeric_columns(df: pd.DataFrame) -> pd.DataFrame:
     """Convert all non-identifier columns to numeric."""
     string_cols = {
         "company_id", "name", "market_category", "eligibility",
-        "industry", "sector", "insider_trading",
+        "industry", "sector", "insider_trading", "ram_date",
     }
     num_cols = [c for c in df.columns if c not in string_cols]
     df[num_cols] = df[num_cols].apply(pd.to_numeric, errors="coerce")
+    if "ram_date" in df.columns:
+        df["ram_date"] = ram_date_text(df["ram_date"])
     return df
 
 
@@ -939,6 +958,7 @@ def compute_derived_signals(df: pd.DataFrame) -> pd.DataFrame:
         # ── Technicals ── (close_price/market_cap/market_category are Technicals-only now → backstop all 3)
         "close_price", "market_cap", "market_category",
         "sma_200d", "sma_50d",
+        "ram_score", "ram_rank", "ram_pct", "ram_date",      # in the sheet since 5 Nov 2026, absent from every older copy
         "vol_sma_5d", "vol_sma_10d", "vol_sma_20d", "vol_sma_50d",
         "volume",
         "vstop_value", "last_vstop_change",

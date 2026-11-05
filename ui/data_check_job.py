@@ -41,7 +41,7 @@ OTHER_COLUMNS = ["opm", "roce", "operating_cash_flow", "total_assets", "promoter
                  "debt_to_equity", "rev_lq", "pat_lq", "listed_days"]
 CORE_FLOOR, OTHER_FLOOR = 0.95, 0.80
 TEXT_COLUMNS = {"company_id", "name", "market_category", "eligibility", "industry", "sector",
-                "insider_trading"}             # the loader keeps these as text (coerce_numeric_columns)
+                "insider_trading", "ram_date"}  # the loader keeps these as text (coerce_numeric_columns)
 MISSING_WORDS = {"", "null", "nan", "none", "-", "na", "n/a"}
 MAX_TEXT_SHARE = 0.05                   # 0.0% of filled cells in any number column on 2026-10-10
 MIN_INSIDER_NUMBERS = 0.95              # 100% of 252 filled cells are numbers

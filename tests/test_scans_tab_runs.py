@@ -222,6 +222,36 @@ def test_the_view_switch_reaches_the_table(tab):
     assert list(tab.dataframe[0].value["name"]) == core_names, "a view changes columns, never the list"
 
 
+def test_an_old_copy_without_ram_runs_both_views_with_the_columns_blank(tab):
+    """This market has no RAM columns, as no archived copy does (2026-11-05): the real tab runs and both views carry them
+    blank, never 0."""
+    from ui import ui_scans as S
+    play = S.SCANS[0]
+    assert tab.dataframe[0].value["ram_rank"].isna().all()
+    assert "ram_rank" in tab.dataframe[0].proto.column_order and "ram_pct" not in tab.dataframe[0].proto.column_order
+    _control(tab, "scan_view").set_value("📈 Technical").run()
+    assert not tab.exception, [e.value for e in tab.exception]
+    assert list(tab.dataframe[0].proto.column_order) == list(S.table_columns(play, "📈 Technical"))
+    assert tab.dataframe[0].value["ram_pct"].isna().all()
+
+
+def test_ram_values_reach_the_table_and_the_order_stays_the_scans_own(tmp_path):
+    """RAM reversed against Momentum: the 🚀 list still reads by Momentum, high to low, and carries the values."""
+    from streamlit.testing.v1 import AppTest
+    source = _app_source(_records_without_baselines()).replace(
+        "filt = df\n",
+        "df = df.assign(ram_rank=df['momentum_score'].rank(), ram_pct=100.0 - df['momentum_score'])\nfilt = df\n", 1)
+    script = tmp_path / "scans_tab.py"
+    script.write_text(source, encoding="utf-8")
+    at = AppTest.from_file(str(script), default_timeout=60)
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+    table = at.dataframe[0].value
+    assert len(table) > 1 and table["momentum_score"].is_monotonic_decreasing
+    assert table["ram_rank"].is_monotonic_decreasing, "RAM Rank 1 is the lowest Momentum here, so it reads last"
+    assert (table["ram_pct"] == 100.0 - table["momentum_score"]).all()
+
+
 def test_the_full_record_panel_follows_the_chosen_scan(tab):
     """RUN: the one 'Full record' panel under the cards names the selected scan and holds its record —
     the windows for 🚀, the study for 🌱 (2026-10-08)."""

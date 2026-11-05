@@ -27,7 +27,7 @@ from ui.ui_liquidity import trade_line
 # which is exactly how the ">75d / >120d" string below got stranded (see the handler's comment).
 from core.forensic_engine import _SECTOR_DSO_THRESHOLDS, _DEFAULT_DSO_THRESHOLD
 # Same rule for the ⏳ Consolidation Base card and the SEPA panel's V box: the engine's lines and labels.
-from core.data_engine import CONSOLIDATION_BASE_LABELS, VCP_DRYUP_SHARE
+from core.data_engine import CONSOLIDATION_BASE_LABELS, VCP_DRYUP_SHARE, ram_date_text
 # The Shariah screen card reads the engine's columns and the shared vocabulary; it recomputes no rule.
 from config import SHARIAH_RULES
 from core.shariah import shariah_fact
@@ -2095,6 +2095,20 @@ def render_financial_insights(stock: pd.Series):
 # VERDICT SCORECARD — the 6-axis evidence grid (Layer 2 of the verdict)
 # ═══════════════════════════════════════════════════════════════
 
+def ram_line(stock: pd.Series) -> str:
+    """The RAM line, in words (2026-11-05): 'RAM 78.4% · #312 · 3 Nov'; 'RAM — · not ranked on 3 Nov' when RAM ran for
+    that session and did not rank this stock; 'RAM —' when the sheet holds no RAM for it (blank columns, an old copy).
+    No 'of N': the sheet holds only this app's stocks, so N cannot be read from it. RAM comes from the sheet, and no
+    score, list or record reads it."""
+    rank, pct = _finite(stock.get("ram_rank")), _finite(stock.get("ram_pct"))
+    iso = ram_date_text(pd.Series([stock.get("ram_date")], dtype=object)).iloc[0]
+    day = "" if pd.isna(iso) else f"{pd.Timestamp(iso).day} {pd.Timestamp(iso):%b}"
+    if np.isnan(rank):
+        return f"RAM — · not ranked on {day}" if day else "RAM —"
+    head = "RAM —" if np.isnan(pct) else f"RAM {pct:.1f}%"
+    return " · ".join(part for part in (head, f"#{rank:.0f}", day) if part)
+
+
 def render_verdict_scorecard(stock: pd.Series):
     """6-axis decision scorecard, mounted right under the verdict header.
     Each cell = the engine's axis pill (verdict_axis_*) + the key supporting metrics, and it
@@ -2275,9 +2289,16 @@ def render_verdict_scorecard(stock: pd.Series):
         _ds("Base",      (f"+{_base:.0f}%" if _base == _base else "—"), _base_ok),
     ])
     st.markdown(
-        f'<div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:0 0 12px 0;">'
+        f'<div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:0 0 6px 0;">'
         f'<span style="font-size:0.6rem;font-weight:800;color:{COLORS["text_muted"]};'
         f'letter-spacing:0.5px;">⏱️ ENTRY TIMING</span>{timing}</div>',
+        unsafe_allow_html=True,
+    )
+    # RAM (2026-11-05): a line of its own under the strip, not a chip on it (that strip's admission is closed by a live
+    # rule, tests/test_deep_signal_chips.py). No colour: nothing here grades the stock.
+    st.markdown(
+        f'<div style="font-size:0.62rem;font-weight:700;color:{COLORS["text_secondary"]};margin:0 0 12px 0;">'
+        f'{ram_line(stock)}{help_chip("RAM Rank")}</div>',
         unsafe_allow_html=True,
     )
 

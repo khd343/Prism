@@ -1161,7 +1161,7 @@ with tabs[1]:
 # is a click away. Kept OUTSIDE the tab block on purpose: the label-map scans there read dict keys
 # as header labels, and a width table must not count as a label.
 _DS_W = {
-    "rank": 50, "name": 180,
+    "rank": 46, "name": 180,
     # 🏆 Core — Improvement and Momentum take their widths from Quality and Technical. Liquidity (2026-10-09)
     # took 65px from space no text used, measured in the grid's own font (13px Source Sans + 16px): its
     # header needs 62; Rank's widest value "2712" 42 (55 → 50, every view gains 5); Soundness's header 78
@@ -1171,7 +1171,7 @@ _DS_W = {
     # widest, WATCH★, needed exactly 70). The 23px came from the two Core-only columns with room to give:
     # Sector 130 → 115 (the full name still shows for 69.7% of stocks, from 71.9% — no sector name falls
     # between 115 and 117) and the Score bar 105 → 97 (its header needs 49). Momentum stays at 105, beside
-    # the Technical view's Breakout bar. tests/test_wealth_tier_display.py pins the 93.
+    # the Technical view's Breakout bar (both 85 since 2026-11-05, below). tests/test_wealth_tier_display.py pins the 93.
     "verdict_direction": 80, "wealth_tier": 93, "sector": 115, "market_category": 80,
     "traded_value_cr": 65,
     "composite_score": 97, "gate_pass": 60,
@@ -1189,8 +1189,14 @@ _DS_W = {
     "data_coverage_pct": 75,
     # 📈 Technical — Trend 140 and Smart Money 160 (👥 Ownership) still show their longest labels
     # in full (135px, 156px; measured 2026-10-08) and bring both views inside the screen
-    "dist_to_vstop": 60, "momentum_score": 105, "d49_momentum_quality": 110, "rsi_14d": 50,
-    "breakout_score": 105, "d48_breakout_readiness": 90, "dist_ath": 65, "crs_52w": 60, "weinstein_stage": 140,
+    # RAM (2026-11-05): RAM Rank needs 75 and RAM % 57 (their headers 74 and 56), 132px in a view with 5 free. The Scans
+    # table's method (ui_scans.TABLE_WIDTHS, the grid's 14px font) found 61 with no header or common value cut: Rank 50 → 46
+    # (every view gains 4), Stop Δ 60 → 57 ("-18.1%" 57), RSI 50 → 40 ("100" 37), Off ATH 65 → 61 (its header) and the two
+    # bars 105 → 85 (headers Momentum 84, Breakout 70; Momentum's bar in Core follows). The other 66 would take Stock to
+    # 114px, so this one view passes the grid by 66 on a 1536px laptop: Trend, last, shows about "📈 Stage 2" until
+    # scrolled. tests/test_deep_scanner_views.py holds the number; the operator judges it on the screen.
+    "dist_to_vstop": 57, "momentum_score": 85, "d49_momentum_quality": 110, "rsi_14d": 40, "ram_rank": 75, "ram_pct": 57,
+    "breakout_score": 85, "d48_breakout_readiness": 90, "dist_ath": 61, "crs_52w": 60, "weinstein_stage": 140,
     # 👥 Ownership
     "governance_bonus": 90, "promoter_holdings": 80, "change_promoter_1y": 110, "pledged_percentage": 75,
     "fii_holdings": 55, "change_fii_lq": 80, "dii_holdings": 55, "change_dii_lq": 80, "smart_money_flow": 160,
@@ -1244,8 +1250,9 @@ with tabs[2]:
         # feeds the Breakout score (config BREAKOUT_SIGNALS["ath_distance"]); on its own it added
         # +0.04 to +0.05 beyond Breakout and Momentum in all four test windows, so its WEIGHT is
         # December's question (docs/december-2026-plan.md rule 15; tests/test_ath_and_new_highs.py).
+        # RAM (2026-11-05) follows the momentum group and leaves each verdict beside its number. Display only.
         "📈 Technical": ["rank","name","dist_to_vstop","momentum_score","d49_momentum_quality",
-                         "rsi_14d","breakout_score","d48_breakout_readiness","dist_ath",
+                         "rsi_14d","ram_rank","ram_pct","breakout_score","d48_breakout_readiness","dist_ath",
                          "crs_52w","weinstein_stage"],
         # 👥 Ownership (2026-10-05): each stake sits directly BEFORE its change, so level and move read
         # in one glance. Promoters rarely move in a quarter (68% flat), so theirs is the 1-year change.
@@ -1424,6 +1431,8 @@ with tabs[2]:
         "dii_holdings":    ("DII",      "%.1f%%"),
         "change_dii_lq":   ("DII Δ qtr", "%+.2fpp"),
         "rsi_14d":         ("RSI",      "%.0f"),
+        "ram_rank":        ("RAM Rank", "%.0f"),      # Technical: read by nothing (2026-11-05)
+        "ram_pct":         ("RAM %",    "%.1f"),
         "dividend_yield":  ("Div Yield", "%.2f%%"),   # Valuation: vendor TTM yield beside E.Yield; 0.00% = does not pay (2026-09-19)
         "fcf_yield":       ("FCF Yld",  "%.1f%%"),
         "market_cap":      ("MCap ₹Cr", "%.0f"),

@@ -213,9 +213,9 @@ def test_the_rocket_layer_is_the_scan_itself():
 
 
 # ── 4. The B and C tables ─────────────────────────────────────────────────────────────────────────────────────
-_WIDE_CORE = ("rank", "_layer", "name", "market_category", "sector", "composite_score", "momentum_score",
+_WIDE_CORE = ("rank", "_layer", "name", "market_category", "sector", "composite_score", "momentum_score", "ram_rank",
               "improvement_score", "_strong_q", "_measured_flags", "weinstein_stage", "_liq_cr")
-_WIDE_TECH = ("rank", "_layer", "name", "close_price", "_liq_cr", "dist_to_vstop", "momentum_score",
+_WIDE_TECH = ("rank", "_layer", "name", "close_price", "_liq_cr", "dist_to_vstop", "momentum_score", "ram_rank", "ram_pct",
               "d49_momentum_quality", "rsi_14d", "breakout_score", "crs_52w", "weinstein_stage")
 
 
@@ -243,16 +243,17 @@ def test_the_quarter_column_shows_only_where_it_says_something():
 
 @pytest.mark.parametrize("key", WIDE)
 def test_b_and_c_keep_the_rockets_core_budget(key):
-    """List takes New's 55px. On B, 🔥 is hidden and its 40px go to Stock and Sector with 🚀's own widths; on C, 🔥
-    keeps them and Stock and Sector take the shared widths."""
+    """List takes New's 55px. On B, 🔥 is hidden and its 36px go to Stock and Sector with 🚀's own widths; on C, 🔥
+    keeps them and Stock and Sector take the shared widths. RAM Rank took this budget from 1,030 to 1,070, and 📈
+    Technical past it too (2026-11-05, the comment above ui_scans.TABLE_WIDTHS)."""
     wide = S.playbook_layer_scan(PLAY, key)
     w = S.table_widths(wide)
     rocket = sum(S.table_widths(PLAY)[c] for c in S.table_columns(PLAY, CORE))
-    assert sum(w[c] for c in S.table_columns(wide, CORE)) == rocket == 1030
+    assert sum(w[c] for c in S.table_columns(wide, CORE)) == rocket == 1070
     assert w["_layer"] == S.TABLE_WIDTHS["_new"] == 55
     own = S.table_widths(PLAY if key == "no_quarter" else {})
     assert (w["name"], w["sector"]) == (own["name"], own["sector"]), "B as wide as 🚀's names; C the shared widths"
-    assert sum(w[c] for c in S.table_columns(wide, TECH)) + 44 <= 1074, "📈 Technical fits a 1536px laptop"
+    assert sum(w[c] for c in S.table_columns(wide, TECH)) <= 1059, "📈 Technical stays inside its measured width"
     cfg = S.table_config("30 Sep", wide)
     for view in S.SCAN_VIEWS:
         for c in S.table_columns(wide, view):
@@ -315,19 +316,19 @@ def test_the_quarter_column_varies_on_the_price_only_list():
     assert set(t["_strong_q"]) == {"✓", ""}, "on C a 🔥 Strong Quarter is information, not a given"
 
 
-# ── 5. 🚀's table and 🌱's, exactly as they were ───────────────────────────────────────────────────────────────
-_ROCKET_CORE = ("rank", "_new", "name", "market_category", "sector", "composite_score", "momentum_score",
+# ── 5. 🚀's table and 🌱's, exactly as they were, plus RAM (2026-11-05: the columns and the widths they cost) ──────
+_ROCKET_CORE = ("rank", "_new", "name", "market_category", "sector", "composite_score", "momentum_score", "ram_rank",
                 "improvement_score", "_measured_flags", "weinstein_stage", "_liq_cr")
-_TECH = ("rank", "_new", "name", "close_price", "_liq_cr", "dist_to_vstop", "momentum_score", "d49_momentum_quality",
-         "rsi_14d", "breakout_score", "crs_52w", "weinstein_stage")
-_ROCKET_WIDTHS = {"rank": 50, "_new": 55, "name": 185, "market_category": 75, "sector": 125, "composite_score": 75,
-                  "momentum_score": 85, "improvement_score": 100, "_measured_flags": 125, "weinstein_stage": 90,
-                  "_liq_cr": 65, "close_price": 80, "dist_to_vstop": 60, "d49_momentum_quality": 110, "rsi_14d": 50,
-                  "breakout_score": 85, "crs_52w": 60}
+_TECH = ("rank", "_new", "name", "close_price", "_liq_cr", "dist_to_vstop", "momentum_score", "ram_rank", "ram_pct",
+         "d49_momentum_quality", "rsi_14d", "breakout_score", "crs_52w", "weinstein_stage")
+_ROCKET_WIDTHS = {"rank": 46, "_new": 55, "name": 185, "market_category": 75, "sector": 116, "composite_score": 65,
+                  "momentum_score": 84, "ram_rank": 75, "improvement_score": 96, "_measured_flags": 123,
+                  "weinstein_stage": 85, "_liq_cr": 65, "close_price": 70, "dist_to_vstop": 57, "ram_pct": 57,
+                  "d49_momentum_quality": 110, "rsi_14d": 40, "breakout_score": 70, "crs_52w": 60}
 # Every column scan_table hands the grid for a scan (each view picks from them), as before the ladder.
-_FRAME_COLUMNS = ("rank", "_new", "name", "market_category", "sector", "composite_score", "momentum_score",
+_FRAME_COLUMNS = ("rank", "_new", "name", "market_category", "sector", "composite_score", "momentum_score", "ram_rank",
                   "improvement_score", "_strong_q", "_measured_flags", "weinstein_stage", "_liq_cr", "close_price",
-                  "dist_to_vstop", "d49_momentum_quality", "rsi_14d", "breakout_score", "crs_52w", "_cycle",
+                  "dist_to_vstop", "ram_pct", "d49_momentum_quality", "rsi_14d", "breakout_score", "crs_52w", "_cycle",
                   "company_id")
 
 
@@ -349,7 +350,7 @@ def test_the_rockets_table_is_the_table_it_was():
 
 def test_the_compounder_columns_are_unchanged_in_both_views():
     assert S.table_columns(SEED, CORE) == ("rank", "_new", "name", "market_category", "sector", "composite_score",
-                                           "momentum_score", "improvement_score", "_strong_q", "_cycle",
+                                           "momentum_score", "ram_rank", "improvement_score", "_strong_q", "_cycle",
                                            "_measured_flags", "weinstein_stage", "_liq_cr")
     assert S.table_columns(SEED, TECH) == _TECH, (
         "Cycle ↓ stays out of 📈 Technical: it sits after 🔥, which Technical does not show")
