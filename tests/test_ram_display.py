@@ -1108,7 +1108,9 @@ def test_a_visit_to_the_ram_view_keeps_the_sort_the_person_chose(tmp_path, monke
     next(b for b in at.get("button_group") if b.key == "ds_view").set_value(RAM).run()
     assert not at.exception and at.selectbox(key="ds_sort_ram").value == "RAM Rank ↑"
     next(b for b in at.get("button_group") if b.key == "ds_view").set_value(CORE).run()
-    assert not at.exception and at.selectbox(key="ds_sort").value == "Momentum ↓"
+    box = at.selectbox(key="ds_sort")
+    assert not at.exception and box.value == "Momentum ↓"
+    assert box.proto.set_value, "the server must SEND it: a browser redrawing the box shows its default otherwise (seen on the live sheet, 5 Nov)"
     assert at.dataframe[0].value["name"].tolist() == by_momentum
 
 

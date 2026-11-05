@@ -1352,15 +1352,17 @@ with tabs[2]:
     with _ds_c3:
         # 🔢 RAM holds its own order, so its box shows that and cannot be changed: a live box that did nothing would mislead.
         if ds_view == SCAN_RAM_VIEW:
-            # Streamlit forgets a widget it did not draw, so without this a visit here would silently reset the other views' sort.
-            if "ds_sort" in st.session_state:
-                st.session_state["ds_sort"] = st.session_state["ds_sort"]
             ds_sort_label = st.selectbox("Sort", ["RAM Rank ↑"], key="ds_sort_ram", disabled=True, label_visibility="collapsed")
         else:
+            # Streamlit forgets a widget it did not draw, so a visit to 🔢 RAM would reset this sort. The choice is kept beside it and put
+            # back in the run that redraws it, the only run whose value reaches the browser's box (seen on the live sheet, 2026-11-05).
+            if "ds_sort" not in st.session_state and "ds_sort_kept" in st.session_state:
+                st.session_state["ds_sort"] = st.session_state["ds_sort_kept"]
             ds_sort_label = st.selectbox(
                 "Sort", list(_DS_SORTS.keys()),
                 key="ds_sort", label_visibility="collapsed",
             )
+            st.session_state["ds_sort_kept"] = ds_sort_label
     if ds_view == OWNERSHIP:
         st.caption(OWNERSHIP_NOTE)
 
