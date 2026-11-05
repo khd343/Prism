@@ -172,12 +172,18 @@ def test_no_copy_from_before_today_ever_starts_a_window(key, october):
     assert min(a for a, _ in windows) > "2026-11-05", windows
 
 
-@pytest.mark.parametrize("key,first", [("playbook", "2026-11-30"), ("leaders", "2026-11-30"), ("compounder", "2027-10-29")])
+@pytest.mark.parametrize("key,first", [("playbook", "2026-11-30"), ("leaders", "2026-11-30"), ("compounder", "2026-11-30")])
 def test_each_scans_first_window_starts_where_its_card_says(key, first):
-    """🌱's windows start only each October (`start_month`), so its first is a year after the short lists'."""
+    """🌱's one window a year starts each November (`start_month`; the operator, 5 Nov), so its first starts on the short lists' copy."""
     windows = J.scan_windows(["2026-09-30", "2026-10-30", *_LATER_COPIES], _SCANS[key])
     assert windows[0][0] == first
     assert S._first_unseen_start(_SCANS[key]).strftime("%Y-%m") == first[:7]
+
+
+def test_a_copy_dated_on_the_record_date_starts_no_window():
+    """The code says `d > designed_on`, and "from today" means after it. It would matter only if November's kept copy were dated
+    exactly 5 Nov, every later November ingest having failed. Found by a mutant no test caught, in the review of 5 Nov."""
+    assert J.scan_windows(["2026-11-05", "2026-12-31", "2027-01-29"], _SCANS["playbook"]) == [("2026-12-31", "2027-01-29")]
 
 
 # What each Monday's run sees on 🚀 and 🌬️: the month-end copies plus the current month's newest, and the windows it can have.
@@ -280,7 +286,7 @@ def test_the_order_checks_first_window_is_30_nov_and_its_fourth_ends_on_31_mar()
 
 
 # ── 3. What a person sees ─────────────────────────────────────────────────────────────────────────────────────────────
-_FIRST = {"playbook": "30 Nov", "leaders": "30 Nov", "compounder": "31 Oct 2027"}
+_FIRST = {"playbook": "30 Nov", "leaders": "30 Nov", "compounder": "30 Nov"}
 _NEVER_ON_A_FRESH_CARD = ("IN-SAMPLE", "In-sample", "in-sample", "DESIGN-PERIOD", "BACKTEST", "backtest", "Not yet measured",
                           "NEVER SAW", "<table", "provisional", "Doubled", "better odds")
 
@@ -302,9 +308,9 @@ def test_a_card_with_no_record_says_so_plainly(key, card):
         assert word not in h, word
 
 
-def test_the_compounder_card_says_why_its_first_window_is_a_year_off():
+def test_the_compounder_card_says_its_windows_run_a_year_and_start_each_november():
     state, rec = S.record_state({"scans": {"compounder": _fresh("compounder")}}, _SCANS["compounder"])
-    assert "one 1-year window a year, each starting at the end of October" in _text(
+    assert "one 1-year window a year, each starting at the end of November" in _text(
         S.card_html(_SCANS["compounder"], 7, state, rec, True))
     state, rec = S.record_state({"scans": {"playbook": _fresh("playbook")}}, _SCANS["playbook"])
     assert "a year" not in _text(S.card_html(_SCANS["playbook"], 7, state, rec, True))
@@ -416,7 +422,7 @@ def test_no_screen_word_quotes_an_old_result():
 
 
 _GUIDE_FIRST = {"playbook": ("30 Nov 2026", "25+ days"), "leaders": ("30 Nov 2026", "25+ days"),
-                "compounder": ("31 Oct 2027", "12 months")}
+                "compounder": ("30 Nov 2026", "12 months")}
 
 
 def _guide(key) -> str:

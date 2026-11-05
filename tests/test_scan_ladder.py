@@ -5,9 +5,9 @@ the operator's call).
 On the 🎯 Scans tab the 🚀 Playbook Shortlist gains a "List" control with three layers of its recipe: 🚀 Playbook (all
 six conditions of ui_scans.playbook_conditions, unchanged), B · without 🔥 (every condition but the 🔥 Strong Quarter)
 and C · price only (Momentum and Breakout in the top third, the price above its stop). They are exactly the L0/L1/L2
-lists of Kite's frozen ladder test (Kite v2 addendum 36), so B and C carry NO record: a record would publicly score
-the comparison that test must judge blind until May 2027. They are no scan, so nothing that records, publishes or
-fingerprints a scan can see them.
+lists of Kite's frozen ladder test (Kite v2 addendum 36), which (37) no longer runs, and B and C carry NO record of their own.
+They are no scan, so nothing that records, publishes or fingerprints a scan can see them; since 5 Nov the sealed order check
+alone reads C's mask.
 
 Pinned here: the 🚀 layer IS the shortlist; 🚀 ⊆ B ⊆ C; each layer read from playbook_conditions itself; the List tag
 is the tightest layer, ranked on the whole market; the ladder is no scan; the B and C tables (List after Rank in both
@@ -276,7 +276,7 @@ def test_the_note_says_what_the_list_is_and_that_it_has_no_record():
     assert notes["price_only"].startswith("C — ") and "Momentum and Breakout in the top third" in notes["price_only"]
     assert "above its stop" in notes["price_only"]
     for key in WIDE:
-        for words in ("No record of its own", "Kite's ladder test", "May 2027"):
+        for words in ("No record of its own", "the 🚀 list's"):
             assert words in notes[key], (key, words)
         assert "(36)" not in notes[key] and "until" not in notes[key], f"{key}: no number, no promise of a record"
         assert len(notes[key]) <= 148, f"{key}: one line under the control ({len(notes[key])} characters)"
@@ -287,7 +287,7 @@ def test_the_list_header_explains_every_letter():
     assert cfg["label"] == "List"
     for layer in S.PLAYBOOK_LAYERS:
         assert f"{layer['tag']} = " in cfg["help"], layer["tag"]
-    for words in ("Strong Quarter", "top third", "stop", "no record", "May 2027", "blind"):
+    for words in ("Strong Quarter", "top third", "stop", "no record", "the 🚀 list's"):
         assert words in cfg["help"], words
     assert "(36)" not in cfg["help"], "the screen names no internal addendum number"
 
@@ -418,7 +418,7 @@ def test_the_rocket_guide_names_the_wider_lists_and_says_they_have_no_record():
     for layer in S.PLAYBOOK_LAYERS[1:]:
         assert f"**{layer['label']}**" in para[0], layer["label"]
     for words in ("every condition but the 🔥 Strong Quarter", "Momentum and Breakout in the top third",
-                  "above its stop", "Neither has a record", "Kite's ladder test (36)", "May 2027"):
+                  "above its stop", "Neither has a record", "only the order check reads C"):
         assert words in para[0], words
     shown = G.guide_html(PLAY)
     assert all(layer["label"] in shown for layer in S.PLAYBOOK_LAYERS[1:]), "the paragraph reaches the 📖 panel"

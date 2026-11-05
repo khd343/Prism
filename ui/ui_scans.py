@@ -130,9 +130,9 @@ ORDER_ON_C = "On 🚀 it reads list C, the list Kite trades from, not the 🚀 l
 # The seal (Kite's addendum 37, "Sealed until then"): before its one sealed run, nothing may work out a book that orders by RAM
 # over a session from 30 Nov 2026, in any code, and a figure of one, computed or seen, makes that paper test no evidence. RAM's
 # top HOLD_K among what Kite can trade is such a book. So while this is True the job draws nothing and records no figure for the
-# check, and the card shows none. Set it to False only after that run's read-out (May 2027), and rebuild the windows then.
+# check, and the card shows none. Set it to False only after that run's read-out, and rebuild the windows then.
 ORDER_SEALED = True
-ORDER_SEALED_WORDS = "Its figures stay sealed until Kite's one sealed run in May 2027, since they would show that test's result early."
+ORDER_SEALED_WORDS = "Its figures stay sealed until Kite's one sealed run, since they would show that test's result early."
 # The revenue-led check (registered 2026-10-15, before any unseen window has a result). Inside 🚀, do the matches
 # that are also revenue_led (the test 🌱 uses) beat the rest? A Kite-side plan proposed trading that in Kite's window
 # 2; the frozen go-rule needs the SAME design in two windows in a row, so the operator kept Kite as it is and chose to
@@ -325,10 +325,11 @@ SCANS = (
     dict(key="compounder", emoji="🌱", name="Compounder Candidates", mask=compounder_candidates,
          benchmark="NSE:NS250MQ100",                  # the plan's main test for 🌱
          uses=(revenue_led, _growth, _num), horizon_days=365,
-         # One unseen window a YEAR, starting each October (2026-10-07): annual results are public by
-         # then. A window from every month-end would put ~12 bars on the card
+         # One unseen window a YEAR, starting each November (the operator, 2026-11-05: October until then, but the record's
+         # fresh start would have made its first window wait for October 2027; annual results are just as public by
+         # November). A window from every month-end would put ~12 bars on the card
          # by 2028 that overlap by 11 months — one year of evidence that looks like twelve.
-         start_month=10,
+         start_month=11,
          # "Cycle ↓" (2026-10-07): a reading aid, not part of the recipe or record; its 60px come from
          # Stock, Sector, Score, ⚠ flags and Trend so the table keeps the laptop budget (2026-10-14, with
          # Category: names in full 46%, sectors 37%, from 52% and 52% — 🌱 carries two extra columns; each
@@ -345,13 +346,13 @@ SCANS = (
 
 # ── The 🚀 ladder (2026-10-30, the operator's call) ─────────────────────────────────────────────────────────────
 # Two wider lists of 🚀's own recipe, shown on its table as plain lists: B drops the 🔥 Strong Quarter, C keeps the
-# price legs only. They are exactly the L0/L1/L2 lists of Kite's frozen ladder test (Kite v2 addendum 36), so B and C
-# carry NO record: they are no scan — not in SCANS, so scan_records_job, the Playbook feed,
-# Kite's v2 lists and scan_records.json never see them (tests/test_scan_ladder.py). A record would publicly score the
-# comparison that test must judge blind until it is read in May 2027. Tightest first; `conditions` are the columns of
+# price legs only. They are exactly the L0/L1/L2 lists of Kite's frozen ladder test (Kite v2 addendum 36), whose comparison
+# addendum (37) no longer runs, and B and C carry NO record of their own: they are no scan — not in SCANS, so the Playbook feed,
+# Kite's v2 lists and the records' windows never list them (tests/test_scan_ladder.py). The one exception, since 2026-11-05, is
+# the order check, sealed, which reads C's mask (ORDER_LIST). Tightest first; `conditions` are the columns of
 # playbook_conditions, so the 🚀 layer (all six) is the shortlist itself. `note` is the line under the control: ONE
 # line on a 1536px laptop (≤ 148 characters, measured 2026-10-30), with no addendum number and no promise of a record.
-_NO_RECORD = "No record of its own: Kite's ladder test judges these lists in May 2027."
+_NO_RECORD = "No record of its own: the card and its record are the 🚀 list's."
 PLAYBOOK_LAYERS = (
     dict(key="playbook", tag="🚀", label="🚀 Playbook", note="",
          conditions=("momentum", "breakout", "quarter", "improvement", "evidence", "stop")),
@@ -929,8 +930,10 @@ def table_config(members_date_label: str, scan: dict = None) -> dict:
         "rank": cc.NumberColumn("Rank", format="%.0f", width=w["rank"], help=(
             _UNRECORDED_RANK_TIP if "_layer" in (scan or {}).get("extra", ()) else      # 🚀's B or C
             "PRISM's overall rank — click this header, then Sort ascending, to list by it. The list is "
-            "sorted by Momentum, high to low (since 2026-10-13); the card's order check records whether "
-            "RAM Rank's order keeps beating random picks. Every match is the scan." if momentum_ordered(scan or {}) else
+            "sorted by Momentum, high to low (since 2026-10-13); " + (
+                "the card's order check reads RAM Rank, and its figures are sealed for now" if ORDER_SEALED else
+                "the card's order check records whether RAM Rank's order keeps beating random picks") +
+            ". Every match is the scan." if momentum_ordered(scan or {}) else
             "PRISM's overall rank. The list is sorted by it for reading only: every match is the scan.")),
         "_new": cc.TextColumn("New", width=w["_new"],
                               help=f"🆕 = not in this scan {since}. 📄 = its quarterly result was declared "
@@ -942,8 +945,8 @@ def table_config(members_date_label: str, scan: dict = None) -> dict:
         "_layer": cc.TextColumn("List", width=w["_layer"], help=(
             "The tightest of the three lists the stock is in: 🚀 = the whole 🚀 recipe · B = all of it but the 🔥 "
             "Strong Quarter · C = price only — Momentum and Breakout in the top third of the market and the price "
-            "above its stop. Each list holds the one before it. B and C have no record of their own: Kite's ladder "
-            "test compares the three lists blind until May 2027, and a record here would score them early.")),
+            "above its stop. Each list holds the one before it. B and C have no record of their own: the card and its "
+            "record are the 🚀 list's.")),
         "name": cc.TextColumn("Stock", width=w["name"]),
         # "Category" (2026-10-14): the user's word and the data vendor's own ("Market Category"); the Deep
         # Scanner shows the same column as Market Cap.
@@ -1112,7 +1115,7 @@ def _hold_line(scan: dict, ws, c: dict, esc) -> str:
                 f'only with {ORDER_RULE["min_n"]}+ of those stocks.' + (f' {ORDER_SEALED_WORDS}' if ORDER_SEALED else ''))
         placed = lambda key: " / ".join(pct((w.get("order") or {}).get(key)) for w in rows)
         v = order_rule(ws)
-        rule = ' · Order check: sealed until May 2027' if ORDER_SEALED else (
+        rule = " · Order check: sealed until Kite's sealed run" if ORDER_SEALED else (
                 f' · Among what Kite can trade, RAM Rank\'s top {k} beat {placed("ram_pct")} of random picks, '
                 f'Rank\'s top {k} {placed("rank_pct")}'
                 + (f' · Order check: {v["counted"]} of {ORDER_RULE["windows"]} separate windows in'

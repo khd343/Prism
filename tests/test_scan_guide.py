@@ -274,7 +274,7 @@ def test_the_index_the_dates_and_the_recipe_line_are_written_from_the_scan():
         assert G._first_start(s) in t, s["key"]
     moved = _guide("playbook", benchmark="NSE:CNX500")
     assert "Compared with Nifty 500" in moved and "Nifty500 Momentum 50" not in moved
-    assert "starting each October" in _guide("compounder") and "every month-end" in _guide("playbook")
+    assert "starting each November" in _guide("compounder") and "every month-end" in _guide("playbook")
 
 
 def test_the_measurement_settings_are_read_not_typed(monkeypatch):
@@ -371,7 +371,8 @@ def test_no_numbers_from_a_record_nobody_can_vouch_for():
         assert "finished so far" not in t and "None has finished" not in t and words in t, state
 
 
-def test_the_unseen_record_and_the_order_check_follow_the_records():
+def test_the_unseen_record_and_the_order_check_follow_the_records(monkeypatch):
+    monkeypatch.setattr(S, "ORDER_SEALED", False)     # after the read-out; sealed: test_scan_order_reading.py
     rec = dict(_rec("playbook"), out_of_sample=[])
     assert "None has finished yet" in _guide("playbook", rec)
     assert "So far 0 of" in _guide("playbook", rec)

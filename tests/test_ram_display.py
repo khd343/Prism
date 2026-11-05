@@ -280,7 +280,7 @@ def test_ram_is_no_key_column_so_its_blanks_fail_no_coverage_check(blank):
 # ── 3. The tips: one source, plain words ─────────────────────────────────────────────────────────────────────────────
 TIP_RANK = ("RAM's rank among about 1,400 liquid NSE main-board stocks: 1 is the strongest. Momentum over 1 to 12 "
             "months, risk-adjusted, from NSE's own closes. Blank: not ranked (BSE, thin, under a year of prices, or a "
-            "check doubted it). Display only: it changes no score or list; the order check on the 🎯 Scans cards measures it.")
+            "check doubted it). Display only: it changes no score or list; the order check on the 🎯 Scans cards is built on it.")
 TIP_PCT = "RAM's score as a percentile, 100 the strongest. Display only: it changes no score, list or record."
 CORE, TECH = S.SCAN_VIEWS
 RAM = "🔢 RAM"
@@ -867,8 +867,10 @@ def test_the_order_reading_runs_on_the_real_market_with_ram_and_without(real):
 
 # The fingerprints every record and the ladder were measured with, read on origin/main (9284e96) before RAM. 🚀, 🌬️ and 🌱
 # are also pinned to their records (tests/test_scans.py); B and C have none. A recipe's real change re-pins these on purpose.
+# B's and C's moved once, 2026-11-05, on words alone: PLAYBOOK_LAYERS holds each list's note, and the note stopped naming the
+# ladder test that (37) no longer runs. Their masks and the three scans' fingerprints did not move.
 _BEFORE_RAM = {"playbook": "80251b8b4da6d635", "leaders": "a5fa9c66bfd431e0", "compounder": "0e2a24062b1f2ea8",
-               "no_quarter": "1f17120242b5640f", "price_only": "1f17120242b5640f"}
+               "no_quarter": "1b4b403e1936ecb8", "price_only": "1b4b403e1936ecb8"}
 
 
 @pytest.mark.parametrize("scan", LISTS, ids=lambda s: s["key"])
@@ -922,7 +924,7 @@ def test_the_guides_stamps_are_mains():
     since, on purpose: its record date and its recipe's words, re-read and re-stamped on 2026-11-05."""
     from ui import scan_guide as G
     assert {s["key"]: G.guide_stamp(s) for s in S.SCANS} == {
-        "playbook": "135cfc40d93df721", "leaders": "c5b0c3512a06fdd2", "compounder": "d3e637eb0be7a2e1"}
+        "playbook": "135cfc40d93df721", "leaders": "c5b0c3512a06fdd2", "compounder": "258e4becfe15cef0"}
 
 
 def test_the_guide_says_how_every_list_opens_and_what_the_order_check_reads():

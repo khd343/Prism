@@ -699,8 +699,30 @@ def test_the_seal_leaves_the_other_readings_alone():
 
 def test_a_sealed_card_shows_no_figure_of_the_check_even_from_a_stored_one():
     t = _card("playbook", [_window()])
-    assert S.ORDER_SEALED_WORDS in t and "Order check: sealed until May 2027" in t
+    assert S.ORDER_SEALED_WORDS in t and "Order check: sealed until Kite's sealed run" in t
     assert "of random picks, Rank's top 20" not in t and "56%" not in t
+
+
+def test_a_stored_figure_reaches_no_guide_while_sealed():
+    """The review of 5 Nov: the card had this second lock and the guide did not, so a figure in the file (a stray unsealed run, a
+    hand edit, a rebuild done too early) printed on three public surfaces. The seal holds whatever the file says."""
+    from ui import scan_guide as G
+    order = dict(k=20, n=60, ram_pct=80, rank_pct=50)
+    chain = [("2026-11-30", "2026-12-31"), ("2026-12-31", "2027-01-29"), ("2027-01-29", "2027-02-26"), ("2027-02-26", "2027-03-31")]
+    rec = dict(_RECORDS["scans"]["playbook"], out_of_sample=[dict(start=a, end=b, final=True, order=order) for a, b in chain])
+    records = {**_RECORDS, "scans": {**_RECORDS["scans"], "playbook": rec}}
+    surfaces = {"guide": _text(G.guide_html(_BY_KEY["playbook"], rec, "measured")), "reference": _text(G.reference_html(records)),
+                "download": G.guide_markdown(records)}
+    for name, t in surfaces.items():
+        assert S.ORDER_SEALED_WORDS in t, name
+        check = t[t.index("Order check:"):t.index(S.ORDER_SEALED_WORDS) + len(S.ORDER_SEALED_WORDS) + 60]
+        assert "Decided" not in check and "windows are in" not in check, f"{name}: {check[-80:]}"
+        assert "Decided: RAM Rank" not in t and "beat 80%" not in t, name
+
+
+def test_the_rank_tip_says_the_check_is_sealed_while_sealed():
+    tip = S.table_config("30 Oct", _BY_KEY["playbook"])["rank"]["help"]
+    assert "order check reads RAM Rank" in tip and "sealed" in tip and "records whether" not in tip
 
 
 def test_a_sealed_guide_says_so():
@@ -714,4 +736,4 @@ def test_todays_records_file_renders_under_the_seal():
         empty = _text(S.card_html(_BY_KEY[key], 235, "measured", dict(records[key], out_of_sample=[]), selected=False))
         assert "No record yet" in empty and "Order check" not in empty
         sealed = dict(k=20, n=49, sealed=True)
-        assert "Order check: sealed until May 2027" in _card(key, [_window(order=sealed)])
+        assert "Order check: sealed until Kite's sealed run" in _card(key, [_window(order=sealed)])

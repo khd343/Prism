@@ -143,8 +143,8 @@ GUIDES = {
             "Its recipe changes only through a new, measured test written down before the data. The December "
             "2026 review re-tests the measured red flags, may add the \"Cycle ↓\" reading aid to this table — "
             "only if stocks with it beat stocks without it by at least 1 point in every window — and decides "
-            "PRISM's default scoring mode, which changes what Rank means, not this list. The order check keeps "
-            "reading until it decides.",
+            "PRISM's default scoring mode, which changes what Rank means, not this list. The order check decides "
+            "nothing before Kite's one sealed run.",
             "On 15 Oct 2026 two of its inputs were corrected to mean what they say — the breakout window and "
             "the fresh-stop flag had read the data vendor's columns wrongly — and the figures above were "
             "re-measured.",
@@ -155,9 +155,8 @@ GUIDES = {
             # pins this paragraph to their labels, beside the tests that pin what each layer is.
             "On 30 Oct 2026 the tab's List control added two wider lists of this recipe, shown as plain lists: "
             "**B · without 🔥**, every condition but the 🔥 Strong Quarter, and **C · price only**, Momentum and "
-            "Breakout in the top third and the price above its stop. Neither has a record: they are the lists of "
-            "Kite's ladder test (36), which a record would score before it is read in May 2027 — so the card, its "
-            "record and this guide are the 🚀 list's alone.",
+            "Breakout in the top third and the price above its stop. Neither has a record of its own: the card, its "
+            "record and this guide are the 🚀 list's, and only the order check reads C, the list Kite trades from.",
         ],
     ),
     "leaders": dict(
@@ -199,11 +198,11 @@ GUIDES = {
         changes=[
             "Its recipe changes only through a new, measured test written down before the data. The December "
             "2026 review may add the \"Cycle ↓\" reading aid to this table on the same bar as the Playbook's, "
-            "re-tests the measured red flags, and the order check keeps reading until it decides.",
+            "re-tests the measured red flags. The order check decides nothing before Kite's one sealed run.",
         ],
     ),
     "compounder": dict(
-        written_for="d3e637eb0be7a2e1",
+        written_for="258e4becfe15cef0",
         short="profitable growth earned by selling more, read a year at a time",
         idea=[
             "Companies whose last full year shows growth the business earned: sales up more than 10%, profit "
@@ -374,7 +373,7 @@ def _order_check(scan: dict, rec, state: str) -> list:
         return []
     rule = S.ORDER_RULE
     text = f"**Order check:** {_order_check_words()}"
-    if state == "measured":
+    if state == "measured" and not S.ORDER_SEALED:
         v = S.order_rule((rec or {}).get("out_of_sample") or [])
         text += (f" So far {v['counted']} of {rule['windows']} windows are in." if v["state"] == "pending" else
                  f" Decided: RAM Rank's order {v['state']} (its top {S.HOLD_K} beat {v['ram_avg']:.0f}% of random "

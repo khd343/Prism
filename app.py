@@ -988,8 +988,8 @@ with tabs[1]:
                      f"when a stock enters and leaves, what it cannot see", expanded=False):
         st.markdown(scan_guide_html(_sc_sel, _sc_rec_sel, _sc_state_sel), unsafe_allow_html=True)
     # THE 🚀 LADDER (2026-10-30, the operator's call): two wider lists of 🚀's own recipe, B without the 🔥 Strong
-    # Quarter and C on price alone, each with its whole-market count. They are the lists of Kite's frozen ladder test
-    # (36), so they carry NO record (ui_scans.PLAYBOOK_LAYERS): the cards, 📊 record and 📖 guide above stay 🚀's, and
+    # Quarter and C on price alone, each with its whole-market count. They carry NO record of their own
+    # (ui_scans.PLAYBOOK_LAYERS): the cards, 📊 record and 📖 guide above stay 🚀's, only the sealed order check reads C, and
     # B or C marks no 🆕 and shows no Left. Drawn on 🚀 only, between the scan and its filters (scan → list → filters →
     # columns → table). The 🧹 Clear never resets it, but leaving 🚀 does: Streamlit drops the state of a control it does
     # not draw, so 🚀 reopens on its own recorded list (tests/test_scan_ladder.py, tests/test_scans_tab_runs.py).

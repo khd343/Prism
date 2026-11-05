@@ -795,8 +795,8 @@ def test_the_compounder_card_says_it_has_no_record_and_when_its_first_window_sta
     import html as _html
     comp = _scan("compounder")
     h = _html.unescape(S.card_html(comp, 320, "measured", _compounder_record(), selected=True))
-    for s in ("No record yet", "The first window starts on the 31 Oct 2027 copy",
-              "one 1-year window a year, each starting at the end of October"):
+    for s in ("No record yet", "The first window starts on the 30 Nov copy",
+              "one 1-year window a year, each starting at the end of November"):
         assert s in h, s
     for s in ("IN-SAMPLE", "BACKTEST", "+20.4", "Doubled", "Survivors only", "DESIGN-PERIOD", "short windows"):
         assert s not in h, s
@@ -804,7 +804,7 @@ def test_the_compounder_card_says_it_has_no_record_and_when_its_first_window_sta
 
 def test_the_compounder_card_shows_unseen_windows_once_they_exist():
     rec = _compounder_record()
-    rec["out_of_sample"] = [dict(start="2027-10-31", end="2028-10-31", days=366, n=300,
+    rec["out_of_sample"] = [dict(start="2026-11-30", end="2027-11-30", days=365, n=300,
                                  median_excess_pp=4.2, beat_pct=58)]
     h = S.card_html(_scan("compounder"), 320, "measured", rec, selected=False)
     assert "NEVER SAW" in h and "+4.2" in h and "58%" in h and "No record yet" not in h
@@ -812,7 +812,7 @@ def test_the_compounder_card_shows_unseen_windows_once_they_exist():
 
 
 def test_a_stale_compounder_record_shows_no_window():
-    rec = dict(_compounder_record(), out_of_sample=[dict(start="2027-10-31", end="2028-10-31", days=366, n=300,
+    rec = dict(_compounder_record(), out_of_sample=[dict(start="2026-11-30", end="2027-11-30", days=365, n=300,
                                                          median_excess_pp=4.2, beat_pct=58)])
     h = S.card_html(_scan("compounder"), 320, "stale", rec, selected=False)
     assert "changed since" in h and "+4.2" not in h and "No record yet" not in h
@@ -821,7 +821,7 @@ def test_a_stale_compounder_record_shows_no_window():
 def test_each_scan_is_judged_on_its_own_clock():
     from datetime import date
     assert S._first_unseen_start(_scan("playbook")) == date(2026, 11, 30)
-    assert S._first_unseen_start(_scan("compounder")) == date(2027, 10, 31)
+    assert S._first_unseen_start(_scan("compounder")) == date(2026, 11, 30)
     assert S.scan_horizon(_scan("compounder")) == 365 and S.scan_horizon(_scan("playbook")) == 25
 
 
@@ -937,7 +937,7 @@ def test_the_compounder_table_marks_its_cycle_rows():
 
 def test_the_first_start_follows_the_start_month():
     from datetime import date
-    assert S._first_unseen_start(_scan("compounder")) == date(2027, 10, 31)
+    assert S._first_unseen_start(_scan("compounder")) == date(2026, 11, 30), "dated 5 Nov, starting each November: this month's"
     assert S._first_unseen_start({"designed_on": "2026-03-15", "start_month": 10}) == date(2026, 10, 31), (
         "dated in March: that October's month-end")
     assert S._first_unseen_start({"designed_on": "2026-11-02", "start_month": 10}) == date(2027, 10, 31), (
@@ -1063,7 +1063,7 @@ def test_the_summary_of_a_scan_with_no_record_says_so():
     seed = next(s for s in S.SCANS if s["key"] == "compounder")
     state, rec = S.record_state({"scans": {"compounder": _compounder_record()}}, seed)
     h = S.card_summary_html(seed, 255, state, rec, False)
-    assert state == "measured" and "No record yet. The first window starts on the 31 Oct 2027 copy." in h
+    assert state == "measured" and "No record yet. The first window starts on the 30 Nov copy." in h
     for s in ("IN-SAMPLE", "BEFORE COSTS", "%/yr", "did not double", "Not yet measured"):
         assert s not in h, s
 
@@ -1219,7 +1219,7 @@ def test_the_compounder_is_set_against_its_own_index_on_both_cards():
     import html as _html
     comp = _scan("compounder")
     rec = _compounder_record()
-    rec["out_of_sample"] = [dict(start="2027-10-31", end="2028-10-31", days=366, n=300, median_excess_pp=4.2,
+    rec["out_of_sample"] = [dict(start="2026-11-30", end="2027-11-30", days=365, n=300, median_excess_pp=4.2,
                                  beat_pct=58, vs_index=_vs(9.0, 6.5, code="NSE:NS250MQ100"))]
     full = _html.unescape(S.card_html(comp, 320, "measured", rec, selected=False))
     summ = _html.unescape(S.card_summary_html(comp, 320, "measured", rec, False))

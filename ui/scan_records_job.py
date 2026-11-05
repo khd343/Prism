@@ -48,7 +48,7 @@ simply does not count: it never stops the run.
 
 Since 2026-11-05 (the operator's call: "Remove old record of scan record completely, and from today is the fresh"): the file holds
 no design-period windows and no study, and every record starts after S.DESIGNED_ON. So the first window starts on the 30 Nov 2026
-copy (🌱's, which start each October, on October 2027's), and the 🆕 baseline, the fingerprints and every alarm here go on as before.
+copy (🌱's too: its one window a year starts each November), and the 🆕 baseline, the fingerprints and every alarm here go on as before.
 
 The file is rewritten only when a measured value changed, so a quiet week makes no commit.
 """

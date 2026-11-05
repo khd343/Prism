@@ -229,7 +229,7 @@ def test_the_view_switch_reaches_the_table(tab):
 
 def test_the_full_record_panel_follows_the_chosen_scan(tab):
     """RUN: the one 'Full record' panel under the cards names the selected scan and holds its record —
-    before any window, its own first date (2026-11-05): 30 Nov for 🚀, October 2027 for 🌱."""
+    before any window, its own first date (2026-11-05): the 30 Nov copy for 🚀 and for 🌱."""
     from ui import ui_scans as S
     panels = [e for e in tab.expander if e.label.startswith("📊 Full record")]
     assert len(panels) == 1 and S.SCANS[0]["name"] in panels[0].label
@@ -239,7 +239,7 @@ def test_the_full_record_panel_follows_the_chosen_scan(tab):
     panels = [e for e in tab.expander if e.label.startswith("📊 Full record")]
     seed = next(s for s in S.SCANS if s["key"] == "compounder")
     assert len(panels) == 1 and seed["name"] in panels[0].label
-    assert "The first window starts on the 31 Oct 2027 copy." in "".join(m.value for m in panels[0].markdown)
+    assert "The first window starts on the 30 Nov copy." in "".join(m.value for m in panels[0].markdown)
 
 
 def test_every_card_says_no_record_yet_and_no_old_heading_shows(tab):
@@ -308,7 +308,7 @@ def test_the_first_window_on_file_reaches_the_tab(tmp_path):
     at = _scans_tab(tmp_path, records)
     page = html.unescape("".join(m.value for m in at.markdown))
     assert "ahead in 1 of 1 unseen window: +1.4 pts before costs" in page and "NEVER SAW" in page
-    assert page.count(S.no_record_words(S.SCANS[1])) == 1, "🌬️'s card still has no record; 🚀's two have one now"
+    assert page.count(S.no_record_words(S.SCANS[1])) == 2, "🌬️'s and 🌱's cards still have no record, in the same words; 🚀's has one now"
 
 
 def test_how_it_works_follows_the_chosen_scan(tab):
