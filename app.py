@@ -175,8 +175,8 @@ from ui.ui_scans import (SCANS, CANDIDATES as SCAN_CANDIDATES, LIQUIDITY_STEPS a
                          members_label as scan_members_label,
                          record_state as scan_record_state, scan_table, table_config as scan_table_config,
                          SCAN_VIEWS, TREND_SHORT as SCAN_TREND_SHORT, momentum_ordered as scan_momentum_ordered,
-                         RAM_VIEW as SCAN_RAM_VIEW, ram_view_order_words, ram_view_scan, ram_view_table, scan_views,
-                         PLAYBOOK_LAYERS, playbook_layer_mask, playbook_layer_scan)
+                         RAM_VIEW as SCAN_RAM_VIEW, ram_view_order_words, ram_view_scan, ram_view_table,
+                         TABLE_VIEWS as SCAN_TABLE_VIEWS, PLAYBOOK_LAYERS, playbook_layer_mask, playbook_layer_scan)
 from ui.scan_guide import (guide_html as scan_guide_html, guide_markdown as scan_guide_markdown,
                            reference_html as scan_reference_html)
 from config import (COLORS, TIER_COLORS, CONVICTION_TIERS, UI, HARD_GATES,
@@ -1079,9 +1079,9 @@ with tabs[1]:
         # The two views (2026-10-13, ui_scans.SCAN_VIEWS): 🏆 Core = why it is in the list; 📈 Technical =
         # is now a good moment, how far is the stop, can I buy one share. A display choice under the
         # app-wide names, never a filter: the 🧹 Clear does not reset it (tests/test_scan_views.py).
-        # 🔢 RAM (2026-11-05, ui_scans.RAM_VIEW) comes first on the 🚀 lists. Other options make another widget here, so a
-        # choice of it falls back to Core on the other scans.
-        _sc_views = scan_views(_sc_tbl_scan)
+        # 🔢 RAM (2026-11-05, ui_scans.RAM_VIEW) comes first on every list. The same options on every list are one widget, so
+        # a choice stays when the scan changes.
+        _sc_views = SCAN_TABLE_VIEWS
         _sc_view = st.segmented_control("Column View", list(_sc_views), default=_sc_views[0], key="scan_view")
         if not _sc_view:
             _sc_view = _sc_views[0]

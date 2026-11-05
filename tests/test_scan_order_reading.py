@@ -463,10 +463,9 @@ def test_the_holding_twenty_sentence_no_longer_mentions_momentum(key):
 
 
 def test_the_card_says_whose_order_is_whose():
-    play, lead = _card("playbook", [_window()]), _card("leaders", [_window()])
-    assert "🏆 Core and 📈 Technical list by momentum since 13 Oct and 🔢 RAM by RAM Rank; the order check reads RAM Rank." in play
-    assert "The table lists by momentum since 13 Oct; the order check reads RAM Rank." in lead
-    assert "🔢 RAM" not in lead, "🌬️ has no 🔢 RAM view"
+    for key in ("playbook", "leaders"):        # 2026-11-05: 🌬️ opens on 🔢 RAM too
+        assert ("🏆 Core and 📈 Technical list by momentum since 13 Oct and 🔢 RAM by RAM Rank; the order check reads RAM Rank."
+                in _card(key, [_window()])), key
 
 
 def test_the_compounder_card_says_nothing_of_the_check():
