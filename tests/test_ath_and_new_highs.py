@@ -52,6 +52,7 @@ def test_the_tooltip_comes_from_the_glossary_and_says_what_it_is():
     assert _SCANNER_HEADER_TIPS["dist_ath"] == tip, "one text, so the header and the Reference cannot drift"
     assert "0%" in tip and "all-time high" in tip and "52-week high" in tip
     assert "Breakout score" in tip, "the reader must learn that it already feeds Breakout (pinned below)"
+    assert "beside Breakout" not in tip, "Off ATH left every view on 5 Nov; it is in the CSV"
 
 
 def test_the_breakout_score_still_reads_the_all_time_high():

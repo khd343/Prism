@@ -26,7 +26,7 @@ def momentum_words() -> str:
 SECTIONS = [
     ("What RAM is", [
         "RAM is a risk-adjusted momentum score. It asks which stocks have risen the most **for the ups and downs it took to get "
-        "there**. Of two stocks that each rose 40% in a year, the one that climbed smoothly scores higher than the one that swung "
+        "there**. Of two stocks that rose by the same amount in a year, the one that climbed smoothly scores higher than the one that swung "
         "wildly.",
         "It is worked out every trading evening from NSE's own closing prices, not the data vendor's. It is separate from PRISM's "
         "Momentum score, its Score and its Rank.",
@@ -65,7 +65,7 @@ SECTIONS = [
         "- **RAM** — the raw score. 0 is about average, and the strongest stocks sit above 2.",
         "- **RAM Date** — the evening the numbers are from, shown as \"RAM of 5 Nov\". If an evening's RAM could not be made, the "
         "columns stay blank rather than show an older day's number as today's.",
-        "**Ranks move a lot.** Over 13 month-ends, Sep 2025 to Sep 2026, on stocks still listed: of those ranked 20 or better at a "
+        "**Ranks move a lot.** Replayed on past prices at 13 month-ends, Sep 2025 to Sep 2026, on stocks still listed: of those ranked 20 or better at a "
         "month-end, 44% were still 20 or better a month later, and 10% had fallen beyond 150.",
     ]),
     ("RAM and PRISM's Momentum", [
@@ -74,10 +74,10 @@ SECTIONS = [
             ("Its prices", "NSE's own closes", "The data vendor's columns"),
             ("Which stocks", "About 1,400 liquid NSE main-board stocks", "Every stock on the sheet"),
             ("Its scale", "Rank 1 is the strongest", "0 to 100, higher is stronger"),
-            ("What reads it", "Nothing: it is display only", "PRISM's Score and the scans' recipes"),
+            ("What reads it", "No score or list: only the order check on the cards", "PRISM's Score and the scans' recipes"),
         ]),
         "A stock can stand high on one and not the other, because they ask different questions. Which order works better is not "
-        "known yet: no result exists.",
+        "known yet: no test on data nobody had seen has finished.",
     ]),
     ("Where you see it", [
         f"- **🎯 Scans** — every list opens on the {S.RAM_VIEW} table, by RAM Rank, strongest first, no RAM last. 📈 Technical shows "
@@ -89,14 +89,14 @@ SECTIONS = [
     ]),
     ("What it does not do", [
         "- It is display only. Every Score, Rank, verdict, flag and list is the same with or without it, and no scan's recipe reads it.",
-        "- The order check on the 🚀 and 🌬️ cards is built on RAM Rank, and its figures stay sealed for now: see 🎯 Scans.",
+        f"- The order check on the 🚀 and 🌬️ cards is built on RAM Rank{', and its figures stay sealed for now' if S.ORDER_SEALED else ''}: see 🎯 Scans.",
     ]),
     ("What it cannot tell you", [
         "- **It only reads price.** Nothing here looks at the business, its results, its debt or what it costs.",
         "- **It looks back.** A high rank says what the price has done, not what it will do. Strong stocks can fall fast and "
         "together, and past swings do not limit future ones.",
-        "- **It has no record here yet.** Its first evening was 5 Nov 2026, so PRISM has measured nothing about how ranked stocks "
-        "do afterwards.",
+        "- **It has no record here yet.** Its first evening was 5 Nov 2026, so no test has yet followed its ranks on data nobody had "
+        "seen. The month-ends above are a replay on past prices, not a record.",
         "A list narrows the market; the decision stays yours.",
     ]),
 ]

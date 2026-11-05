@@ -583,7 +583,7 @@ def general_sections(scans=None) -> list:
         ("How to read the table", [
             *(f"- **{view}** — {VIEW_WHAT[view]}" for view in S.SCAN_VIEWS),
             f"- **{S.RAM_VIEW}** — every list opens on this view, sorted by RAM Rank, strongest first, no RAM last; 🏆 Core and "
-            f"📈 Technical read as before. Where a list has an order check, it reads RAM Rank too, on what Kite can trade, whichever view is open.",
+            f"📈 Technical keep the list's own order. Where a list has an order check, it reads RAM Rank too, on what Kite can trade, whichever view is open.",
             "- **Filters** only hide rows of the finished list. The recipe always ranks the whole market, so a "
             "filter can never put a stock into a scan.",
             "- **🆕**, in 🏆 Core — not in the scan on the last archived month-end copy. **📄** — its quarterly result was "

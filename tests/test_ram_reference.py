@@ -88,7 +88,7 @@ def test_it_is_said_to_be_display_only_and_to_have_no_record():
 
 _FORBIDDEN = re.compile(r"\b(buy|buys|buying|bought|sell|sells|selling|sold|hold|holds|avoid|kite|operator|paresh)\b", re.I)
 _PROMISE = re.compile(r"(will (?:outperform|rise|deliver|beat|double)|guaranteed|never fails|sure[- ]?shot)", re.I)
-_RETURN_FIGURE = re.compile(r"[+-]\d+(?:\.\d+)?%")
+_RETURN_FIGURE = re.compile(r"[+-]\d+(?:\.\d+)?%|\b(?:rose|risen|gained|up|returned|fell|fallen|lost|down)\b[^.%]{0,20}\d+(?:\.\d+)?%", re.I)
 
 
 def test_no_word_of_action_no_person_no_promise_and_no_return_figure():
@@ -96,6 +96,18 @@ def test_no_word_of_action_no_person_no_promise_and_no_return_figure():
         assert not _FORBIDDEN.search(text), _FORBIDDEN.search(text)
         assert not _PROMISE.search(text), _PROMISE.search(text)
         assert not _RETURN_FIGURE.search(text), _RETURN_FIGURE.search(text)
+
+
+def test_the_page_never_reads_a_replay_as_a_record_and_says_what_reads_ram():
+    t = _page()
+    assert "Replayed on past prices at 13 month-ends" in t and "a replay on past prices, not a record" in t
+    assert "no result exists" not in t and "has measured nothing" not in t, "looks at past prices exist; only an unseen record does not"
+    assert "Nothing: it is display only" not in t and "No score or list: only the order check on the cards" in t
+
+
+def test_the_page_speaks_of_the_seal_only_while_it_holds():
+    assert ("stay sealed for now" in _page()) == bool(S.ORDER_SEALED)
+    assert "S.ORDER_SEALED" in open(R.__file__, encoding="utf-8").read(), "the words follow the flag, as the other surfaces do"
 
 
 def test_the_page_prints_no_figure_of_the_sealed_order_check():

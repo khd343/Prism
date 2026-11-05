@@ -174,7 +174,8 @@ from ui.ui_scans import (SCANS, CANDIDATES as SCAN_CANDIDATES, LIQUIDITY_STEPS a
                          load_records as load_scan_records, STUDY_SCANS as SCAN_STUDY_SCANS,
                          members_label as scan_members_label,
                          record_state as scan_record_state, scan_table, table_config as scan_table_config,
-                         SCAN_VIEWS, TREND_SHORT as SCAN_TREND_SHORT, momentum_ordered as scan_momentum_ordered,
+                         SCAN_VIEWS, TREND_SHORT as SCAN_TREND_SHORT, TECHNICAL_TREND_SHORT as SCAN_TECHNICAL_TREND_SHORT,
+                         momentum_ordered as scan_momentum_ordered,
                          RAM_VIEW as SCAN_RAM_VIEW, ram_view_order_words, ram_view_scan, ram_view_table,
                          technical_view_scan, technical_view_table,
                          TABLE_VIEWS as SCAN_TABLE_VIEWS, PLAYBOOK_LAYERS, playbook_layer_mask, playbook_layer_scan)
@@ -1221,10 +1222,10 @@ _DS_W = {
 # The two views that hold other widths than the table above (2026-11-05, the operator's ask), each measured that day on the live
 # sheet and summing to exactly the 1,020px the grid gives. 📈 Technical takes RAM Rank and Improvement: Off ATH left it, Trend reads
 # short ("📈 Stage 2" 81) as the 🎯 Scans do, its two bars narrow to their headers, Rank to 46 ("1027" 44), Stop Δ to 57 ("-11.4%" 56)
-# and RSI to 40, and what is left goes to Stock, 180 → 196. 🔢 RAM: Stock 295 shows 99.6% of the market's names in full, Sector 170 80%.
+# and RSI to 40, Improvement stays at its header's 96, and what is left goes to Stock, 180 → 195. 🔢 RAM: Stock 295 shows 99.6% of the market's names in full, Sector 170 80%.
 _DS_W_VIEWS = {
-    "📈 Technical": {"rank": 46, "name": 196, "dist_to_vstop": 57, "momentum_score": 85, "rsi_14d": 40, "breakout_score": 85,
-                     "weinstein_stage": 81},
+    "📈 Technical": {"rank": 46, "name": 195, "dist_to_vstop": 57, "momentum_score": 85, "rsi_14d": 40, "breakout_score": 85,
+                     "improvement_score": 96, "weinstein_stage": 81},
     "🔢 RAM": {"name": 295, "sector": 170},
 }
 # The Deep Scanner's 🔢 RAM view: the 🎯 Scans' table on the whole market. Outside _DS_VIEWS, whose names and order are the app's one
@@ -1322,7 +1323,8 @@ with tabs[2]:
         # so this satisfies the sort-by-visible doctrine without adding an orphan.
         "🚀 Breakout ↓": ("breakout_score", False),
         # RAM Rank ↑ (2026-11-05): low numbers first, and pandas' own na_position puts the stocks with no RAM last. A display
-        # order: nothing reads it. In no view: the rule above puts it right after Stock while this sort is active.
+        # order: nothing reads it. 📈 Technical and 🔢 RAM show it; in the other views the rule above puts it right after Stock
+        # while this sort is active.
         "RAM Rank ↑": ("ram_rank", True),
     }
 
@@ -1350,6 +1352,9 @@ with tabs[2]:
     with _ds_c3:
         # 🔢 RAM holds its own order, so its box shows that and cannot be changed: a live box that did nothing would mislead.
         if ds_view == SCAN_RAM_VIEW:
+            # Streamlit forgets a widget it did not draw, so without this a visit here would silently reset the other views' sort.
+            if "ds_sort" in st.session_state:
+                st.session_state["ds_sort"] = st.session_state["ds_sort"]
             ds_sort_label = st.selectbox("Sort", ["RAM Rank ↑"], key="ds_sort_ram", disabled=True, label_visibility="collapsed")
         else:
             ds_sort_label = st.selectbox(
@@ -1370,7 +1375,8 @@ with tabs[2]:
         ds_df = ds_df.sort_values(["ram_rank", "rank"], na_position="last", kind="mergesort")
         ds_df = ds_df.assign(**{"#": np.arange(1, len(ds_df) + 1),
                                 "symbol": ds_df["company_id"].astype(str).str.split(":", n=1).str[-1]})
-        st.caption(f"{len(ds_df):,} stocks · sorted by {ram_view_order_words(ds_df, 'Rank', df)}")
+        if len(ds_df):
+            st.caption(f"{len(ds_df):,} stock{'' if len(ds_df) == 1 else 's'} · sorted by {ram_view_order_words(ds_df, 'Rank', df)}")
     elif _sort_col in ds_df.columns:
         ds_df = ds_df.sort_values(_sort_col, ascending=_sort_asc)
 
@@ -1422,7 +1428,7 @@ with tabs[2]:
     _display_df = ds_df[_view_cols].reset_index(drop=True)
     _ds_w = {**_DS_W, **_DS_W_VIEWS.get(ds_view, {})}
     if ds_view == "📈 Technical" and "weinstein_stage" in _display_df.columns:
-        _display_df["weinstein_stage"] = _display_df["weinstein_stage"].replace(SCAN_TREND_SHORT)   # the view's short words; the tip has the rest
+        _display_df["weinstein_stage"] = _display_df["weinstein_stage"].replace(SCAN_TECHNICAL_TREND_SHORT)   # the view's short words; the tip has the rest
 
     # ── Column config ──────────────────────────────────────────────
     _CC: dict = {}

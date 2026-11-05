@@ -10,7 +10,7 @@ shows them, and only the records job's order check reads one, RAM Rank. Pinned h
   2. The daily Data check: a date in a "number column" would have been a false red every night.
   3. The tips: one source (the glossary), read by the Tear-Sheet's ?, the Reference, the Deep Scanner and the 🎯 Scans.
   4. The 🔢 RAM view, first and default on every list (the 🚀 Playbook, B and C, then 🌬️ and 🌱): the table the operator reads,
-     by RAM Rank with blanks last. 🏆 Core and 📈 Technical, on every list, are exactly main's.
+     by RAM Rank with blanks last. 🏆 Core, on every list, is exactly main's; 📈 Technical gains RAM Rank and Improvement.
   5. The Deep Scanner: main's views, and RAM Rank in its sort dropdown, low numbers first, blanks last, on screen when sorted.
   6. The Tear-Sheet: its own RAM RANK row under the ⏱️ strip, in the strip's look, never a chip on it, and no nan.
   7. Nothing scores on them: every score, tier, rank, verdict and flag identical with and without RAM values; every recipe's
@@ -357,7 +357,7 @@ def test_the_view_fits_the_budget_shrinking_nothing_and_stock_takes_the_rest(sca
 _MAIN_CORE = ("rank", "_new", "name", "market_category", "sector", "composite_score", "momentum_score", "improvement_score",
               "_strong_q", "_measured_flags", "weinstein_stage", "_liq_cr")
 # 📈 Technical since 2026-11-05 (the operator): RAM Rank and Improvement join it, New stays in Core, B and C keep List.
-_MAIN_TECH = ("rank", "ram_rank", "name", "close_price", "_liq_cr", "dist_to_vstop", "momentum_score", "d49_momentum_quality",
+_TECH = ("rank", "ram_rank", "name", "close_price", "_liq_cr", "dist_to_vstop", "momentum_score", "d49_momentum_quality",
               "rsi_14d", "breakout_score", "improvement_score", "crs_52w", "weinstein_stage")
 _MAIN_WIDTHS = {"rank": 50, "_new": 55, "name": 175, "market_category": 75, "sector": 95, "composite_score": 75,
                 "momentum_score": 85, "improvement_score": 100, "_strong_q": 40, "_measured_flags": 125,
@@ -374,19 +374,19 @@ def _core(*out, after_rank=None, after_quarter=None):
     return tuple(cols)
 
 
-_MAIN_VIEWS = {"playbook": (_core("_strong_q"), _MAIN_TECH, {"name": 185, "sector": 125}),
-               "leaders": (_MAIN_CORE, _MAIN_TECH, {}),
-               "compounder": (_core(after_quarter="_cycle"), _MAIN_TECH,
+_MAIN_VIEWS = {"playbook": (_core("_strong_q"), _TECH, {"name": 185, "sector": 125}),
+               "leaders": (_MAIN_CORE, _TECH, {}),
+               "compounder": (_core(after_quarter="_cycle"), _TECH,
                               {"name": 150, "sector": 80, "composite_score": 65, "_measured_flags": 120, "weinstein_stage": 85}),
                "no_quarter": (_core("_new", "_strong_q", after_rank="_layer"),
-                              tuple(c for c in (*_MAIN_TECH[:1], "_layer", *_MAIN_TECH[1:]) if c != "_new"),
+                              tuple(c for c in (*_TECH[:1], "_layer", *_TECH[1:]) if c != "_new"),
                               {"name": 185, "sector": 125}),
                "price_only": (_core("_new", after_rank="_layer"),
-                              tuple(c for c in (*_MAIN_TECH[:1], "_layer", *_MAIN_TECH[1:]) if c != "_new"), {})}
+                              tuple(c for c in (*_TECH[:1], "_layer", *_TECH[1:]) if c != "_new"), {})}
 
 
 @pytest.mark.parametrize("scan", LISTS, ids=lambda s: s["key"])
-def test_core_and_technical_are_mains_on_every_list(scan):
+def test_core_is_mains_and_technical_is_its_own_table_on_every_list(scan):
     core, tech, own = _MAIN_VIEWS[scan["key"]]
     assert S.table_columns(scan, CORE) == core and S.table_columns(scan) == core and S.table_columns(scan, TECH) == tech
     w = S.table_widths(scan)
@@ -601,7 +601,7 @@ _DS_HARNESS = textwrap.dedent("""
     from config import COLORS
     from ui.ui_group_views import OWNERSHIP, OWNERSHIP_NOTE
     from ui.ui_scanner import _SCANNER_HEADER_TIPS, ds_view_columns
-    from ui.ui_scans import RAM_VIEW as SCAN_RAM_VIEW, TREND_SHORT as SCAN_TREND_SHORT, ram_view_order_words
+    from ui.ui_scans import RAM_VIEW as SCAN_RAM_VIEW, TECHNICAL_TREND_SHORT as SCAN_TECHNICAL_TREND_SHORT, TREND_SHORT as SCAN_TREND_SHORT, ram_view_order_words
     from types import SimpleNamespace
 
 
@@ -943,11 +943,12 @@ def test_the_guides_stamps_are_mains():
 def test_the_guide_says_how_every_list_opens_and_what_the_order_check_reads():
     from ui import scan_guide as G
     t = " ".join(map(str, dict(G.general_sections())["How to read the table"]))
-    for words in ("every list opens", "🔢 RAM", "RAM Rank", "🏆 Core and 📈 Technical", "as before", "order check", "what Kite can trade"):
+    for words in ("every list opens", "🔢 RAM", "RAM Rank", "🏆 Core and 📈 Technical", "keep the list's own order", "order check", "what Kite can trade"):
         assert words in t, words
     assert "🚀 lists" not in t and "Momentum's top" not in t, "the order check moved to RAM Rank (2026-11-05)"
     assert "**🆕**, in 🏆 Core — " in t, "🆕 left 📈 Technical"
     assert "with RAM Rank and Improvement beside them" in t, "and those two joined it"
+    assert "as before" not in t, "📈 Technical changed; only its order did not"
     for scan in S.SCANS:                # 🌱 too, whose order section reads PRISM Rank, not Momentum
         assert "The table opens on the 🔢 RAM view" in " ".join(G._order(scan)), scan["key"]
 
@@ -994,15 +995,25 @@ def test_b_and_c_keep_their_list_column_in_technical_and_the_others_have_none(sc
 
 @pytest.mark.parametrize("scan", LISTS, ids=_LIST_IDS)
 def test_technical_fits_the_budget_with_every_column_at_or_above_its_measured_floor(scan):
-    """Each column's header and widest value, measured 2026-11-05 on the live sheet in the grid's font."""
+    """Each column's header and widest value, measured 2026-11-05 on the live sheet in the grid's font. Price 75: a unit of ₹10
+    lakh or more ("1100000.00") needs 74.5, or its leading digit is cut and it reads as a tenth of its price."""
     drawn, cols = S.technical_view_scan(scan), S.table_columns(scan, TECH)
     w = S.table_widths(drawn)
     assert sum(w[c] for c in cols) == 1030
-    floors = {"rank": 46, "_layer": 40, "ram_rank": 75, "close_price": 70, "_liq_cr": 64, "dist_to_vstop": 57, "momentum_score": 84,
+    floors = {"rank": 46, "_layer": 40, "ram_rank": 75, "close_price": 75, "_liq_cr": 64, "dist_to_vstop": 57, "momentum_score": 84,
               "d49_momentum_quality": 110, "rsi_14d": 40, "breakout_score": 70, "improvement_score": 96, "crs_52w": 59, "weinstein_stage": 81}
     assert {c: w[c] for c in cols if c in floors} == {c: max(w[c], floors[c]) for c in cols if c in floors}
-    assert w["name"] == (135 if "_layer" in cols else 175), "B's and C's List takes its 40 from Stock"
+    assert w["name"] == (130 if "_layer" in cols else 170), "B's and C's List takes its 40 from Stock"
     assert S.table_widths(scan) == {**S.TABLE_WIDTHS, **scan.get("widths", {})}, "Core's widths stay the list's own"
+
+
+def test_technicals_trend_reads_unknown_as_its_mark_and_core_keeps_the_word():
+    """81px fits "📈 Stage 2" and would cut the last letter of "❔ Unknown". The tip says what the mark means."""
+    market = _order_market(weinstein_stage="❔ Unknown")
+    table = S.scan_table(market, dict(_PLAY, mask=_EVERY_STOCK["mask"]))
+    assert set(table["weinstein_stage"]) == {"❔ Unknown"}, "the list's own table, which Core draws, keeps the word"
+    assert set(S.technical_view_table(table, market)["weinstein_stage"]) == {"❔"}
+    assert "❔" in S.table_config("03 Oct", _PLAY)["weinstein_stage"]["help"]
 
 
 def test_the_technical_table_keeps_the_lists_order_and_joins_the_rank_alone():
@@ -1033,10 +1044,20 @@ def test_the_deep_scanners_technical_carries_both_and_off_ath_left_it(tmp_path):
 def test_the_deep_scanners_technical_fits_its_grid_with_short_trend_words(tmp_path):
     widths = {**_app_dict("_DS_W"), **_app_dict("_DS_W_VIEWS")[TECH]}
     assert sum(widths[c] for c in _app_dict("_DS_VIEWS")[TECH]) + 44 == 1064
-    assert widths["weinstein_stage"] == 81 and widths["name"] == 196
+    assert widths["weinstein_stage"] == 81 and widths["name"] == 195 and widths["improvement_score"] >= 95.7, "at or above its header"
     market = _order_market(weinstein_stage="📈 Stage 2 Advancing")
     assert set(_run_deep_scanner(tmp_path, market, view=TECH, sort="Score ↓").dataframe[0].value["weinstein_stage"]) == {"📈 Stage 2"}
-    assert set(_run_deep_scanner(tmp_path, market, view=CORE, sort="Quality ↓").dataframe[0].value.get("weinstein_stage", pd.Series(dtype=str))) <= {"📈 Stage 2 Advancing"}
+    at = _run_deep_scanner(tmp_path, _order_market(weinstein_stage="❔ Unknown"), view=TECH, sort="Score ↓")
+    assert set(at.dataframe[0].value["weinstein_stage"]) == {"❔"}, "81px cuts the word: the mark alone, and the tip says what it means"
+    assert set(_export(at)["weinstein_stage"]) == {"❔ Unknown"}, "the CSV keeps the engine's words"
+    assert set(_export(_run_deep_scanner(tmp_path, market, view=TECH, sort="Score ↓"))["weinstein_stage"]) == {"📈 Stage 2 Advancing"}
+
+
+def test_the_deep_scanners_trend_tip_explains_every_word_the_view_shortens():
+    from ui.ui_scanner import _SCANNER_HEADER_TIPS
+    tip = _SCANNER_HEADER_TIPS["weinstein_stage"]
+    for words in ("Stage 1 (basing)", "Stage 2 (advancing)", "Stage 3 (topping)", "Stage 4 (declining)", "❔"):
+        assert words in tip, words
 
 
 def test_the_market_pulse_vocabulary_is_untouched_by_the_deep_scanners_ram_view():
@@ -1065,9 +1086,37 @@ def test_the_ram_view_locks_the_sort_box_and_leaving_it_gives_the_sort_back(tmp_
     at = _run_deep_scanner(tmp_path, _order_market(), view=RAM, sort=None)
     box = at.selectbox(key="ds_sort_ram")
     assert box.value == "RAM Rank ↑" and box.disabled, "a live box that did nothing would mislead"
-    at = _run_deep_scanner(tmp_path, _order_market(), view=CORE, sort=None)     # a second run: AppTest cannot re-run this control
+    at = _run_deep_scanner(tmp_path, _order_market(), view=CORE, sort=None)
     assert not at.selectbox(key="ds_sort").disabled and at.selectbox(key="ds_sort").value == "Score ↓"
     assert "ram_rank" not in at.dataframe[0].value.columns
+
+
+def test_a_visit_to_the_ram_view_keeps_the_sort_the_person_chose(tmp_path, monkeypatch):
+    """Streamlit forgets a widget it did not draw, so Core, then 🔢 RAM, then Core used to fall back to Score with no word said."""
+    from streamlit.testing.v1 import element_tree as et
+
+    def indices(self):           # AppTest cannot serialise a single-choice segmented control (tests/test_scans_tab_runs.py)
+        v = self.value
+        return [self.options.index(self.format_func(x)) for x in (v if isinstance(v, (list, tuple)) else ([] if v is None else [v]))]
+
+    monkeypatch.setattr(et.ButtonGroup, "indices", property(indices))
+    at = _run_deep_scanner(tmp_path, _order_market(), view=CORE, sort=None)
+    by_score = at.dataframe[0].value["name"].tolist()
+    at.selectbox(key="ds_sort").set_value("Momentum ↓").run()
+    by_momentum = at.dataframe[0].value["name"].tolist()
+    assert by_momentum != by_score, "the market must tell the two sorts apart"
+    next(b for b in at.get("button_group") if b.key == "ds_view").set_value(RAM).run()
+    assert not at.exception and at.selectbox(key="ds_sort_ram").value == "RAM Rank ↑"
+    next(b for b in at.get("button_group") if b.key == "ds_view").set_value(CORE).run()
+    assert not at.exception and at.selectbox(key="ds_sort").value == "Momentum ↓"
+    assert at.dataframe[0].value["name"].tolist() == by_momentum
+
+
+def test_the_ram_views_caption_counts_in_words_and_an_empty_search_leaves_it_to_the_message(tmp_path):
+    market = _order_market()
+    one = market.iloc[[0]].reset_index(drop=True)
+    assert any(c.value.startswith("1 stock · sorted by") for c in _run_deep_scanner(tmp_path, one, view=RAM, sort=None).caption)
+    assert not any(c.value.startswith("0 stock") for c in _run_deep_scanner(tmp_path, market.iloc[0:0], view=RAM, sort=None).caption)
 
 
 def test_the_ram_view_fits_the_grid_and_draws_a_dash_as_the_scans_do(tmp_path):

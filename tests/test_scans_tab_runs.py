@@ -920,7 +920,7 @@ def test_technical_shows_ram_rank_and_improvement_on_every_list_in_the_real_tab(
     assert ("_layer" in order) == (key in ("no_quarter", "price_only")), key
     config = json.loads(grid.proto.columns)
     assert config["ram_rank"]["label"] == "RAM Rank" and config["improvement_score"]["label"] == "Improvement", key
-    assert config["name"]["width"] == (135 if key in ("no_quarter", "price_only") else 175), key
+    assert config["name"]["width"] == (130 if key in ("no_quarter", "price_only") else 170), key
     t = grid.value
     assert t["ram_rank"].notna().any() and t["ram_rank"].isna().any(), f"{key}: a rank here, a dash there"
     own = t["rank"].is_monotonic_increasing if key == "compounder" else t["momentum_score"].is_monotonic_decreasing
