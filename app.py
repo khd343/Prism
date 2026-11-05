@@ -183,7 +183,8 @@ from config import (COLORS, TIER_COLORS, CONVICTION_TIERS, UI, HARD_GATES,
                     VALUATION_SIGNALS,
                     BAID_SELL_TRIGGERS, MEAN_REVERSION, PEG_ZONES,
                     ANALYSIS_MODES, DEFAULT_ANALYSIS_MODE, FORENSIC_MAX_FLAGS,
-                    FORENSIC_PENALTY_TIERS, GOVERNANCE_RISK_MULTIPLIERS, mode_label, mode_value)
+                    FORENSIC_PENALTY_TIERS, GOVERNANCE_RISK_MULTIPLIERS, mode_label, mode_value,
+                    INDEX_CLOSES_URL)
 _first_party_file_times().update(_file_times(sys.modules, _first_party(sys.modules)))
 
 
@@ -208,6 +209,14 @@ def get_clean_data(data_source, file_signature: str, sheet_id, engine: str, _upl
     df, bench = load_market(data_source, _uploaded_dict, sheet_id)
     elapsed = time.time() - t0
     return df, bench, elapsed
+
+@st.cache_data(show_spinner=False, ttl=3600)
+def get_index_view(as_of):
+    """The market box's NSE numbers (core/index_closes.py, 2026-11-04): the closes the Index closes job keeps on its
+    branch, read at most once an hour, as of the sheet's date when it has one (None: the newest session). An empty
+    view when they cannot be read, and the box then says so."""
+    from core.index_closes import box_view, read_history
+    return box_view(read_history(INDEX_CLOSES_URL), as_of=as_of)
 
 @st.cache_data(show_spinner=False, ttl=900)
 def get_data_freshness(data_source: str, sheet_id, file_signature: str):
@@ -541,8 +550,13 @@ with st.sidebar:
 
     # The market box (2026-10-08): the benchmark indices' Weinstein stages, and under them the
     # breadth regime — shown, not applied to scores (config.REGIME_DRIVES_SCORING). ui/ui_market.py.
+    # Since 2026-11-04 its numbers are NSE's own (core/index_closes.py), on the sheet's date when it has one.
+    from datetime import datetime as _datetime
+    from core.sheet_meta import IST as _IST
     regime = df.attrs.get("detected_market_regime", "SIDEWAYS")
-    st.markdown(market_box_html(bench_df, regime), unsafe_allow_html=True)
+    _as_of = _fresh.data_date if _fresh.is_known else None
+    _ref_day = _as_of or _datetime.now(_IST).date()
+    st.markdown(market_box_html(bench_df, regime, get_index_view(_as_of), ref_day=_ref_day), unsafe_allow_html=True)
 
 
 # Discovery filter cascade — built in ui/ui_discovery.py (stateful counterpart to the

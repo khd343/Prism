@@ -198,7 +198,155 @@ def test_without_index_data_the_box_shows_the_regime_honestly():
 
 
 def test_the_sidebar_renders_the_box_from_the_one_load():
+    """The sheet's table from the one load, and NSE's numbers (2026-11-04) on the sheet's own date when it has one."""
     src = _APP
     assert "clean_df, bench_df, load_time = get_clean_data(" in src
-    assert "st.markdown(market_box_html(bench_df, regime), unsafe_allow_html=True)" in src
+    assert ("st.markdown(market_box_html(bench_df, regime, get_index_view(_as_of), ref_day=_ref_day), "
+            "unsafe_allow_html=True)") in src
+    assert "_as_of = _fresh.data_date if _fresh.is_known else None" in src
     assert ">Detected Regime</div>" not in src, "the old inline box is gone; ui_market renders it"
+    tree = ast.parse(src)
+    fn = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "get_index_view")
+    deco = [ast.unparse(d) for d in fn.decorator_list]
+    assert any(d.startswith("st.cache_data(") and "ttl=3600" in d for d in deco), deco
+    body = ast.unparse(fn)
+    assert "read_history(INDEX_CLOSES_URL)" in body and "box_view(" in body and "as_of=as_of" in body
+
+
+# ── NSE's own numbers and the 200-week line (2026-11-04) ─────────────────────────────────────────────────────────
+import html as _html  # noqa: E402
+from datetime import date as _date  # noqa: E402
+
+import core.index_closes as X  # noqa: E402
+
+D = _date(2026, 11, 4)
+
+
+def _view(over=None, day=D, drop=()):
+    """A box_view for every declared index: a 205-week history, 10% above its 200-week average, Stage 2."""
+    base = {cid: dict(close=110.0, sma_30w=100.0, sma_200d=95.0, sma_200w=100.0, weeks=205, vs_200w=10.0,
+                      stage="📈 Stage 2 Advancing", last_date=day) for cid in BENCHMARK_INDICES if cid not in drop}
+    for cid, kw in (over or {}).items():
+        base[cid].update(kw)
+    return pd.DataFrame([dict(company_id=cid, name=BENCHMARK_INDICES[cid], **v) for cid, v in base.items()])[
+        X.VIEW_COLUMNS]
+
+
+def _sheet(stage="📉 Stage 4 Declining"):
+    b = _bench()
+    b["stage"] = stage
+    return b
+
+
+def _cell_tip(h, full):
+    return h.split(f'title="{full}: ')[1].split('"')[0]
+
+
+def test_with_nse_numbers_each_row_shows_its_stage_and_its_200_week_line():
+    h = M.market_box_html(_sheet(), "SIDEWAYS", _view(), ref_day=D)
+    pos = [h.index(f">{M.SHORT_NAMES[i]}<") for i in BENCHMARK_INDICES]
+    assert pos == sorted(pos), "config order, the Nifty 500 first"
+    assert ">vs 200W<" in h and ">Stage<" in h and h.count(">+10.0%<") == len(BENCHMARK_INDICES)
+    assert "NSE closes · 4 Nov 2026" in h and "vs 200W unavailable" not in h
+    assert "font-weight:800" in h.split(">Nifty 500<")[0][-300:], "the market row is the bold one"
+    assert h.count("grid-template-columns:minmax(0,1fr) auto auto") == 1, "one grid: the columns line up"
+    assert h.count("grid-column:1 / -1") == 1, "one rule under the Nifty 500"
+
+
+def test_nses_stage_leads_over_the_sheets():
+    """3 Nov 2026: the vendor's history put Nifty500 Shariah in Stage 4; NSE's own numbers give Stage 3."""
+    view = _view({"NSE:NIFTY500SH": dict(stage="⚠️ Stage 3 Top", close=6796.3, sma_200w=6621.4, vs_200w=2.64)})
+    h = M.market_box_html(_sheet("📉 Stage 4 Declining"), "SIDEWAYS", view, ref_day=D)
+    tip = _cell_tip(h, "Nifty500 Shariah")
+    assert tip == "⚠️ Stage 3 Top · 2.6% above its 200-week average (6,621.4) · NSE close 6,796.3 on 4 Nov 2026"
+    pct, stage = h.split(">Shariah 500<")[1].split("</span>")[0:2]
+    assert pct.endswith(">+2.6%") and stage.endswith(">⚠️ Stage 3")
+
+
+@pytest.mark.parametrize("v,text,colour", [(14.94, "+14.9%", "green"), (-1.62, "−1.6%", "red"),
+                                           (0.04, "0.0%", "text_muted"), (-0.04, "0.0%", "text_muted")])
+def test_vs_200w_is_coloured_on_the_figure_as_printed(v, text, colour):
+    h = M.market_box_html(_sheet(), "SIDEWAYS", _view({"NSE:MIDSMAL400": dict(vs_200w=v)}), ref_day=D)
+    cell = h.split(">MidSmall 400<")[1].split("</span>")[0]
+    assert cell.endswith(f">{text}") and f"color:{M.COLORS[colour]};" in cell
+
+
+def test_a_young_index_shows_a_dash_and_says_why():
+    view = _view({"NSE:NIF500MO50": dict(sma_200w=np.nan, vs_200w=np.nan, weeks=127)})
+    h = M.market_box_html(_sheet(), "SIDEWAYS", view, ref_day=D)
+    assert h.split(">Momentum 50<")[1].split("</span>")[0].endswith(">—")
+    assert "127 weeks of NSE closes, fewer than the 200 a 200-week average needs" in _cell_tip(h, "Nifty500 Momentum 50")
+
+
+def test_an_index_nse_lacks_keeps_the_sheets_stage_and_says_so():
+    h = M.market_box_html(_sheet("⚠️ Stage 3 Top"), "SIDEWAYS", _view(drop=("NSE:MIDSMAL400",)), ref_day=D)
+    assert h.split(">MidSmall 400<")[1].split("</span>")[0].endswith(">—")
+    assert _cell_tip(h, "Nifty MidSmallcap 400") == "⚠️ Stage 3 Top · from the sheet: NSE had no close for it"
+
+
+def test_an_index_whose_nse_closes_stopped_keeps_the_sheets_stage_and_says_so():
+    """Review, 4 Nov 2026: an index NSE renames or drops keeps its last close on the branch for ever, so its numbers
+    would have sat under "NSE closes · <today>" for months. More than INDEX_CLOSES_STALE_DAYS before the sheet's date,
+    a row is the sheet's again and says why; with no sheet row it is left out."""
+    old = {"NSE:MIDSMAL400": dict(last_date=_date(2026, 10, 27), vs_200w=33.3)}
+    h = M.market_box_html(_sheet("⚠️ Stage 3 Top"), "SIDEWAYS", _view(old), ref_day=D)
+    assert h.split(">MidSmall 400<")[1].split("</span>")[0].endswith(">—") and ">+33.3%<" not in h
+    assert _html.unescape(_cell_tip(h, "Nifty MidSmallcap 400")) == (
+        "⚠️ Stage 3 Top · from the sheet: NSE's closes for it stop at 27 Oct 2026")
+    assert ">MidSmall 400<" not in M.market_box_html(pd.DataFrame(), "SIDEWAYS", _view(old), ref_day=D)
+    week = {"NSE:MIDSMAL400": dict(last_date=_date(2026, 10, 28), vs_200w=33.3)}
+    assert ">+33.3%<" in M.market_box_html(_sheet(), "SIDEWAYS", _view(week), ref_day=D), "a week behind is NSE's"
+
+
+def test_the_source_line_says_it_reads_on_or_before_the_sheets_date():
+    """Review, 4 Nov 2026: in the evening the sheet is often a session ahead of NSE's newest kept close; the line under
+    the rows gives that close's date, and its tooltip says how the date is chosen."""
+    h = _html.unescape(M.market_box_html(_sheet(), "SIDEWAYS", _view(day=_date(2026, 11, 3)), ref_day=D))
+    assert "NSE closes · 3 Nov 2026" in h and "on or before the sheet's date" in h
+
+
+def test_no_text_in_the_box_is_smaller_than_the_design_systems_sub_label():
+    """docs/ui_design_system.md: the scale's smallest size is the 0.62rem sub-label (review, 4 Nov 2026: the column
+    labels were 0.58)."""
+    for nse in (_view(), None):
+        h = M.market_box_html(_sheet(), "SIDEWAYS", nse, ref_day=D)
+        assert min(float(s) for s in re.findall(r"font-size:([\d.]+)rem", h)) >= 0.62
+
+
+@pytest.mark.parametrize("nse,why", [(None, "NSE's index closes could not be read"),
+                                     (pd.DataFrame(columns=X.VIEW_COLUMNS), "NSE's index closes could not be read"),
+                                     ("stale", "NSE's index closes stop at 21 Oct 2026")])
+def test_without_fresh_nse_numbers_the_box_is_the_sheets_and_says_why(nse, why):
+    nse = _view(day=_date(2026, 10, 21)) if isinstance(nse, str) else nse
+    h = _html.unescape(M.market_box_html(_sheet("⚠️ Stage 3 Top"), "SIDEWAYS", nse, ref_day=D))
+    assert h.count(f"vs 200W unavailable: {why} — stages from the sheet.") == 1
+    assert ">vs 200W<" not in h and "NSE closes ·" not in h and "grid-template-columns" not in h
+    assert h.count("display:flex;justify-content:space-between") == len(BENCHMARK_INDICES), "the sheet's rows as before"
+    assert h.count(">⚠️ Stage 3<") == len(BENCHMARK_INDICES) and ">📉 Stage 4<" not in h, "every row the sheet's stage"
+
+
+def test_a_week_old_view_is_still_fresh_and_a_day_more_is_not():
+    fresh = M.market_box_html(_sheet(), "SIDEWAYS", _view(day=_date(2026, 10, 28)), ref_day=D)
+    stale = M.market_box_html(_sheet(), "SIDEWAYS", _view(day=_date(2026, 10, 27)), ref_day=D)
+    assert "NSE closes · 28 Oct 2026" in fresh and "vs 200W unavailable" in stale
+
+
+def test_without_the_sheets_index_rows_nses_numbers_still_fill_the_box():
+    h = M.market_box_html(pd.DataFrame(), "SIDEWAYS", _view(), ref_day=D)
+    assert ">vs 200W<" in h and "Detected Regime" not in h and ">Shariah 500<" in h
+    assert "Detected Regime" in M.market_box_html(pd.DataFrame(), "SIDEWAYS", None, ref_day=D)
+
+
+def test_the_edge_follows_the_nifty_500s_nse_stage():
+    h = M.market_box_html(_sheet("📈 Stage 2 Advancing"), "SIDEWAYS",
+                          _view({"NSE:CNX500": dict(stage="📉 Stage 4 Declining")}), ref_day=D)
+    assert f"border-left:4px solid {M.COLORS['red']}" in h
+
+
+def test_nothing_reads_nan_or_none_in_any_mode():
+    views = [_view(), _view({"NSE:NIF500MO50": dict(sma_200w=np.nan, vs_200w=np.nan, weeks=127)}),
+             _view(drop=("NSE:CNX500",)), None, _view(day=_date(2026, 9, 1))]
+    for v in views:
+        for sheet in (_sheet(), pd.DataFrame()):
+            h = M.market_box_html(sheet, "SIDEWAYS", v, ref_day=D)
+            assert not _NAN.search(h), h[:300]
