@@ -187,7 +187,8 @@ def test_the_full_record_shows_what_holding_20_gave_and_where_the_rule_stands():
             and "whether momentum's order keeps beating" in line and "only if" not in line), (
         "the order is in use; the check records whether it keeps beating random picks — it gates nothing")
     other = _html.unescape(S.card_html(S.SCANS[1], 235, "measured", _playbook_record(), selected=False, latest="03 Dec"))
-    assert "The table lists by momentum since 13 Oct" in other and "🔢 RAM" not in other, "🌬️ has no 🔢 RAM view"
+    assert ("🏆 Core and 📈 Technical list by momentum since 13 Oct" in other and "🔢 RAM by RAM Rank" in other
+            and "The table lists" not in other), "🌬️ opens on 🔢 RAM too (2026-11-05)"
 
 
 def test_the_card_states_a_decided_check_in_words():

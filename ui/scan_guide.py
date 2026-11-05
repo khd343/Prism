@@ -247,7 +247,7 @@ GUIDES = {
             "its 12-month windows.",
             "- **The backtest is in-sample.** The recipe was found and tested on the same three years, on "
             "companies that are still listed today.",
-            "- **\"Cycle ↓\"** marks stocks whose cash conversion cycle shortened by 15+ days while sales grew "
+            "- **\"Cycle ↓\"**, in 🏆 Core, marks stocks whose cash conversion cycle shortened by 15+ days while sales grew "
             "more than 15% in the same year. It did well inside this list in the backtest, but it is a reading "
             "aid — not part of the recipe or the record.",
         ],
@@ -373,9 +373,7 @@ def _index(scan: dict) -> str:
 
 def _order_words(scan: dict) -> str:
     words = "Momentum, high to low" if S.momentum_ordered(scan) else "PRISM Rank"
-    if S.RAM_VIEW in S.scan_views(scan):
-        return f"{words} in 🏆 Core and 📈 Technical; RAM Rank, strongest first, no RAM last, in {S.RAM_VIEW}"
-    return words
+    return f"{words} in 🏆 Core and 📈 Technical; RAM Rank, strongest first, no RAM last, in {S.RAM_VIEW}"
 
 
 def _read_over(scan: dict) -> str:
@@ -406,14 +404,13 @@ def _glance(scan: dict) -> list:
 
 
 def _order(scan: dict) -> list:
+    opens = (f"The table opens on the {S.RAM_VIEW} view, by RAM Rank, strongest first, no RAM last; 🏆 Core and 📈 "
+             f"Technical read as below.")
     reading = "The order is for reading only: every match is the scan, and the record counts them all equally."
     if not S.momentum_ordered(scan):
-        return ["By PRISM Rank — 1 is PRISM's best overall score.", reading]
-    out = ["By Momentum, high to low — the strongest price trends first.",
+        return [opens, "By PRISM Rank — 1 is PRISM's best overall score.", reading]
+    out = [opens, "By Momentum, high to low — the strongest price trends first.",
            "Rank stays a column: click its header, then Sort ascending, to list by it.", reading]
-    if S.RAM_VIEW in S.scan_views(scan):
-        out.insert(0, f"The table opens on the {S.RAM_VIEW} view, by RAM Rank, strongest first, no RAM last; 🏆 Core and 📈 "
-                      f"Technical read as below.")
     if scan["key"] in S.ORDER_RULE["scans"]:
         out.append(f"The order check (see Its record, below) records whether the top {S.HOLD_K} by momentum "
                    f"keeps beating random picks.")
@@ -605,11 +602,11 @@ def general_sections(scans=None) -> list:
         ]),
         ("How to read the table", [
             *(f"- **{view}** — {VIEW_WHAT[view]}" for view in S.SCAN_VIEWS),
-            f"- **{S.RAM_VIEW}** — the 🚀 lists open on this view, sorted by RAM Rank, strongest first, no RAM last; 🏆 Core and "
-            f"📈 Technical read as before, and the order check still measures Momentum's top picks.",
+            f"- **{S.RAM_VIEW}** — every list opens on this view, sorted by RAM Rank, strongest first, no RAM last; 🏆 Core and "
+            f"📈 Technical read as before, and where a list has an order check, it still measures Momentum's top picks.",
             "- **Filters** only hide rows of the finished list. The recipe always ranks the whole market, so a "
             "filter can never put a stock into a scan.",
-            "- **🆕** — not in the scan on the last archived month-end copy. **📄** — its quarterly result was "
+            "- **🆕**, in 🏆 Core and 📈 Technical — not in the scan on the last archived month-end copy. **📄** — its quarterly result was "
             "declared since then. Both together: it entered on a fresh result; 🆕 alone: it entered on price "
             "movement.",
             "- **Category** — the company's market-cap band from the data vendor: Mega, Large, Mid, Small, Micro "
