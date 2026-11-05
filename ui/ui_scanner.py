@@ -32,6 +32,9 @@ _SCANNER_HEADER_TIPS = {
     "red_flag_count":   _GLOSSARY["Red Flags"],
     "red_flag_list":    "The names of the forensic red flags this stock is carrying (the 'which', beside the count) — 'Clean ✅' when none fired.",
     "momentum_score":   _GLOSSARY["Momentum Scr"],
+    "ram_rank":         _GLOSSARY["RAM Rank"],
+    "ram_pct":          _GLOSSARY["RAM %"],
+    "ram_score":        _GLOSSARY["RAM"],
     # ── Deep Scanner view-preset columns (Quality / Valuation / Forensic / Technical) ──
     # Reuse the SAME glossary the tearsheet "?" chip uses (single source of truth); bespoke text only
     # where a column has no tearsheet-cell glossary entry. Coverage is pinned by

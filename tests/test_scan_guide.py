@@ -275,8 +275,11 @@ def test_the_table_order_is_written_from_the_scan():
     flipped = _guide("playbook", order=None)
     assert "By PRISM Rank" in flipped and "Listed by: PRISM Rank" in flipped and "By Momentum" not in flipped
     table = dict(G.general_sections())["Which scan for what"][0][2]
+    # 2026-11-05: 🚀 opens on the 🔢 RAM view, so its line and row say whose order is whose; the others read as before.
+    rocket = "Momentum, high to low in 🏆 Core and 📈 Technical; RAM Rank, strongest first, no RAM last, in 🔢 RAM"
     assert [row[3] for row in table] == [G._order_words(s) for s in S.SCANS] == [
-        "Momentum, high to low" if S.momentum_ordered(s) else "PRISM Rank" for s in S.SCANS]
+        rocket, "Momentum, high to low", "PRISM Rank"]
+    assert f"Listed by: {rocket}." in _guide("playbook")
 
 
 def test_the_index_the_dates_and_the_recipe_line_are_written_from_the_scan():

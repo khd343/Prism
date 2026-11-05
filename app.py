@@ -175,6 +175,7 @@ from ui.ui_scans import (SCANS, CANDIDATES as SCAN_CANDIDATES, LIQUIDITY_STEPS a
                          members_label as scan_members_label,
                          record_state as scan_record_state, scan_table, table_config as scan_table_config,
                          SCAN_VIEWS, TREND_SHORT as SCAN_TREND_SHORT, momentum_ordered as scan_momentum_ordered,
+                         RAM_VIEW as SCAN_RAM_VIEW, ram_view_order_words, ram_view_scan, ram_view_table, scan_views,
                          PLAYBOOK_LAYERS, playbook_layer_mask, playbook_layer_scan)
 from ui.scan_guide import (guide_html as scan_guide_html, guide_markdown as scan_guide_markdown,
                            reference_html as scan_reference_html)
@@ -1079,12 +1080,20 @@ with tabs[1]:
         # The two views (2026-10-13, ui_scans.SCAN_VIEWS): 🏆 Core = why it is in the list; 📈 Technical =
         # is now a good moment, how far is the stop, can I buy one share. A display choice under the
         # app-wide names, never a filter: the 🧹 Clear does not reset it (tests/test_scan_views.py).
-        _sc_view = st.segmented_control("Column View", list(SCAN_VIEWS), default="🏆 Core", key="scan_view")
+        # 🔢 RAM (2026-11-05, ui_scans.RAM_VIEW) comes first on the 🚀 lists. Other options make another widget here, so a
+        # choice of it falls back to Core on the other scans.
+        _sc_views = scan_views(_sc_tbl_scan)
+        _sc_view = st.segmented_control("Column View", list(_sc_views), default=_sc_views[0], key="scan_view")
         if not _sc_view:
-            _sc_view = "🏆 Core"
+            _sc_view = _sc_views[0]
         # "load it into", not "open": Streamlit cannot switch tabs from code, so the reader clicks the tab.
         # The order is the scan's own (2026-10-13): 🚀 and 🌬️ by momentum, high to low; 🌱 by Rank.
         _sc_sort = "Momentum, high to low" if scan_momentum_ordered(_sc_sel) else "Rank"
+        # The view holds its own order, so flipping views can reorder the rows, and each caption says which. It has no New
+        # column, so no legend for one. The row pick below reads this same table, and the grid's CSV writes these columns.
+        if _sc_view == SCAN_RAM_VIEW:
+            _sc_tbl_scan, _sc_tbl = ram_view_scan(_sc_tbl_scan), ram_view_table(_sc_tbl, df)
+            _sc_sort, _sc_new = ram_view_order_words(_sc_tbl, _sc_sort, df), ""
         st.caption(f"{len(_sc_tbl):,}{_sc_of} · sorted by {_sc_sort}{_sc_new} · click a row to load it into "
                    f"the Tear-Sheet tab")
         # The key follows the VISIBLE list: when any control changes it, the table is a new widget and
@@ -1095,6 +1104,8 @@ with tabs[1]:
             column_order=list(scan_table_columns(_sc_tbl_scan, _sc_view)),
             hide_index=True, width="stretch", height=min(560, 38 + 35 * len(_sc_tbl)),
             on_select="rerun", selection_mode="single-row",
+            # A dash under the three RAM columns on half of the list, not the word None; Core and Technical keep Streamlit's.
+            placeholder="—" if _sc_view == SCAN_RAM_VIEW else None,
             key=f"scan_tbl_{_sc_tbl_scan['key']}_{_sc_view}_{_sc_ids}")
         _sc_rows = _sc_pick.selection.rows if _sc_pick and hasattr(_sc_pick, "selection") else []
         if _sc_rows:
@@ -1195,7 +1206,7 @@ _DS_W = {
     "governance_bonus": 90, "promoter_holdings": 80, "change_promoter_1y": 110, "pledged_percentage": 75,
     "fii_holdings": 55, "change_fii_lq": 80, "dii_holdings": 55, "change_dii_lq": 80, "smart_money_flow": 160,
     # shown only while its sort is active
-    "result_when": 95,
+    "result_when": 95, "ram_rank": 75,
 }
 
 with tabs[2]:
@@ -1285,6 +1296,9 @@ with tabs[2]:
         # proportionate use of that evidence. breakout_score is already a Technical-view column,
         # so this satisfies the sort-by-visible doctrine without adding an orphan.
         "🚀 Breakout ↓": ("breakout_score", False),
+        # RAM Rank ↑ (2026-11-05): low numbers first, and pandas' own na_position puts the stocks with no RAM last. A display
+        # order: nothing reads it. In no view: the rule above puts it right after Stock while this sort is active.
+        "RAM Rank ↑": ("ram_rank", True),
     }
 
     # ── Control bar ────────────────────────────────────────────────
@@ -1424,6 +1438,7 @@ with tabs[2]:
         "dii_holdings":    ("DII",      "%.1f%%"),
         "change_dii_lq":   ("DII Δ qtr", "%+.2fpp"),
         "rsi_14d":         ("RSI",      "%.0f"),
+        "ram_rank":        ("RAM Rank", "%.0f"),      # shown while its sort is active (2026-11-05)
         "dividend_yield":  ("Div Yield", "%.2f%%"),   # Valuation: vendor TTM yield beside E.Yield; 0.00% = does not pay (2026-09-19)
         "fcf_yield":       ("FCF Yld",  "%.1f%%"),
         "market_cap":      ("MCap ₹Cr", "%.0f"),

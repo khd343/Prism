@@ -40,6 +40,7 @@ import streamlit as st
 
 from config import BENCHMARK_INDICES, COLORS
 from core.data_engine import price_trend_inputs, traded_value_cr   # ONE liquidity number (moved there 2026-10-09)
+from core.data_engine import ram_date_text, ram_day                 # 🔢 RAM's date words, the Tear-Sheet's own
 from core.forward_returns import MIN_HORIZON_DAYS
 from core.scoring_engine import (_compute_improvement_score, compute_momentum_score, improvement_evidence,
                                  strong_quarter)
@@ -737,9 +738,12 @@ TABLE_WIDTHS = {"rank": 50, "_new": 55, "name": 175, "market_category": 75, "sec
                 # 📈 Technical (2026-10-13): the Deep Scanner's widths for the same columns, Breakout as a
                 # number like Momentum here; "🔥 OVERHEATED" fits 110.
                 "close_price": 80, "dist_to_vstop": 60, "d49_momentum_quality": 110, "rsi_14d": 50,
-                "breakout_score": 85, "crs_52w": 60}
+                "breakout_score": 85, "crs_52w": 60,
+                # 🔢 RAM (2026-11-05), each column's header and widest value on the 4 Nov copy, by the method above: # 45 ("1000"
+                # 44), RAM Rank 75 (header 74), Symbol 105 (widest on the three lists 103), RAM % 57 (header 56), RAM 46 ("-0.12" 45).
+                "#": 45, "ram_rank": 75, "symbol": 105, "ram_pct": 57, "ram_score": 46}
 # The table's views (2026-10-13), by the app-wide names (ui_group_views.VIEWS — the Deep Scanner's and
-# Market Pulse's). 🏆 Core, the default, answers "why is it in the list"; 📈 Technical answers "is now a
+# Market Pulse's). 🏆 Core, the default on 🌬️ and 🌱, answers "why is it in the list"; 📈 Technical answers "is now a
 # good moment, how far is the stop, can I buy one share": the Deep Scanner's Technical columns (without
 # Readiness and Off ATH, both folded into Breakout) plus Price and ₹ Cr/day, which decide whether a
 # small account can buy a share at all. Mom. Quality sits between the two numbers it reads. Adding these
@@ -748,6 +752,16 @@ TABLE_WIDTHS = {"rank": 50, "_new": 55, "name": 175, "market_category": 75, "sec
 SCAN_VIEWS = ("🏆 Core", "📈 Technical")
 TECHNICAL_COLUMNS = ("rank", "_new", "name", "close_price", "_liq_cr", "dist_to_vstop", "momentum_score",
                      "d49_momentum_quality", "rsi_14d", "breakout_score", "crs_52w", "weinstein_stage")
+# 🔢 RAM (2026-11-05, the operator's call): a list you act on answers one question, so the 🚀 Playbook, B and C open on one
+# table of their own, by RAM Rank, strongest first, no RAM last. Core and Technical stay as they are, on every list. Price
+# is there because one share must fit the account. Display only: only the tab reads this view and its order, and no
+# list, record, order check, feed or fingerprint moves (tests/test_ram_display.py). It takes the 1,030px with nothing
+# shrunk: every name on the three lists fits 280 (4 Nov), so Stock 312 and Sector 170, which shows 82-84% of its names in
+# full where 125 showed 73% (seen cut in the browser: "Capital Goods - Elec", "Air Transport Servic").
+RAM_VIEW = "🔢 RAM"
+RAM_VIEW_COLUMNS = ("#", "ram_rank", "symbol", "name", "ram_pct", "ram_score", "close_price", "market_category", "sector",
+                    "_liq_cr")
+RAM_VIEW_WIDTHS = {"name": 312, "sector": 170}
 # The engine's Weinstein labels, shortened so the column fits; the header tip carries the words.
 TREND_SHORT = {"📈 Stage 2 Advancing": "📈 Stage 2", "🔄 Stage 1 Basing": "🔄 Stage 1",
                "⚠️ Stage 3 Top": "⚠️ Stage 3", "📉 Stage 4 Declining": "📉 Stage 4"}
@@ -763,7 +777,10 @@ def table_columns(scan: dict, view: str = SCAN_VIEWS[0]) -> tuple:
     """The columns this scan shows in `view`. 🏆 Core: every table column except those its recipe fixes,
     plus its own extra columns, each right after its anchor. 📈 Technical: TECHNICAL_COLUMNS except the
     fixed ones (none is fixed by a recipe; the ladder's B and C hide New), plus an extra only where the view
-    shows its anchor (2026-10-30): List after Rank, while 🌱's Cycle ↓, anchored on 🔥, stays out."""
+    shows its anchor (2026-10-30): List after Rank, while 🌱's Cycle ↓, anchored on 🔥, stays out. 🔢 RAM: its own columns on
+    the lists that offer it; anywhere else a choice of it reads as Core."""
+    if view == RAM_VIEW and view in scan_views(scan):
+        return RAM_VIEW_COLUMNS
     if view == SCAN_VIEWS[1]:
         cols = [c for c in TECHNICAL_COLUMNS if c not in scan.get("fixed", ())]
         extras = [e for e in scan.get("extra", ()) if EXTRA_COLUMNS[e] in cols]
@@ -778,6 +795,39 @@ def table_columns(scan: dict, view: str = SCAN_VIEWS[0]) -> tuple:
 def table_widths(scan: dict) -> dict:
     """Column widths for this scan: the shared widths, with the scan's own overrides."""
     return {**TABLE_WIDTHS, **scan.get("widths", {})}
+
+
+def scan_views(scan: dict) -> tuple:
+    """The views this list offers, the first its default: the 🚀 lists open on 🔢 RAM, every other scan on Core."""
+    return (RAM_VIEW, *SCAN_VIEWS) if scan.get("key") in {layer["key"] for layer in PLAYBOOK_LAYERS} else SCAN_VIEWS
+
+
+def ram_view_scan(scan: dict) -> dict:
+    """The scan as the 🔢 RAM view draws it: its widths are the view's, whichever of the three lists it is."""
+    return dict(scan, widths=RAM_VIEW_WIDTHS)
+
+
+def ram_view_table(table: pd.DataFrame, df: pd.DataFrame) -> pd.DataFrame:
+    """The 🔢 RAM view of a finished list (scan_table's, filters and floor applied), with RAM from the market frame beside it:
+    RAM Rank low to high, no RAM last. The sort is stable, so on a tie and among the rows with no RAM the list keeps the
+    order it came in (🚀's: momentum high to low, then Rank), and a list with no RAM at all reads exactly as it came. # is
+    the place as shown, so a filter renumbers it. Symbol is the id without its exchange."""
+    ram = df.reindex(columns=["company_id", "ram_rank", "ram_pct", "ram_score", "ram_date"])
+    out = (table.merge(ram, on="company_id", how="left")
+           .sort_values("ram_rank", kind="mergesort", na_position="last").reset_index(drop=True))
+    return out.assign(**{"#": np.arange(1, len(out) + 1),
+                         "symbol": out["company_id"].astype(str).str.split(":", n=1).str[-1]})
+
+
+def ram_view_order_words(table: pd.DataFrame, today: str, df: pd.DataFrame) -> str:
+    """What the view's caption says it is sorted by and how old its ranks are: the newest RAM Date among the rows shown. With
+    no RAM in the list it reads `today`, the list's own order, and says whether the whole copy `df` has none (an old copy,
+    or before the first RAM night) or only this list (a BSE-only list on a copy that has RAM)."""
+    if table["ram_rank"].notna().any():
+        newest = ram_day(ram_date_text(table["ram_date"]).dropna().max())
+        return "RAM Rank, strongest first · no RAM last" + (f" · RAM of {newest}" if newest else "")
+    where = "in this list" if df.reindex(columns=["ram_rank"])["ram_rank"].notna().any() else "on this copy"
+    return f"{today} · no RAM {where}"
 
 
 def momentum_ordered(scan: dict) -> bool:
@@ -920,6 +970,14 @@ def table_config(members_date_label: str, scan: dict = None) -> dict:
         "composite_score": cc.ProgressColumn("Score", min_value=0, max_value=100, format="%.0f",
                                              width=w["composite_score"]),
         "momentum_score": cc.NumberColumn("Momentum", format="%.0f", width=w["momentum_score"]),
+        # 🔢 RAM's own columns (2026-11-05); the rest of its table is the columns below, with their own headers and tips.
+        "#": cc.NumberColumn("#", format="%d", width=w["#"],
+                             help="This row's place in the list as shown, after the filters and the sort. A filter renumbers it."),
+        "ram_rank": cc.NumberColumn("RAM Rank", format="%.0f", width=w["ram_rank"], help=_SCANNER_HEADER_TIPS["ram_rank"]),
+        "symbol": cc.TextColumn("Symbol", width=w["symbol"],
+                                help="The stock's symbol without its exchange, to type into a broker or a chart."),
+        "ram_pct": cc.NumberColumn("RAM %", format="%.1f", width=w["ram_pct"], help=_SCANNER_HEADER_TIPS["ram_pct"]),
+        "ram_score": cc.NumberColumn("RAM", format="%.2f", width=w["ram_score"], help=_SCANNER_HEADER_TIPS["ram_score"]),
         "improvement_score": cc.NumberColumn("Improvement", format="%.0f", width=w["improvement_score"]),
         "_strong_q": cc.TextColumn("🔥", width=w["_strong_q"],
                                    help="🔥 Strong Quarter: latest quarter vs the same quarter last year — "
@@ -1050,8 +1108,12 @@ def _hold_line(scan: dict, ws, c: dict, esc) -> str:
     caps = ", ".join(names[:-1]) + " and " + names[-1] if len(names) > 1 else "".join(names)
     rule = note = ""
     if scan.get("key") in ORDER_RULE["scans"]:
-        note = (f' The table lists by momentum since 13 Oct, chosen before any of these windows; the order '
-                f'check records whether that order keeps beating random picks — it holds if its top {k} '
+        # 2026-11-05: on a list that opens on 🔢 RAM the sentence says whose order is whose; the check reads momentum's.
+        lists, which = (("🏆 Core and 📈 Technical list by momentum since 13 Oct, chosen before any of these windows, and "
+                         f"{RAM_VIEW} by RAM Rank", "momentum's order") if RAM_VIEW in scan_views(scan) else
+                        ("The table lists by momentum since 13 Oct, chosen before any of these windows", "that order"))
+        note = (f' {lists}; the order '
+                f'check records whether {which} keeps beating random picks — it holds if its top {k} '
                 f'beats {ORDER_RULE["min_avg_pct"]:.0f}%+ of them on average over {ORDER_RULE["windows"]} '
                 f'separate windows, and beats Rank\'s.')
         v = order_rule(ws)
