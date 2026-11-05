@@ -755,11 +755,12 @@ TECHNICAL_COLUMNS = ("rank", "_new", "name", "close_price", "_liq_cr", "dist_to_
 # table of their own, by RAM Rank, strongest first, no RAM last. Core and Technical stay as they are, on every list. Price
 # is there because one share must fit the account. Display only: only the tab reads this view and its order, and no
 # list, record, order check, feed or fingerprint moves (tests/test_ram_display.py). It takes the 1,030px with nothing
-# shrunk: Sector at 🚀's own 125 for all three, and Stock what is left, 357. Every name on the three lists fits 280 (4 Nov).
+# shrunk: every name on the three lists fits 280 (4 Nov), so Stock 312 and Sector 170, which shows 82-84% of its names in
+# full where 125 showed 73% (seen cut in the browser: "Capital Goods - Elec", "Air Transport Servic").
 RAM_VIEW = "🔢 RAM"
 RAM_VIEW_COLUMNS = ("#", "ram_rank", "symbol", "name", "ram_pct", "ram_score", "close_price", "market_category", "sector",
                     "_liq_cr")
-RAM_VIEW_WIDTHS = {"name": 357, "sector": 125}
+RAM_VIEW_WIDTHS = {"name": 312, "sector": 170}
 # The engine's Weinstein labels, shortened so the column fits; the header tip carries the words.
 TREND_SHORT = {"📈 Stage 2 Advancing": "📈 Stage 2", "🔄 Stage 1 Basing": "🔄 Stage 1",
                "⚠️ Stage 3 Top": "⚠️ Stage 3", "📉 Stage 4 Declining": "📉 Stage 4"}
@@ -1102,8 +1103,12 @@ def _hold_line(scan: dict, ws, c: dict, esc) -> str:
     caps = ", ".join(names[:-1]) + " and " + names[-1] if len(names) > 1 else "".join(names)
     rule = note = ""
     if scan.get("key") in ORDER_RULE["scans"]:
-        note = (f' The table lists by momentum since 13 Oct, chosen before any of these windows; the order '
-                f'check records whether that order keeps beating random picks — it holds if its top {k} '
+        # 2026-11-05: on a list that opens on 🔢 RAM the sentence says whose order is whose; the check reads momentum's.
+        lists, which = (("🏆 Core and 📈 Technical list by momentum since 13 Oct, chosen before any of these windows, and "
+                         f"{RAM_VIEW} by RAM Rank", "momentum's order") if RAM_VIEW in scan_views(scan) else
+                        ("The table lists by momentum since 13 Oct, chosen before any of these windows", "that order"))
+        note = (f' {lists}; the order '
+                f'check records whether {which} keeps beating random picks — it holds if its top {k} '
                 f'beats {ORDER_RULE["min_avg_pct"]:.0f}%+ of them on average over {ORDER_RULE["windows"]} '
                 f'separate windows, and beats Rank\'s.')
         v = order_rule(ws)

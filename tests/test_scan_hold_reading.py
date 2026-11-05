@@ -182,8 +182,12 @@ def test_the_full_record_shows_what_holding_20_gave_and_where_the_rule_stands():
     line = h[h.index("Holding 20 of them"):]
     assert "Mega, Large, Mid and Small cap matches" in line and "one share at most ₹5,000" in line
     assert "Cr+ a day" not in line[:line.index("Order check")], "this reading has no traded-value floor"
-    assert "The table lists by momentum since 13 Oct" in line and "only if" not in line, (
+    # Repointed 2026-11-05: the 🚀 lists open on the 🔢 RAM view, so "the table" no longer lists by momentum in every view.
+    assert ("🏆 Core and 📈 Technical list by momentum since 13 Oct" in line and "🔢 RAM by RAM Rank" in line
+            and "whether momentum's order keeps beating" in line and "only if" not in line), (
         "the order is in use; the check records whether it keeps beating random picks — it gates nothing")
+    other = _html.unescape(S.card_html(S.SCANS[1], 235, "measured", _playbook_record(), selected=False, latest="03 Dec"))
+    assert "The table lists by momentum since 13 Oct" in other and "🔢 RAM" not in other, "🌬️ has no 🔢 RAM view"
 
 
 def test_the_card_states_a_decided_check_in_words():

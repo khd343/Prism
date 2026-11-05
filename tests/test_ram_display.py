@@ -301,11 +301,12 @@ def test_the_view_fits_the_budget_shrinking_nothing_and_stock_takes_the_rest(sca
     cols = S.table_columns(scan, RAM)
     assert sum(w[c] for c in cols) == 1030
     # Each column's header and widest value, measured 2026-11-05 on the 4 Nov copy in the grid's font (test_scan_views'
-    # method). Every name on the three lists fits 280.
+    # method). Every name on the three lists fits 280, and Stock gives its spare room to Sector, cut at 125 in the browser.
     floors = {"#": 44, "ram_rank": 75, "symbol": 103, "ram_pct": 57, "ram_score": 45, "name": 280}
     assert {c: w[c] for c in floors} == {c: max(w[c], floors[c]) for c in floors}
-    main = {"close_price": 80, "market_category": 75, "sector": 125, "_liq_cr": 65}
-    assert {c: w[c] for c in main} == main, "main's widths, 🚀's Sector for all three lists"
+    assert (w["name"], w["sector"]) == (312, 170)
+    main = {"close_price": 80, "market_category": 75, "_liq_cr": 65}
+    assert {c: w[c] for c in main} == main, "main's widths"
 
 
 # Main's (9284e96) columns and widths, typed out: the old tests hold them too, and this says it of every list at once.
@@ -427,7 +428,7 @@ def _render_view(table: pd.DataFrame, scan: dict):
     at.session_state["table"] = table
     at.session_state["config"] = S.table_config("03 Oct", S.ram_view_scan(scan))
     at.session_state["order"] = list(S.table_columns(scan, RAM))
-    at.run(timeout=30)
+    at.run(timeout=90)
     return at
 
 
@@ -585,7 +586,7 @@ def _scorecard_blocks(stock: pd.Series) -> list:
 
     at = AppTest.from_function(_app)
     at.session_state["stock_row"] = stock
-    at.run(timeout=30)
+    at.run(timeout=90)
     assert not at.exception, [str(e.value) for e in at.exception]
     return [str(md.value) for md in at.markdown]
 

@@ -372,7 +372,10 @@ def _index(scan: dict) -> str:
 
 
 def _order_words(scan: dict) -> str:
-    return "Momentum, high to low" if S.momentum_ordered(scan) else "PRISM Rank"
+    words = "Momentum, high to low" if S.momentum_ordered(scan) else "PRISM Rank"
+    if S.RAM_VIEW in S.scan_views(scan):
+        return f"{words} in 🏆 Core and 📈 Technical; RAM Rank, strongest first, no RAM last, in {S.RAM_VIEW}"
+    return words
 
 
 def _read_over(scan: dict) -> str:
