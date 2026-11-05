@@ -201,6 +201,12 @@ def test_the_ladder_is_no_scan_so_no_record_can_see_it():
             continue
         read += 1
         src = path.read_text(encoding="utf-8")
+        if rel == "ui/scan_records_job.py":
+            # 2026-11-05, the operator's call: 🚀's order check starts from list C, here and nowhere else. (36)'s blind
+            # comparison, the reason for this test, is no longer run ((37)), and the check's figures are sealed until the sealed run.
+            one = "S.playbook_layer_mask(early, layer)"
+            assert src.count(one) == 1, "the job's one reading of the ladder"
+            src = src.replace(one, "")
         for word in ("PLAYBOOK_LAYERS", "playbook_layer", *WIDE):
             assert word not in src, f"{rel} reads the ladder ({word})"
     assert read >= 3, "the tracked record readers were read"

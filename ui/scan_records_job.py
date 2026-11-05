@@ -258,6 +258,8 @@ def order_reading(early: pd.DataFrame, ret: pd.Series, match: pd.Series) -> dict
     out = dict(k=S.HOLD_K, shariah=SHARIAH_STATUSES[0], exchange=S.ORDER_EXCHANGE, caps=list(S.HOLD_CAPS),
                min_cr=S.SHARIAH_MIN_CR, max_price=S.HOLD_MAX_PRICE, zone=list(S.ORDER_ZONE), stages=list(S.ORDER_STAGES),
                cost_pp=S.NET_COST_PP, draws=S.HOLD_DRAWS, n=int(pool.sum()))
+    if S.ORDER_SEALED:
+        return dict(out, sealed=True)       # its size is an input; no draw and no figure of a book (S.ORDER_SEALED)
     if out["n"] < MIN_N:
         return out
     held, sims = _random_picks(early, ret, pool)

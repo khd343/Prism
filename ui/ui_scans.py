@@ -131,6 +131,12 @@ ORDER_FROM_RAM = "Older windows have no RAM, so the check counts from the first 
 # its own, in May. Every other checked scan reads its own matches.
 ORDER_LIST = {"playbook": "price_only"}
 ORDER_ON_C = "On 🚀 it reads list C, the list Kite trades from, not the 🚀 list."
+# The seal (Kite's addendum 37, "Sealed until then"): before its one sealed run, nothing may work out a book that orders by RAM
+# over a session from 30 Nov 2026, in any code, and a figure of one, computed or seen, makes that paper test no evidence. RAM's
+# top HOLD_K among what Kite can trade is such a book. So while this is True the job draws nothing and records no figure for the
+# check, and the card shows none. Set it to False only after that run's read-out (May 2027), and rebuild the windows then.
+ORDER_SEALED = True
+ORDER_SEALED_WORDS = "Its figures stay sealed until Kite's one sealed run in May 2027, since they would show that test's result early."
 # The revenue-led check (registered 2026-10-15, before any unseen window has a result). Inside 🚀, do the matches
 # that are also revenue_led (the test 🌱 uses) beat the rest? A Kite-side plan proposed trading that in Kite's window
 # 2; the frozen go-rule needs the SAME design in two windows in a row, so the operator kept Kite as it is and chose to
@@ -1141,10 +1147,11 @@ def _hold_line(scan: dict, ws, c: dict, esc) -> str:
         note = (f' {lists}; the order check reads RAM Rank. What Kite can trade: {order_pool_words()}. {ORDER_NOT_IN_DATA} {on_c}'
                 f'The check holds if RAM Rank\'s top {k} beats {ORDER_RULE["min_avg_pct"]:.0f}%+ of random picks of those '
                 f'stocks on average over {ORDER_RULE["windows"]} separate windows, and beats Rank\'s. {ORDER_FROM_RAM}, and '
-                f'only with {ORDER_RULE["min_n"]}+ of those stocks.')
+                f'only with {ORDER_RULE["min_n"]}+ of those stocks.' + (f' {ORDER_SEALED_WORDS}' if ORDER_SEALED else ''))
         placed = lambda key: " / ".join(pct((w.get("order") or {}).get(key)) for w in rows)
         v = order_rule(ws)
-        rule = (f' · Among what Kite can trade, RAM Rank\'s top {k} beat {placed("ram_pct")} of random picks, '
+        rule = ' · Order check: sealed until May 2027' if ORDER_SEALED else (
+                f' · Among what Kite can trade, RAM Rank\'s top {k} beat {placed("ram_pct")} of random picks, '
                 f'Rank\'s top {k} {placed("rank_pct")}'
                 + (f' · Order check: {v["counted"]} of {ORDER_RULE["windows"]} separate windows in'
                    if v["state"] == "pending" else

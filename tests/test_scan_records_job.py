@@ -24,6 +24,12 @@ sys.path.insert(0, str(ROOT))
 from ui import scan_records_job as J  # noqa: E402
 from ui import ui_scans as S  # noqa: E402
 
+
+@pytest.fixture(autouse=True)
+def _after_the_seal(monkeypatch):
+    """These tests read what the order check does once the seal is lifted. The seal itself: tests/test_scan_order_reading.py."""
+    monkeypatch.setattr(S, "ORDER_SEALED", False)
+
 ARCHIVE = ["2026-06-29", "2026-09-30", "2026-10-31", "2026-11-28", "2026-12-04"]
 
 

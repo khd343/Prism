@@ -14,6 +14,7 @@ again from the first window that has it. Pinned here, each against the break it 
   4. "Holding 20" and every other reading moved no number; only momentum's figure is gone.
   5. order_rule reads `order` alone, so an old window does not count.
   6. The words on the card and in the guide; today's records file still loads and renders.
+  8. The seal: while S.ORDER_SEALED, the job draws nothing and records no figure, and the card shows none (section 8).
   7. On 🚀 the check reads list C, the list Kite trades from, after the filters (the operator: "only on list C ... and that also
      after filter"). Everything else in 🚀's record stays on the 🚀 list until May.
 
@@ -39,6 +40,14 @@ from ui import playbook_feed_job as F  # noqa: E402
 from ui import scan_guide as G  # noqa: E402
 from ui import scan_records_job as J  # noqa: E402
 from ui import ui_scans as S  # noqa: E402
+
+@pytest.fixture(autouse=True)
+def _after_the_seal(request, monkeypatch):
+    """These tests read what the order check does once the seal is lifted, after Kite's sealed run. The seal itself: the tests
+    with "seal" in their name (tests/test_scan_order_reading.py)."""
+    if "seal" not in request.node.name:
+        monkeypatch.setattr(S, "ORDER_SEALED", False)
+
 
 _PASSES = dict(shariah_status="Shariah", market_category="Small Cap", close_price=100.0, vol_sma_20d=1_000_000.0,  # ₹10 Cr a day
                dist_to_vstop=10.0, weinstein_stage="📈 Stage 2 Advancing")
@@ -657,3 +666,50 @@ def test_the_playbooks_card_and_the_guides_say_it_reads_list_c():
     assert S.ORDER_ON_C in _card("playbook", [_window()])
     assert S.ORDER_ON_C not in _card("leaders", [_window()])
     assert S.ORDER_ON_C in _guide("playbook")
+
+
+# ── 8. The seal. (37), "Sealed until then": before the one sealed run, nothing computes a book that orders by RAM over a session
+#      from 30 Nov 2026, in any code, and a figure of one, computed or seen, makes the paper test no evidence. RAM's top 20 among
+#      what Kite can trade is such a book. So the check reads RAM Rank today and works out nothing until the seal is lifted. ──
+def test_the_seal_is_on_until_the_sealed_run():
+    assert S.ORDER_SEALED is True, "set it to False only after the sealed run's read-out, and change this test with it"
+
+
+def test_a_sealed_reading_draws_nothing_and_records_no_figure(monkeypatch):
+    def no_draw(*a, **k):
+        raise AssertionError("a sealed reading must not draw")
+    monkeypatch.setattr(J, "_random_picks", no_draw)
+    monkeypatch.setattr(J, "_placed", no_draw)
+    early, ret = _market()
+    r = _read(early, ret)
+    assert r["sealed"] is True and r["n"] == 40, "its size is an input, no figure of a book"
+    assert "ram_pct" not in r and "rank_pct" not in r
+
+
+def test_a_sealed_window_gives_the_check_nothing_to_count():
+    early, ret = _list_c_market()
+    w = dict(_measured("playbook", early, ret), final=True)
+    assert w["order"]["n"] == 41 and "ram_pct" not in w["order"], "list C after the filters, sealed"
+    assert S.order_rule([w])["counted"] == 0
+
+
+def test_the_seal_leaves_the_other_readings_alone():
+    early, ret = _list_c_market()
+    w = _measured("playbook", early, ret)
+    assert "median_pp" in w["hold"] and w["hold"]["rank_pct"] is not None and "momentum_pct" not in w["hold"]
+
+
+def test_a_sealed_card_shows_no_figure_of_the_check_even_from_a_stored_one():
+    t = _card("playbook", [_window()])
+    assert S.ORDER_SEALED_WORDS in t and "Order check: sealed until May 2027" in t
+    assert "of random picks, Rank's top 20" not in t and "56%" not in t
+
+
+def test_a_sealed_guide_says_so():
+    assert S.ORDER_SEALED_WORDS in _guide("playbook") and S.ORDER_SEALED_WORDS in _guide("leaders")
+
+
+def test_todays_records_file_renders_under_the_seal():
+    records = S.load_records()["scans"]
+    for key in _CHECKED:
+        assert "Order check: sealed until May 2027" in _card(key, records[key]["windows"])

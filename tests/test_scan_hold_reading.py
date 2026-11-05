@@ -44,6 +44,12 @@ from ui import scan_records_job as J  # noqa: E402
 from ui import ui_scans as S  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _after_the_seal(monkeypatch):
+    """These tests read what the order check does once the seal is lifted. The seal itself: tests/test_scan_order_reading.py."""
+    monkeypatch.setattr(S, "ORDER_SEALED", False)
+
+
 # ── 1. The reading is fixed before any result ───────────────────────────────────────────────────────
 def test_the_hold_reading_and_the_order_rule_are_declared_before_any_result():
     assert (S.HOLD_K, S.HOLD_MAX_PRICE, S.HOLD_DRAWS) == (20, 5000.0, 2000)
