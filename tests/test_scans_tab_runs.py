@@ -208,16 +208,18 @@ def test_every_card_renders_and_the_compounder_list_opens(tab):
 
 
 def test_the_view_switch_reaches_the_table(tab):
-    """RUN (2026-10-13): the table opens on 🏆 Core; choosing 📈 Technical shows the Technical columns
-    on the same stocks — the switch reaches the table, not just the source (tests/test_scan_views.py)."""
+    """RUN (2026-10-13): choosing 🏆 Core, then 📈 Technical, shows each one's columns on the same stocks — the switch reaches
+    the table, not just the source (tests/test_scan_views.py). Every list opens on 🔢 RAM since 2026-11-05."""
     from ui import ui_scans as S
-    play = S.SCANS[1]                             # 2026-11-05: a scan that opens on Core; 🚀's lists open on 🔢 RAM
+    play = S.SCANS[1]
     tab.button(key=f"scan_open_{play['key']}").click().run()
-    view = _control(tab, "scan_view")             # by key since 2026-10-30: 🚀 also draws the List control
-    assert view.value == "🏆 Core"
+    opened = list(tab.dataframe[0].value["name"])
+    _control(tab, "scan_view").set_value("🏆 Core").run()   # by key since 2026-10-30: 🚀 also draws the List control
+    assert not tab.exception, [e.value for e in tab.exception]
     assert list(tab.dataframe[0].proto.column_order) == list(S.table_columns(play, "🏆 Core"))
     core_names = list(tab.dataframe[0].value["name"])
-    view.set_value("📈 Technical").run()
+    assert sorted(core_names) == sorted(opened), "the view holds its own order, never its own list"
+    _control(tab, "scan_view").set_value("📈 Technical").run()
     assert not tab.exception, [e.value for e in tab.exception]
     assert list(tab.dataframe[0].proto.column_order) == list(S.table_columns(play, "📈 Technical"))
     assert list(tab.dataframe[0].value["name"]) == core_names, "a view changes columns, never the list"
@@ -258,14 +260,17 @@ def test_how_it_works_follows_the_chosen_scan(tab):
 
 
 def test_the_cycle_column_shows_on_the_compounder_table_only(tab):
-    """'Cycle ↓' (2026-10-07) reaches the screen through app.py's column_order: shown, beside 🔥, on 🌱;
-    absent on 🚀 — read from the rendered table, not from the module."""
+    """'Cycle ↓' (2026-10-07) reaches the screen through app.py's column_order: shown, beside 🔥, on 🌱's 🏆 Core;
+    absent on 🚀 — read from the rendered table, not from the module. Every list opens on 🔢 RAM since 2026-11-05."""
+    _control(tab, "scan_view").set_value("🏆 Core").run()
     first = list(tab.dataframe[0].proto.column_order)
     assert "_cycle" not in first, "the first scan (🚀 Playbook) shows the shared table"
     tab.button(key="scan_open_compounder").click().run()
     assert not tab.exception, [e.value for e in tab.exception]
     order = list(tab.dataframe[0].proto.column_order)
     assert order[order.index("_strong_q") + 1] == "_cycle"
+    _control(tab, "scan_view").set_value("🔢 RAM").run()
+    assert "_cycle" not in tab.dataframe[0].proto.column_order, "the view reads the same on every list"
 
 
 def test_the_liquidity_selector_shows_the_order_size_guide_and_starts_at_any(tab):
@@ -679,6 +684,8 @@ def test_the_list_control_is_the_rockets_alone_and_never_reaches_another_scan(ta
     assert _control(tab, "scan_layer") is None, "the List control is 🚀's alone"
     comp = next(s for s in S.SCANS if s["key"] == "compounder")
     assert sorted(tab.dataframe[0].value["name"]) == _expected(comp)
+    assert list(tab.dataframe[0].proto.column_order) == list(S.RAM_VIEW_COLUMNS)
+    _control(tab, "scan_view").set_value("🏆 Core").run()   # 2026-11-05: C's List column would show here, had the choice leaked
     assert list(tab.dataframe[0].proto.column_order) == list(S.table_columns(comp, "🏆 Core"))
     assert not _notes(tab)
     tab.button(key="scan_open_playbook").click().run()
@@ -764,24 +771,56 @@ def test_flipping_to_core_or_technical_is_mains_table_and_mains_caption(tmp_path
         assert "sorted by Momentum, high to low · click a row" in cap, cap
 
 
-def test_other_scans_offer_their_two_views_and_a_ram_choice_falls_back_to_core(tab):
+def test_every_scan_opens_on_the_ram_view_and_a_choice_stays_when_the_scan_changes(tab):
+    """2026-11-05: the same three options on every list are one widget, so 📈 Technical chosen on 🚀 is 📈 Technical on 🌬️ and 🌱."""
     from ui import ui_scans as S
     assert _control(tab, "scan_view").value == S.RAM_VIEW
     for scan in S.SCANS[1:]:
         tab.button(key=f"scan_open_{scan['key']}").click().run()
         assert not tab.exception, [e.value for e in tab.exception]
         view = _control(tab, "scan_view")
-        assert view.value == "🏆 Core" and [o.content for o in view.options] == ["Core", "Technical"], scan["key"]
-        assert list(tab.dataframe[0].proto.column_order) == list(S.table_columns(scan, "🏆 Core")), scan["key"]
-        assert not any("RAM" in c.value for c in tab.caption), scan["key"]
-    tab.button(key="scan_open_playbook").click().run()
-    assert _control(tab, "scan_view").value == S.RAM_VIEW, "back on 🚀 it opens on its own view again"
+        assert view.value == S.RAM_VIEW and [o.content for o in view.options] == ["RAM", "Core", "Technical"], scan["key"]
+        assert list(tab.dataframe[0].proto.column_order) == list(S.RAM_VIEW_COLUMNS), scan["key"]
+    _control(tab, "scan_view").set_value("📈 Technical").run()
+    for scan in S.SCANS:
+        tab.button(key=f"scan_open_{scan['key']}").click().run()
+        assert not tab.exception, [e.value for e in tab.exception]
+        assert _control(tab, "scan_view").value == "📈 Technical", scan["key"]
+        assert list(tab.dataframe[0].proto.column_order) == list(S.table_columns(scan, "📈 Technical")), scan["key"]
+
+
+@pytest.mark.parametrize("key, own_column, own_order", [("leaders", "momentum_score", "is_monotonic_decreasing"),
+                                                        ("compounder", "rank", "is_monotonic_increasing")])
+def test_leaders_and_compounder_read_by_ram_rank_with_blanks_last_in_their_own_order(tmp_path, key, own_column, own_order):
+    from ui import ui_scans as S
+    at = _ram_tab(tmp_path)
+    at.button(key=f"scan_open_{key}").click().run()
+    assert not at.exception, [e.value for e in at.exception]
+    grid = at.dataframe[0]
+    assert list(grid.proto.column_order) == list(S.RAM_VIEW_COLUMNS)
+    t = grid.value
+    ranked = t["ram_rank"].notna().sum()
+    assert 0 < ranked < len(t), "the synthetic market gives the list both, to order"
+    assert t["ram_rank"].iloc[:ranked].is_monotonic_increasing and t["ram_rank"].iloc[ranked:].isna().all()
+    assert getattr(t[own_column].iloc[ranked:], own_order), "the blanks keep the list's own order"
+    assert t["#"].tolist() == list(range(1, len(t) + 1))
+    assert any("sorted by RAM Rank, strongest first · no RAM last · RAM of 4 Nov · click a row" in c.value for c in at.caption)
 
 
 def test_a_copy_with_no_ram_reads_todays_order_and_says_so(tab):
     t = tab.dataframe[0].value
     assert t["ram_rank"].isna().all() and t["momentum_score"].is_monotonic_decreasing
     assert any("sorted by Momentum, high to low · no RAM on this copy" in c.value for c in tab.caption)
+
+
+@pytest.mark.parametrize("key, words", [("leaders", "Momentum, high to low"), ("compounder", "Rank")])
+def test_a_copy_with_no_ram_reads_leaders_and_compounder_in_their_own_order_and_says_so(tab, key, words):
+    tab.button(key=f"scan_open_{key}").click().run()
+    assert not tab.exception, [e.value for e in tab.exception]
+    opened = list(tab.dataframe[0].value["name"])
+    assert any(f"sorted by {words} · no RAM on this copy" in c.value for c in tab.caption), key
+    _control(tab, "scan_view").set_value("🏆 Core").run()
+    assert list(tab.dataframe[0].value["name"]) == opened, "with no RAM the view keeps the list's order, row for row"
 
 
 def test_a_row_click_after_the_sort_loads_that_stock(tmp_path):
@@ -817,7 +856,9 @@ def test_the_view_shows_a_dash_for_a_blank_and_every_other_view_keeps_streamlits
         assert not at.exception, [e.value for e in at.exception]
         assert at.dataframe[0].proto.placeholder == "", view
     at.button(key="scan_open_leaders").click().run()
-    assert at.dataframe[0].proto.placeholder == "", "🌬️ is main's"
+    assert at.dataframe[0].proto.placeholder == "", "📈 Technical stays chosen, and keeps Streamlit's own"
+    _control(at, "scan_view").set_value(S.RAM_VIEW).run()
+    assert at.dataframe[0].proto.placeholder == "—", "🌬️ draws the view as 🚀 does"
 
 
 def test_the_tab_draws_the_view_at_its_own_widths_on_every_list(tmp_path):
@@ -827,6 +868,11 @@ def test_the_tab_draws_the_view_at_its_own_widths_on_every_list(tmp_path):
         if key != "playbook":
             _control(at, "scan_layer").set_value(key).run()
             assert not at.exception, [e.value for e in at.exception]
+        config = json.loads(at.dataframe[0].proto.columns)
+        assert (config["name"]["width"], config["sector"]["width"]) == (312, 170), key
+    for key in ("leaders", "compounder"):           # 🌱's own Stock 150 and Sector 80 are Core's, not the view's
+        at.button(key=f"scan_open_{key}").click().run()
+        assert not at.exception, [e.value for e in at.exception]
         config = json.loads(at.dataframe[0].proto.columns)
         assert (config["name"]["width"], config["sector"]["width"]) == (312, 170), key
 
@@ -841,7 +887,7 @@ def test_deselecting_the_active_segment_keeps_the_lists_first_view(tmp_path):
     at.button(key="scan_open_leaders").click().run()
     _control(at, "scan_view").set_value([]).run()
     assert not at.exception, [e.value for e in at.exception]
-    assert list(at.dataframe[0].proto.column_order) == list(S.table_columns(S.SCANS[1], "🏆 Core")), "🌬️'s first view"
+    assert list(at.dataframe[0].proto.column_order) == list(S.RAM_VIEW_COLUMNS), "🌬️'s first view, the same"
 
 
 def test_a_filter_renumbers_the_place_in_the_real_tab(tmp_path):

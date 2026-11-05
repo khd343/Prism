@@ -9,8 +9,8 @@ shows them and computes nothing from them. Pinned here, each against the break i
      without the headers loads, and the engine's schema guard gives every reader the four columns as blanks.
   2. The daily Data check: a date in a "number column" would have been a false red every night.
   3. The tips: one source (the glossary), read by the Tear-Sheet's ?, the Reference, the Deep Scanner and the 🎯 Scans.
-  4. The 🔢 RAM view, first and default on the 🚀 Playbook, B and C: the table the operator reads, by RAM Rank with blanks
-     last. 🏆 Core and 📈 Technical, on every list, and 🌬️ and 🌱 altogether, are exactly main's.
+  4. The 🔢 RAM view, first and default on every list (the 🚀 Playbook, B and C, then 🌬️ and 🌱): the table the operator reads,
+     by RAM Rank with blanks last. 🏆 Core and 📈 Technical, on every list, are exactly main's.
   5. The Deep Scanner: main's views, and RAM Rank in its sort dropdown, low numbers first, blanks last, on screen when sorted.
   6. The Tear-Sheet: its own RAM RANK row under the ⏱️ strip, in the strip's look, never a chip on it, and no nan.
   7. Nothing reads them: every score, tier, rank, verdict and flag identical with and without RAM values; every recipe's
@@ -287,9 +287,8 @@ _PLAY = next(s for s in S.SCANS if s["key"] == "playbook")
 _LEAD = next(s for s in S.SCANS if s["key"] == "leaders")
 _SEED = next(s for s in S.SCANS if s["key"] == "compounder")
 _B, _C = S.playbook_layer_scan(_PLAY, "no_quarter"), S.playbook_layer_scan(_PLAY, "price_only")
-LISTS = (_PLAY, _B, _C)
+LISTS = (_PLAY, _B, _C, _LEAD, _SEED)
 _LIST_IDS = [s["key"] for s in LISTS]
-OTHERS = (_LEAD, _SEED)
 
 
 def test_the_tips_have_one_source_read_by_every_surface():
@@ -302,16 +301,22 @@ def test_the_tips_have_one_source_read_by_every_surface():
     assert cfg["#"]["help"] and cfg["symbol"]["help"]
 
 
-# ── 4. The 🔢 RAM view on the 🚀 lists: everything else is main's ─────────────────────────────────────────────────────
+# ── 4. The 🔢 RAM view on every list: Core and Technical are main's ───────────────────────────────────────────────────
 @pytest.mark.parametrize("scan", LISTS, ids=_LIST_IDS)
-def test_the_view_is_on_the_rocket_lists_and_opens_first(scan):
-    assert S.RAM_VIEW == RAM and S.scan_views(scan) == (RAM, CORE, TECH)
+def test_the_view_is_on_every_list_and_opens_first(scan):
+    assert S.RAM_VIEW == RAM and S.TABLE_VIEWS == (RAM, CORE, TECH) and S.SCAN_VIEWS == (CORE, TECH)
+    assert S.table_columns(scan, S.TABLE_VIEWS[0]) == S.RAM_VIEW_COLUMNS
 
 
-@pytest.mark.parametrize("scan", OTHERS, ids=lambda s: s["key"])
-def test_other_scans_keep_two_views_and_a_ram_choice_falls_back_to_core(scan):
-    assert S.scan_views(scan) == (CORE, TECH) == S.SCAN_VIEWS
-    assert S.table_columns(scan, RAM) == S.table_columns(scan, CORE)
+@pytest.mark.parametrize("scan", (_LEAD, _SEED), ids=lambda s: s["key"])
+def test_the_view_leaves_out_what_a_list_adds_to_core_and_core_keeps_it(scan):
+    """🌬️'s and 🌱's New, 🌱's Cycle ↓ and its narrow Stock are Core's: the view reads the same on every list (2026-11-05)."""
+    view, core = S.table_columns(scan, RAM), S.table_columns(scan, CORE)
+    assert "_new" not in view and "_cycle" not in view
+    assert "_new" in core and ("_cycle" in core) == (scan is _SEED)
+    drawn = S.table_widths(S.ram_view_scan(scan))
+    assert (drawn["name"], drawn["sector"]) == (312, 170)
+    assert S.table_widths(scan) == {**S.TABLE_WIDTHS, **scan.get("widths", {})}, "Core's widths stay the list's own"
 
 
 _VIEW_HEADERS = {"#": "#", "ram_rank": "RAM Rank", "symbol": "Symbol", "name": "Stock", "ram_pct": "RAM %", "ram_score": "RAM",
@@ -338,9 +343,9 @@ def test_the_view_fits_the_budget_shrinking_nothing_and_stock_takes_the_rest(sca
     w = S.table_widths(S.ram_view_scan(scan))
     cols = S.table_columns(scan, RAM)
     assert sum(w[c] for c in cols) == 1030
-    # Each column's header and widest value, measured 2026-11-05 on the 4 Nov copy in the grid's font (test_scan_views'
-    # method). Every name on the three lists fits 280, and Stock gives its spare room to Sector, cut at 125 in the browser.
-    floors = {"#": 44, "ram_rank": 75, "symbol": 103, "ram_pct": 57, "ram_score": 45, "name": 280}
+    # Each column's header and widest value, measured 2026-11-05 in the grid's font (test_scan_views' method) on the 4 Nov copy,
+    # and that evening on the live sheet with 🌬️ and 🌱: 🌱's longest name needs 310, so Stock keeps 312 and Sector its 170.
+    floors = {"#": 44, "ram_rank": 75, "symbol": 103, "ram_pct": 57, "ram_score": 45, "name": 310}
     assert {c: w[c] for c in floors} == {c: max(w[c], floors[c]) for c in floors}
     assert (w["name"], w["sector"]) == (312, 170)
     main = {"close_price": 80, "market_category": 75, "_liq_cr": 65}
@@ -378,7 +383,7 @@ _MAIN_VIEWS = {"playbook": (_core("_strong_q"), _MAIN_TECH, {"name": 185, "secto
                               tuple(c for c in (*_MAIN_TECH[:1], "_layer", *_MAIN_TECH[1:]) if c != "_new"), {})}
 
 
-@pytest.mark.parametrize("scan", (*LISTS, *OTHERS), ids=lambda s: s["key"])
+@pytest.mark.parametrize("scan", LISTS, ids=lambda s: s["key"])
 def test_core_and_technical_are_mains_on_every_list(scan):
     core, tech, own = _MAIN_VIEWS[scan["key"]]
     assert S.table_columns(scan, CORE) == core and S.table_columns(scan) == core and S.table_columns(scan, TECH) == tech
@@ -490,7 +495,7 @@ def test_a_copy_with_no_ram_at_all_says_so(case):
     assert _caption(market) == "Momentum, high to low · no RAM on this copy"
 
 
-@pytest.mark.parametrize("scan", (*LISTS, *OTHERS), ids=lambda s: s["key"])
+@pytest.mark.parametrize("scan", LISTS, ids=lambda s: s["key"])
 def test_the_lists_own_frame_carries_no_ram_so_core_and_technical_cannot_show_it(scan):
     frame = S.scan_table(_order_market(), dict(scan, mask=_EVERY_STOCK["mask"]))
     assert not set(RAM_COLUMNS) & set(frame.columns), "only the view brings RAM in (ram_view_table)"
@@ -843,7 +848,7 @@ def test_ram_moves_nothing_on_the_real_market(real):
 @pytest.mark.parametrize("key", ["playbook", "no_quarter", "price_only", "leaders", "compounder"])
 def test_every_list_holds_the_same_stocks_in_the_same_order_on_the_real_market(real, key):
     plain, with_ram = real
-    scan = next(s for s in (*LISTS, *OTHERS) if s["key"] == key)
+    scan = next(s for s in LISTS if s["key"] == key)
     a, b = S.scan_table(plain, scan), S.scan_table(with_ram, scan)
     assert len(a) > 0 and a["company_id"].tolist() == b["company_id"].tolist()
 
@@ -854,7 +859,7 @@ _BEFORE_RAM = {"playbook": "80251b8b4da6d635", "leaders": "a5fa9c66bfd431e0", "c
                "no_quarter": "1f17120242b5640f", "price_only": "1f17120242b5640f"}
 
 
-@pytest.mark.parametrize("scan", (*LISTS, *OTHERS), ids=lambda s: s["key"])
+@pytest.mark.parametrize("scan", LISTS, ids=lambda s: s["key"])
 def test_no_recipes_fingerprint_moved(scan):
     assert S.recipe_fingerprint(scan) == _BEFORE_RAM[scan["key"]]
 
@@ -862,7 +867,7 @@ def test_no_recipes_fingerprint_moved(scan):
 _RAM_NAME = re.compile(r"\bram_(score|rank|pct|date)\b")
 
 
-@pytest.mark.parametrize("scan", (*LISTS, *OTHERS), ids=lambda s: s["key"])
+@pytest.mark.parametrize("scan", LISTS, ids=lambda s: s["key"])
 def test_nothing_a_recipe_reaches_names_a_ram_column(scan):
     """The lasting half of the pin above: it survives a real recipe change and still fails on a recipe that reads RAM."""
     reached = S._dependencies([*S._recipe_functions(scan), *scan.get("inputs", ())], scan.get("values"), scan.get("skip", ()))
@@ -906,12 +911,14 @@ def test_the_guides_stamps_are_mains():
         "playbook": "135cfc40d93df721", "leaders": "c5b0c3512a06fdd2", "compounder": "63ba93225ce77da7"}
 
 
-def test_the_guide_says_how_the_rocket_lists_open_and_what_the_order_check_still_measures():
+def test_the_guide_says_how_every_list_opens_and_what_the_order_check_still_measures():
     from ui import scan_guide as G
     t = " ".join(map(str, dict(G.general_sections())["How to read the table"]))
-    for words in ("🔢 RAM", "RAM Rank", "🏆 Core and 📈 Technical", "as before", "order check", "Momentum's top"):
+    for words in ("every list opens", "🔢 RAM", "RAM Rank", "🏆 Core and 📈 Technical", "as before", "order check", "Momentum's top"):
         assert words in t, words
-    assert "RAM view" in " ".join(G._order(_PLAY)) and "RAM view" not in " ".join(G._order(_LEAD))
+    assert "🚀 lists" not in t
+    for scan in S.SCANS:                # 🌱 too, whose order section reads PRISM Rank, not Momentum
+        assert "The table opens on the 🔢 RAM view" in " ".join(G._order(scan)), scan["key"]
 
 
 def _source_files() -> list:
@@ -922,13 +929,14 @@ def test_nothing_else_reads_the_display_order():
     """The view's order is made by one function the tab alone calls: the records job, the feed, the v2 lists and the order
     check read their own frames (scan_records_job.hold_reading sorts momentum and Rank itself), and no job calls scan_table."""
     readers = {name: {p.relative_to(ROOT).as_posix() for p in _source_files() if re.search(rf"\b{name}\b", p.read_text(encoding="utf-8"))}
-               for name in ("ram_view_table", "scan_table", "scan_views")}
+               for name in ("ram_view_table", "scan_table", "TABLE_VIEWS")}
     assert readers == {"ram_view_table": {"app.py", "ui/ui_scans.py"}, "scan_table": {"app.py", "ui/ui_scans.py"},
-                       "scan_views": {"app.py", "ui/scan_guide.py", "ui/ui_scans.py"}}
+                       "TABLE_VIEWS": {"app.py", "ui/ui_scans.py"}}
 
 
 def test_the_view_moves_no_record_or_recipe():
     """The order is the view's: the scan's `order`, which the card and guide speak of, is still main's Momentum."""
     assert S.momentum_ordered(_PLAY) and S.momentum_ordered(_B) and S.momentum_ordered(_C) and S.momentum_ordered(_LEAD)
     assert sorted(S.ORDER_RULE["scans"]) == ["leaders", "playbook"]
-    assert S.recipe_fingerprint(S.ram_view_scan(_PLAY)) == _BEFORE_RAM["playbook"]
+    for scan in LISTS:
+        assert S.recipe_fingerprint(S.ram_view_scan(scan)) == _BEFORE_RAM[scan["key"]], scan["key"]
