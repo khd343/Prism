@@ -40,6 +40,7 @@ import streamlit as st
 
 from config import BENCHMARK_INDICES, COLORS
 from core.data_engine import price_trend_inputs, traded_value_cr   # ONE liquidity number (moved there 2026-10-09)
+from core.data_engine import ram_date_text, ram_day                 # 🔢 RAM's date words, the Tear-Sheet's own
 from core.forward_returns import MIN_HORIZON_DAYS
 from core.scoring_engine import (_compute_improvement_score, compute_momentum_score, improvement_evidence,
                                  strong_quarter)
@@ -742,7 +743,7 @@ TABLE_WIDTHS = {"rank": 50, "_new": 55, "name": 175, "market_category": 75, "sec
                 # 44), RAM Rank 75 (header 74), Symbol 105 (widest on the three lists 103), RAM % 57 (header 56), RAM 46 ("-0.12" 45).
                 "#": 45, "ram_rank": 75, "symbol": 105, "ram_pct": 57, "ram_score": 46}
 # The table's views (2026-10-13), by the app-wide names (ui_group_views.VIEWS — the Deep Scanner's and
-# Market Pulse's). 🏆 Core, the default, answers "why is it in the list"; 📈 Technical answers "is now a
+# Market Pulse's). 🏆 Core, the default on 🌬️ and 🌱, answers "why is it in the list"; 📈 Technical answers "is now a
 # good moment, how far is the stop, can I buy one share": the Deep Scanner's Technical columns (without
 # Readiness and Off ATH, both folded into Breakout) plus Price and ₹ Cr/day, which decide whether a
 # small account can buy a share at all. Mom. Quality sits between the two numbers it reads. Adding these
@@ -811,18 +812,22 @@ def ram_view_table(table: pd.DataFrame, df: pd.DataFrame) -> pd.DataFrame:
     RAM Rank low to high, no RAM last. The sort is stable, so on a tie and among the rows with no RAM the list keeps the
     order it came in (🚀's: momentum high to low, then Rank), and a list with no RAM at all reads exactly as it came. # is
     the place as shown, so a filter renumbers it. Symbol is the id without its exchange."""
-    ram = df.reindex(columns=["company_id", "ram_rank", "ram_pct", "ram_score"])
+    ram = df.reindex(columns=["company_id", "ram_rank", "ram_pct", "ram_score", "ram_date"])
     out = (table.merge(ram, on="company_id", how="left")
            .sort_values("ram_rank", kind="mergesort", na_position="last").reset_index(drop=True))
     return out.assign(**{"#": np.arange(1, len(out) + 1),
                          "symbol": out["company_id"].astype(str).str.split(":", n=1).str[-1]})
 
 
-def ram_view_order_words(table: pd.DataFrame, today: str) -> str:
-    """What the view's caption says it is sorted by: `today` is the list's own order, which it falls back on with no RAM."""
+def ram_view_order_words(table: pd.DataFrame, today: str, df: pd.DataFrame) -> str:
+    """What the view's caption says it is sorted by and how old its ranks are: the newest RAM Date among the rows shown. With
+    no RAM in the list it reads `today`, the list's own order, and says whether the whole copy `df` has none (an old copy,
+    or before the first RAM night) or only this list (a BSE-only list on a copy that has RAM)."""
     if table["ram_rank"].notna().any():
-        return "RAM Rank, strongest first · no RAM last"
-    return f"{today} · no RAM on this copy"
+        newest = ram_day(ram_date_text(table["ram_date"]).dropna().max())
+        return "RAM Rank, strongest first · no RAM last" + (f" · RAM of {newest}" if newest else "")
+    where = "in this list" if df.reindex(columns=["ram_rank"])["ram_rank"].notna().any() else "on this copy"
+    return f"{today} · no RAM {where}"
 
 
 def momentum_ordered(scan: dict) -> bool:

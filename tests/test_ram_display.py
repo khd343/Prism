@@ -93,12 +93,19 @@ def test_a_blank_number_stays_blank_never_zero(col):
 # 2026-11-03 into a real date cell; openpyxl reads that as a datetime and calamine as a Timestamp.
 _ISO = "2026-11-03"
 _DATE_CELLS = [("text", "2026-11-03", _ISO), ("datetime", datetime(2026, 11, 3), _ISO),
-               ("timestamp", pd.Timestamp("2026-11-03"), _ISO), ("date", date(2026, 11, 3), _ISO)]
+               ("timestamp", pd.Timestamp("2026-11-03"), _ISO), ("date", date(2026, 11, 3), _ISO),
+               # A session is the day the cell WRITES, whatever follows it, and is never converted to another zone.
+               ("text_with_a_time", "2026-11-03 23:10:00", _ISO), ("zoned_utc", "2026-11-03T17:40:00Z", _ISO),
+               ("zoned_just_after_midnight_in_india", "2026-11-03T01:00+05:30", _ISO),
+               ("zoned_date_cell", pd.Timestamp("2026-11-03T01:00+05:30"), _ISO)]
 _NOT_A_SESSION = [("nan", np.nan), ("nat", pd.NaT), ("none", None), ("empty", ""),
                   ("words", "not a date"),
                   ("impossible", "2026-13-45"),   # never crash on a stranger's cell (CLAUDE.md §5)
                   ("either_month", "03/11/2026"),  # 3 Nov or 11 Mar: never guessed
-                  ("serial", 46329.0)]             # to_datetime would call it nanoseconds from 1970: "1 Jan"
+                  ("serial", 46329.0),             # to_datetime would call it nanoseconds from 1970: "1 Jan"
+                  ("integer_serial", 46329), ("year_as_an_integer", 2026),
+                  ("year", "2026"), ("year_and_month", "2026-11"),  # pandas' ISO reading makes these 1 Jan and 1 Nov
+                  ("compact", "20261103"), ("a_digit_too_many", "2026-11-035")]
 
 
 @pytest.mark.parametrize("cell,want", [c[1:] for c in _DATE_CELLS], ids=[c[0] for c in _DATE_CELLS])
@@ -112,6 +119,25 @@ def test_what_is_not_a_session_reads_blank(cell):
     out = _coerced(ram_date=["2026-11-03", cell])["ram_date"]
     assert out.iloc[0] == _ISO, "a good cell beside it survives"
     assert pd.isna(out.iloc[1]), f"{cell!r} read as {out.iloc[1]!r}"
+
+
+@pytest.mark.parametrize("cell", [c[1] for c in _NOT_A_SESSION], ids=[c[0] for c in _NOT_A_SESSION])
+def test_with_no_good_cell_beside_it_what_is_not_a_session_still_reads_blank(cell):
+    """A good ISO cell first would let pandas infer ISO from it, so here only the reading's own guard can say no."""
+    out = _coerced(ram_date=[cell, cell])["ram_date"]
+    assert out.isna().all(), f"{cell!r} read as {out.tolist()}"
+
+
+def test_a_zoned_cell_beside_plain_dates_reads_its_written_day_and_never_raises():
+    """pandas hands back an object column for this mix, and .dt then raised: one odd cell in a display-only column took
+    down the whole app and two scheduled jobs (CLAUDE.md §5: nothing from outside may crash a reader)."""
+    out = de.ram_date_text(pd.Series(["2026-11-04", "2026-11-04T17:40:00Z"], dtype=object))
+    assert out.tolist() == ["2026-11-04", "2026-11-04"]
+
+
+def test_two_different_offsets_read_their_written_days_never_another_zones():
+    out = de.ram_date_text(pd.Series(["2026-11-04T01:00+05:30", "2026-11-03T23:00-04:00"], dtype=object))
+    assert out.tolist() == ["2026-11-04", "2026-11-03"], "in UTC these two would swap: 3 Nov and 4 Nov"
 
 
 def test_a_whole_column_of_real_dates_reads_the_same():
@@ -162,6 +188,18 @@ def test_a_workbook_hands_over_text_date_cells_and_blanks_alike(engine, monkeypa
     assert out["ram_rank"].tolist()[:2] == [312.0, 313.0] and out["ram_rank"].iloc[2:].isna().all()
     assert out["ram_pct"].tolist()[:2] == [78.44, 78.20] and out["ram_pct"].iloc[2:].isna().all()
     assert out["ram_score"].tolist()[:2] == [0.5, 0.4] and out["ram_score"].iloc[2:].isna().all()
+
+
+@pytest.mark.parametrize("engine", ["openpyxl", "calamine"])
+def test_one_zoned_cell_in_a_workbook_does_not_stop_the_load(engine, monkeypatch):
+    """The real parse, as the review's copy of the preview workbook took it: a zoned cell among real date cells and text."""
+    pytest.importorskip("python_calamine" if engine == "calamine" else "openpyxl")
+    buf = _workbook([(0.5, 312, 78.44, datetime(2026, 11, 3)), (0.4, 313, 78.20, "2026-11-03"),
+                     (0.3, 314, 78.00, "2026-11-03T17:40:00Z"), (None, None, None, "2026-11-03T01:00+05:30")])
+    with contextlib.redirect_stdout(io.StringIO()):
+        out = de.coerce_numeric_columns(de.merge_datasets(_load(buf, engine, monkeypatch)))
+    assert out["ram_date"].tolist() == [_ISO] * 4
+    assert out["ram_rank"].tolist()[:3] == [312.0, 313.0, 314.0], "and the rest of the tab loads as ever"
 
 
 RAM_COLUMNS = ("ram_score", "ram_rank", "ram_pct", "ram_date")
@@ -375,6 +413,16 @@ def test_the_view_lists_by_ram_rank_with_blanks_last_and_todays_order_inside_tie
     assert table["ram_rank"].iloc[:5].tolist() == [1.0, 2.0, 2.0, 5.0, 9.0] and table["ram_rank"].iloc[5:].isna().all()
 
 
+def test_ties_keep_todays_order_on_a_list_as_long_as_the_real_ones():
+    """pandas' default sort keeps ties on short lists only: from about 20 rows it does not, and the real lists run to hundreds."""
+    n = 200
+    market = pd.DataFrame({"company_id": [f"NSE:SYM{i}" for i in range(n)], "name": [f"S{i} Ltd" for i in range(n)],
+                           "momentum_score": np.arange(n, 0, -1, dtype=float), "rank": np.arange(1.0, n + 1.0),
+                           "ram_rank": (np.arange(n) % 3 + 1).astype(float)})
+    table = S.ram_view_table(S.scan_table(market, _EVERY_STOCK), market)
+    assert table["name"].tolist() == [f"S{i} Ltd" for tie in range(3) for i in range(tie, n, 3)]
+
+
 @pytest.mark.parametrize("case", ["blank", "absent"])
 def test_a_list_with_no_ram_is_todays_order_byte_for_byte(case):
     market = (_order_market(ram_rank=np.nan, ram_pct=np.nan, ram_score=np.nan, ram_date=np.nan) if case == "blank"
@@ -401,12 +449,45 @@ def test_the_symbol_is_the_vendors_without_its_exchange():
     assert table.loc["S2 Ltd", "symbol"] == "M&M"
 
 
-def test_the_caption_words_follow_the_list():
-    market = _order_market()
-    table = S.ram_view_table(S.scan_table(market, _EVERY_STOCK), market)
-    assert S.ram_view_order_words(table, "Momentum, high to low") == "RAM Rank, strongest first · no RAM last"
-    blank = table.assign(ram_rank=np.nan)
-    assert S.ram_view_order_words(blank, "Momentum, high to low") == "Momentum, high to low · no RAM on this copy"
+def _caption(market: pd.DataFrame, keep_ids=None) -> str:
+    table = S.ram_view_table(S.scan_table(market, _EVERY_STOCK, keep_ids=keep_ids), market)
+    return S.ram_view_order_words(table, "Momentum, high to low", market)
+
+
+def test_the_caption_says_what_the_view_is_sorted_by_and_how_old_its_ranks_are():
+    assert _caption(_order_market()) == "RAM Rank, strongest first · no RAM last · RAM of 4 Nov"
+
+
+@pytest.mark.parametrize("dates,want", [
+    (["2026-11-03"] * 4 + ["2026-11-04"] * 4, "RAM of 4 Nov"),                # the newest of the rows shown
+    (["2026-11-04"] * 4 + ["2026-11-03"] * 4, "RAM of 4 Nov"),                # wherever it sits
+    (["2026-09-30"] * 4 + ["2026-10-01"] * 4, "RAM of 1 Oct"),                # across a month end, not by the day's digits
+    ([np.nan] * 4 + ["2026-12-01"] * 4, "RAM of 1 Dec"),                      # a blank date among them, and no zero-padding
+], ids=["newest_last", "newest_first", "across_a_month_end", "some_blank"])
+def test_the_caption_reads_the_newest_ram_date_when_the_rows_dates_differ(dates, want):
+    assert _caption(_order_market(ram_date=dates)).endswith(f"· no RAM last · {want}")
+
+
+def test_the_newest_is_of_the_rows_shown_not_of_the_copy():
+    dates = ["2026-11-03"] * 7 + ["2026-11-04"]
+    assert _caption(_order_market(ram_date=dates), keep_ids={"NSE:SYM0", "NSE:SYM2"}).endswith("· RAM of 3 Nov")
+
+
+def test_ranks_with_no_date_at_all_say_nothing_of_their_age():
+    assert _caption(_order_market(ram_date=np.nan)) == "RAM Rank, strongest first · no RAM last"
+
+
+def test_a_list_with_no_ram_on_a_copy_that_has_it_says_this_list_not_this_copy():
+    """A BSE-only list on a copy where 1,244 stocks have RAM: 'no RAM on this copy' would be false."""
+    bse_unranked = _order_market(company_id=[f"BSE:{i}" if i in (1, 4, 7) else f"NSE:SYM{i}" for i in range(8)])
+    assert _caption(bse_unranked, keep_ids={"BSE:1", "BSE:4", "BSE:7"}) == "Momentum, high to low · no RAM in this list"
+
+
+@pytest.mark.parametrize("case", ["blank", "absent"])
+def test_a_copy_with_no_ram_at_all_says_so(case):
+    market = (_order_market(ram_rank=np.nan, ram_pct=np.nan, ram_score=np.nan, ram_date=np.nan) if case == "blank"
+              else _order_market().drop(columns=list(RAM_COLUMNS)))
+    assert _caption(market) == "Momentum, high to low · no RAM on this copy"
 
 
 @pytest.mark.parametrize("scan", (*LISTS, *OTHERS), ids=lambda s: s["key"])
@@ -433,7 +514,7 @@ def _render_view(table: pd.DataFrame, scan: dict):
 
 
 @pytest.mark.parametrize("case", ["filled", "tonight's blanks", "an old copy"])
-def test_the_view_renders_in_every_case_and_the_grids_download_gets_its_columns(case):
+def test_the_view_renders_in_every_case_with_its_columns_in_order(case):
     market = _order_market()
     if case == "tonight's blanks":
         market = market.assign(ram_score=np.nan, ram_rank=np.nan, ram_pct=np.nan, ram_date=np.nan)
@@ -442,7 +523,7 @@ def test_the_view_renders_in_every_case_and_the_grids_download_gets_its_columns(
     at = _render_view(S.ram_view_table(S.scan_table(market, _EVERY_STOCK), market), _PLAY)
     assert not at.exception, [str(e.value) for e in at.exception]
     grid = at.dataframe[0]
-    assert list(grid.proto.column_order) == list(_VIEW_HEADERS), "what the grid shows is what its CSV writes, in this order"
+    assert list(grid.proto.column_order) == list(_VIEW_HEADERS)
     got = grid.value["ram_rank"].iloc[:2].tolist()
     assert got == [1.0, 2.0] if case == "filled" else pd.isna(got).all(), got
 
@@ -458,15 +539,39 @@ def _app_dict(name: str) -> dict:
     return ast.literal_eval(node)
 
 
+# Main's (9284e96) Deep Scanner tables, whole.
+_MAIN_DS_VIEWS = {
+    "🏆 Core": ["rank", "name", "verdict_direction", "wealth_tier", "sector", "market_category", "traded_value_cr",
+        "composite_score", "gate_pass", "improvement_score", "momentum_score"],
+    "📊 Quality": ["rank", "name", "quality_score", "moat_score", "growth_score", "improvement_score", "cash_score", "roce",
+        "roce_expansion", "roce_inflection", "opm", "opm_acceleration"],
+    "💰 Valuation": ["rank", "name", "close_price", "fair_value_qglp", "valuation_score", "expected_excess_return", "pe",
+        "pb_ratio", "peg", "dividend_yield", "fcf_yield", "buy_zone_label"],
+    "🔬 Forensic": ["rank", "name", "red_flag_count", "red_flag_list", "piotroski_fscore", "schilit_pass",
+        "forensic_multiplier", "cfo_to_pat", "accruals_ratio", "debt_to_equity", "data_coverage_pct"],
+    "📈 Technical": ["rank", "name", "dist_to_vstop", "momentum_score", "d49_momentum_quality", "rsi_14d", "breakout_score",
+        "d48_breakout_readiness", "dist_ath", "crs_52w", "weinstein_stage"],
+    "👥 Ownership": ["rank", "name", "governance_bonus", "promoter_holdings", "change_promoter_1y", "pledged_percentage",
+        "fii_holdings", "change_fii_lq", "dii_holdings", "change_dii_lq", "smart_money_flow"],
+}
+_MAIN_DS_W = {
+    "rank": 50, "name": 180, "verdict_direction": 80, "wealth_tier": 93, "sector": 115, "market_category": 80,
+    "traded_value_cr": 65, "composite_score": 97, "gate_pass": 60, "quality_score": 105, "moat_score": 60,
+    "growth_score": 65, "improvement_score": 95, "cash_score": 55, "roce": 60, "roce_expansion": 95,
+    "roce_inflection": 90, "opm": 55, "opm_acceleration": 105, "close_price": 80, "fair_value_qglp": 70,
+    "valuation_score": 105, "expected_excess_return": 70, "pe": 60, "pb_ratio": 55, "peg": 60, "dividend_yield": 80,
+    "fcf_yield": 70, "buy_zone_label": 120, "market_cap": 90, "red_flag_count": 75, "red_flag_list": 190,
+    "piotroski_fscore": 70, "schilit_pass": 70, "forensic_multiplier": 90, "cfo_to_pat": 75, "accruals_ratio": 80,
+    "debt_to_equity": 55, "data_coverage_pct": 75, "dist_to_vstop": 60, "momentum_score": 105,
+    "d49_momentum_quality": 110, "rsi_14d": 50, "breakout_score": 105, "d48_breakout_readiness": 90, "dist_ath": 65,
+    "crs_52w": 60, "weinstein_stage": 140, "governance_bonus": 90, "promoter_holdings": 80, "change_promoter_1y":
+    110, "pledged_percentage": 75, "fii_holdings": 55, "change_fii_lq": 80, "dii_holdings": 55, "change_dii_lq": 80,
+    "smart_money_flow": 160, "result_when": 95}
+
+
 def test_every_deep_scanner_view_is_mains():
-    views = _app_dict("_DS_VIEWS")
-    assert views["📈 Technical"] == ["rank", "name", "dist_to_vstop", "momentum_score", "d49_momentum_quality", "rsi_14d",
-                                    "breakout_score", "d48_breakout_readiness", "dist_ath", "crs_52w", "weinstein_stage"]
-    assert not {"ram_rank", "ram_pct", "ram_score"} & {c for cols in views.values() for c in cols}, "only while sorted by it"
-    w = _app_dict("_DS_W")
-    assert ({c: w[c] for c in views["📈 Technical"]} ==
-            {"rank": 50, "name": 180, "dist_to_vstop": 60, "momentum_score": 105, "d49_momentum_quality": 110, "rsi_14d": 50,
-             "breakout_score": 105, "d48_breakout_readiness": 90, "dist_ath": 65, "crs_52w": 60, "weinstein_stage": 140})
+    assert _app_dict("_DS_VIEWS") == _MAIN_DS_VIEWS, "RAM Rank shows only while sorted by it"
+    assert {c: w for c, w in _app_dict("_DS_W").items() if c != "ram_rank"} == _MAIN_DS_W
 
 
 def test_the_dropdown_offers_ram_rank_low_numbers_first():
@@ -542,10 +647,21 @@ def test_without_the_sort_no_view_shows_it(tmp_path):
     assert "ram_rank" not in _run_deep_scanner(tmp_path, _order_market(), sort="Score ↓").dataframe[0].value.columns
 
 
-def test_the_export_follows_the_sort(tmp_path):
-    at = _run_deep_scanner(tmp_path, _order_market())
-    export = pd.read_csv(io.BytesIO(at.session_state["export"]), encoding="utf-8-sig")
-    assert export["ram_rank"].iloc[:5].tolist() == [1.0, 2.0, 2.0, 5.0, 9.0] and export["ram_rank"].iloc[5:].isna().all()
+def _export(at) -> pd.DataFrame:
+    return pd.read_csv(io.BytesIO(at.session_state["export"]), encoding="utf-8-sig")
+
+
+def test_the_exports_rows_follow_the_sort(tmp_path):
+    """The column is in the file under any sort (main's rule: the export carries every sort column); its ROWS follow this one."""
+    ram = _export(_run_deep_scanner(tmp_path, _order_market()))["ram_rank"]
+    assert ram.iloc[:5].tolist() == [1.0, 2.0, 2.0, 5.0, 9.0] and ram.iloc[5:].isna().all()
+    other = _export(_run_deep_scanner(tmp_path, _order_market(), sort="Score ↓"))["ram_rank"]
+    assert other.iloc[0] == 5.0, "under another sort the same column stands in that sort's order"
+
+
+def test_the_deep_scanners_grid_keeps_streamlits_own_blank(tmp_path):
+    """Only the 🔢 RAM view draws a dash: here it would also change every P/E and PEG blank."""
+    assert _run_deep_scanner(tmp_path, _order_market()).dataframe[0].proto.placeholder == ""
 
 
 @pytest.mark.parametrize("case", ["tonight's blanks", "an old copy"])
@@ -565,7 +681,14 @@ _LINES = [
     ("a_date_cell_timestamp", {**_RANKED, "ram_date": pd.Timestamp("2026-11-04")}, "#4 · 99.8% · 4 Nov"),
     ("a_date_cell_datetime", {**_RANKED, "ram_date": datetime(2026, 11, 4)}, "#4 · 99.8% · 4 Nov"),
     ("another_month", {**_RANKED, "ram_date": "2026-12-01"}, "#4 · 99.8% · 1 Dec"),
+    ("a_zoned_date", {**_RANKED, "ram_date": "2026-11-04T01:00+05:30"}, "#4 · 99.8% · 4 Nov"),
     ("a_rank_without_a_date", {**_RANKED, "ram_date": np.nan}, "#4 · 99.8%"),
+    ("a_day_first_date", {**_RANKED, "ram_date": "03/11/2026"}, "#4 · 99.8%"),
+    ("a_year_for_a_date", {**_RANKED, "ram_date": "2026"}, "#4 · 99.8%"),
+    ("a_year_and_month_for_a_date", {**_RANKED, "ram_date": "2026-11"}, "#4 · 99.8%"),
+    ("a_serial_for_a_date", {**_RANKED, "ram_date": 46329.0}, "#4 · 99.8%"),
+    ("an_impossible_date", {**_RANKED, "ram_date": "2026-13-45"}, "#4 · 99.8%"),
+    ("not_ranked_on_a_malformed_date", {**_BLANK, "ram_date": "03/11/2026"}, "—"),
     ("a_rank_without_a_percentile", {**_RANKED, "ram_pct": np.nan}, "#4 · 4 Nov"),
     ("not_ranked", {**_BLANK, "ram_date": "2026-11-04"}, "— · not ranked on 4 Nov"),
     ("not_ranked_on_a_date_cell", {**_BLANK, "ram_date": datetime(2026, 11, 4)}, "— · not ranked on 4 Nov"),
@@ -767,7 +890,8 @@ def test_no_word_of_action_and_no_rule_or_person_anywhere_on_screen():
     from ui.ui_tearsheet import ram_line
     cfg = S.table_config("03 Oct", _PLAY)
     words = [_RAW_GLOSSARY["RAM Rank"], _RAW_GLOSSARY["RAM %"], _RAW_GLOSSARY["RAM"], S.RAM_VIEW,
-             S.ram_view_order_words(pd.DataFrame({"ram_rank": [1.0]}), "x"),
+             S.ram_view_order_words(pd.DataFrame({"ram_rank": [1.0], "ram_date": ["2026-11-04"]}), "x", _order_market()),
+             S.ram_view_order_words(pd.DataFrame({"ram_rank": [np.nan], "ram_date": [np.nan]}), "x", _order_market()),
              *(cfg[c][k] for c in ("#", "ram_rank", "symbol", "ram_pct", "ram_score") for k in ("label", "help")),
              *(ram_line(pd.Series(line[1])) for line in _LINES)]
     assert all(words)

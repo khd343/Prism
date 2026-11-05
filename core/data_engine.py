@@ -825,12 +825,24 @@ def merge_datasets(datasets: Dict[str, pd.DataFrame]) -> pd.DataFrame:
 
 
 def ram_date_text(cells: pd.Series) -> pd.Series:
-    """RAM Date as 'YYYY-MM-DD' text, NaN where blank or unreadable: the one reading, for the loader and the Tear-Sheet.
+    """RAM Date as 'YYYY-MM-DD' text, NaN for anything else: the one reading of the column. It never raises (CLAUDE.md §5):
+    a display-only column must not stop the app or a scheduled job, as one zoned cell beside plain dates once did.
 
     The sheet's job writes 2026-11-03, but Google Sheets may turn that into a real date cell, so the XLSX load can hand
-    text, a datetime or a blank. ISO only: 03/11/2026 could be either month, and a session is never guessed. Without
-    the format, to_datetime would also count a bare number as nanoseconds from 1970, and the screen would say 1 Jan."""
-    return pd.to_datetime(cells.astype(object), errors="coerce", format="ISO8601").dt.strftime("%Y-%m-%d")
+    text, a datetime or a blank. A cell is a session only if it starts with a whole YYYY-MM-DD, as both read, and the day
+    is the one it WRITES: 2026-11-04T01:00+05:30 is 4 Nov, never converted to another zone. So 2026, 2026-11, a number
+    and 03/11/2026 (either month) read blank: a session is never guessed. to_datetime only says if that day exists."""
+    day = cells.astype(object).astype(str).str.extract(r"^(\d{4}-\d{2}-\d{2})(?!\d)", expand=False)
+    return pd.to_datetime(day, errors="coerce", format="%Y-%m-%d").dt.strftime("%Y-%m-%d")
+
+
+def ram_day(cell) -> str:
+    """One RAM Date cell in the screens' words, '4 Nov', or '' when it is no session."""
+    iso = ram_date_text(pd.Series([cell], dtype=object)).iloc[0]
+    if pd.isna(iso):
+        return ""
+    day = pd.Timestamp(iso)
+    return f"{day.day} {day:%b}"
 
 
 def coerce_numeric_columns(df: pd.DataFrame) -> pd.DataFrame:

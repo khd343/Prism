@@ -27,7 +27,7 @@ from ui.ui_liquidity import trade_line
 # which is exactly how the ">75d / >120d" string below got stranded (see the handler's comment).
 from core.forensic_engine import _SECTOR_DSO_THRESHOLDS, _DEFAULT_DSO_THRESHOLD
 # Same rule for the ⏳ Consolidation Base card and the SEPA panel's V box: the engine's lines and labels.
-from core.data_engine import CONSOLIDATION_BASE_LABELS, VCP_DRYUP_SHARE, ram_date_text
+from core.data_engine import CONSOLIDATION_BASE_LABELS, VCP_DRYUP_SHARE, ram_day
 # The Shariah screen card reads the engine's columns and the shared vocabulary; it recomputes no rule.
 from config import SHARIAH_RULES
 from core.shariah import shariah_fact
@@ -2101,8 +2101,7 @@ def ram_line(stock: pd.Series) -> str:
     No 'of N': the sheet holds only this app's stocks, so N cannot be read from it. RAM comes from the sheet, and no
     score, list or record reads it."""
     rank, pct = _finite(stock.get("ram_rank")), _finite(stock.get("ram_pct"))
-    iso = ram_date_text(pd.Series([stock.get("ram_date")], dtype=object)).iloc[0]
-    day = "" if pd.isna(iso) else f"{pd.Timestamp(iso).day} {pd.Timestamp(iso):%b}"
+    day = ram_day(stock.get("ram_date"))
     if np.isnan(rank):
         return f"— · not ranked on {day}" if day else "—"
     return " · ".join(part for part in (f"#{rank:.0f}", "" if np.isnan(pct) else f"{pct:.1f}%", day) if part)

@@ -702,8 +702,10 @@ def test_the_clear_leaves_the_list_alone(tab):
 
 
 # ── The 🔢 RAM view, RUN (2026-11-05): tests/test_ram_display.py holds its pieces, this its place in the real tab ─────────
-_RAM_FILLED = ("df = df.assign(ram_rank=df['momentum_score'].rank().where(np.arange(n) % 3 != 0),\n"
-               "               ram_pct=100.0 - df['momentum_score'], ram_score=df['momentum_score'] / 50.0)\n")
+_RAM_FILLED = ("_nse = df['company_id'].str.startswith('NSE:')\n"
+               "df = df.assign(ram_rank=df['momentum_score'].rank().where((np.arange(n) % 3 != 0) & _nse),\n"
+               "               ram_pct=100.0 - df['momentum_score'], ram_score=df['momentum_score'] / 50.0,\n"
+               "               ram_date=np.where(_nse, '2026-11-04', None))\n")
 # st, except that its table reports the first row picked, as a click does (AppTest cannot click a row).
 _PICKS_THE_FIRST_ROW = """
 _st = st
@@ -718,7 +720,7 @@ st = _Picks()
 
 
 def _ram_tab(tmp_path, extra=""):
-    """The real tab on a market whose RAM runs against its Momentum, with every third stock unranked."""
+    """The real tab on a market whose RAM runs against its Momentum, with every third stock and every BSE id unranked."""
     from streamlit.testing.v1 import AppTest
     source = _app_source(_records_without_baselines()).replace("filt = df\n", _RAM_FILLED + "filt = df\n" + extra, 1)
     script = tmp_path / "scans_tab.py"
@@ -787,6 +789,59 @@ def test_a_row_click_after_the_sort_loads_that_stock(tmp_path):
     t = at.dataframe[0].value
     assert len(t) > 1 and t["ram_rank"].iloc[0] == t["ram_rank"].min() and t["momentum_score"].iloc[0] != t["momentum_score"].max()
     assert at.session_state["xray_stock"] == t["name"].iloc[0], "the row on screen, not the row of the list's own order"
+
+
+def test_the_caption_says_how_old_the_ranks_are(tmp_path):
+    at = _ram_tab(tmp_path)
+    assert any("sorted by RAM Rank, strongest first · no RAM last · RAM of 4 Nov · click a row" in c.value for c in at.caption)
+
+
+def test_a_bse_only_list_on_a_copy_with_ram_says_this_list_and_keeps_todays_order(tmp_path):
+    at = _ram_tab(tmp_path)
+    _control(at, "scan_layer").set_value("price_only").run()
+    at.selectbox(key="scan_exchange").set_value("BSE").run()
+    assert not at.exception, [e.value for e in at.exception]
+    t = at.dataframe[0].value
+    assert len(t) > 1 and t["ram_rank"].isna().all() and t["momentum_score"].is_monotonic_decreasing
+    cap = next(c.value for c in at.caption if "sorted by" in c.value)
+    assert "sorted by Momentum, high to low · no RAM in this list" in cap and "on this copy" not in cap, cap
+    assert "RAM of" not in cap, cap
+
+
+def test_the_view_shows_a_dash_for_a_blank_and_every_other_view_keeps_streamlits_own(tmp_path):
+    from ui import ui_scans as S
+    at = _ram_tab(tmp_path)
+    assert at.dataframe[0].proto.placeholder == "—", "not the word None, under three columns on half of each list"
+    for view in S.SCAN_VIEWS:
+        _control(at, "scan_view").set_value(view).run()
+        assert not at.exception, [e.value for e in at.exception]
+        assert at.dataframe[0].proto.placeholder == "", view
+    at.button(key="scan_open_leaders").click().run()
+    assert at.dataframe[0].proto.placeholder == "", "🌬️ is main's"
+
+
+def test_the_tab_draws_the_view_at_its_own_widths_on_every_list(tmp_path):
+    """Not 🚀's own Stock 185 and Sector 125, which the view's would silently fall back to if the tab skipped ram_view_scan."""
+    at = _ram_tab(tmp_path)
+    for key in ("playbook", "no_quarter", "price_only"):
+        if key != "playbook":
+            _control(at, "scan_layer").set_value(key).run()
+            assert not at.exception, [e.value for e in at.exception]
+        config = json.loads(at.dataframe[0].proto.columns)
+        assert (config["name"]["width"], config["sector"]["width"]) == (312, 170), key
+
+
+def test_deselecting_the_active_segment_keeps_the_lists_first_view(tmp_path):
+    from ui import ui_scans as S
+    at = _ram_tab(tmp_path)
+    _control(at, "scan_view").set_value([]).run()                     # a click on the active segment empties the control
+    assert not at.exception, [e.value for e in at.exception]
+    assert list(at.dataframe[0].proto.column_order) == list(S.RAM_VIEW_COLUMNS), "the 🚀 list's first view, not Core"
+    assert any("sorted by RAM Rank" in c.value for c in at.caption)
+    at.button(key="scan_open_leaders").click().run()
+    _control(at, "scan_view").set_value([]).run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert list(at.dataframe[0].proto.column_order) == list(S.table_columns(S.SCANS[1], "🏆 Core")), "🌬️'s first view"
 
 
 def test_a_filter_renumbers_the_place_in_the_real_tab(tmp_path):
