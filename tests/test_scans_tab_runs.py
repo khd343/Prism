@@ -211,7 +211,8 @@ def test_the_view_switch_reaches_the_table(tab):
     """RUN (2026-10-13): the table opens on 🏆 Core; choosing 📈 Technical shows the Technical columns
     on the same stocks — the switch reaches the table, not just the source (tests/test_scan_views.py)."""
     from ui import ui_scans as S
-    play = S.SCANS[0]
+    play = S.SCANS[1]                             # 2026-11-05: a scan that opens on Core; 🚀's lists open on 🔢 RAM
+    tab.button(key=f"scan_open_{play['key']}").click().run()
     view = _control(tab, "scan_view")             # by key since 2026-10-30: 🚀 also draws the List control
     assert view.value == "🏆 Core"
     assert list(tab.dataframe[0].proto.column_order) == list(S.table_columns(play, "🏆 Core"))
@@ -220,36 +221,6 @@ def test_the_view_switch_reaches_the_table(tab):
     assert not tab.exception, [e.value for e in tab.exception]
     assert list(tab.dataframe[0].proto.column_order) == list(S.table_columns(play, "📈 Technical"))
     assert list(tab.dataframe[0].value["name"]) == core_names, "a view changes columns, never the list"
-
-
-def test_an_old_copy_without_ram_runs_both_views_with_the_columns_blank(tab):
-    """This market has no RAM columns, as no archived copy does (2026-11-05): the real tab runs and both views carry them
-    blank, never 0."""
-    from ui import ui_scans as S
-    play = S.SCANS[0]
-    assert tab.dataframe[0].value["ram_rank"].isna().all()
-    assert "ram_rank" in tab.dataframe[0].proto.column_order and "ram_pct" not in tab.dataframe[0].proto.column_order
-    _control(tab, "scan_view").set_value("📈 Technical").run()
-    assert not tab.exception, [e.value for e in tab.exception]
-    assert list(tab.dataframe[0].proto.column_order) == list(S.table_columns(play, "📈 Technical"))
-    assert tab.dataframe[0].value["ram_pct"].isna().all()
-
-
-def test_ram_values_reach_the_table_and_the_order_stays_the_scans_own(tmp_path):
-    """RAM reversed against Momentum: the 🚀 list still reads by Momentum, high to low, and carries the values."""
-    from streamlit.testing.v1 import AppTest
-    source = _app_source(_records_without_baselines()).replace(
-        "filt = df\n",
-        "df = df.assign(ram_rank=df['momentum_score'].rank(), ram_pct=100.0 - df['momentum_score'])\nfilt = df\n", 1)
-    script = tmp_path / "scans_tab.py"
-    script.write_text(source, encoding="utf-8")
-    at = AppTest.from_file(str(script), default_timeout=60)
-    at.run()
-    assert not at.exception, [e.value for e in at.exception]
-    table = at.dataframe[0].value
-    assert len(table) > 1 and table["momentum_score"].is_monotonic_decreasing
-    assert table["ram_rank"].is_monotonic_decreasing, "RAM Rank 1 is the lowest Momentum here, so it reads last"
-    assert (table["ram_pct"] == 100.0 - table["momentum_score"]).all()
 
 
 def test_the_full_record_panel_follows_the_chosen_scan(tab):
@@ -530,7 +501,7 @@ def test_clear_returns_every_control_to_its_default(tab):
     assert tab.selectbox(key="scan_exchange").value == "All"
     assert tab.multiselect(key="scan_stage").value == []
     assert tab.multiselect(key="scan_cap").value == [] and tab.multiselect(key="scan_zone").value == []
-    assert _control(tab, "scan_view").value == "🏆 Core", "the view is not a filter"
+    assert _control(tab, "scan_view").value == "🔢 RAM", "the view is not a filter"
 
 
 def _run(tmp_path, records):
@@ -671,6 +642,7 @@ def test_b_and_c_list_their_stocks_with_one_note_and_no_record_marks(tmp_path, k
     at = AppTest.from_file(str(script), default_timeout=60)
     at.run()
     assert not at.exception, [e.value for e in at.exception]
+    _control(at, "scan_view").set_value("🏆 Core").run()   # 2026-11-05: 🚀 opens on 🔢 RAM, which has no New column to read
     assert any("🆕 new since 30 Sep" in c.value for c in at.caption), "the control: 🚀 reads its baseline"
     _control(at, "scan_layer").set_value(key).run()
     assert not at.exception, [e.value for e in at.exception]
@@ -728,3 +700,115 @@ def test_the_clear_leaves_the_list_alone(tab):
     assert tab.selectbox(key="scan_liq").value is None
     assert _control(tab, "scan_layer").value == "price_only"
 
+
+# ── The 🔢 RAM view, RUN (2026-11-05): tests/test_ram_display.py holds its pieces, this its place in the real tab ─────────
+_RAM_FILLED = ("df = df.assign(ram_rank=df['momentum_score'].rank().where(np.arange(n) % 3 != 0),\n"
+               "               ram_pct=100.0 - df['momentum_score'], ram_score=df['momentum_score'] / 50.0)\n")
+# st, except that its table reports the first row picked, as a click does (AppTest cannot click a row).
+_PICKS_THE_FIRST_ROW = """
+_st = st
+class _Picks:
+    def __getattr__(self, name):
+        return getattr(_st, name)
+    def dataframe(self, *args, **kw):
+        _st.dataframe(*args, **kw)
+        return SimpleNamespace(selection=SimpleNamespace(rows=[0]))
+st = _Picks()
+"""
+
+
+def _ram_tab(tmp_path, extra=""):
+    """The real tab on a market whose RAM runs against its Momentum, with every third stock unranked."""
+    from streamlit.testing.v1 import AppTest
+    source = _app_source(_records_without_baselines()).replace("filt = df\n", _RAM_FILLED + "filt = df\n" + extra, 1)
+    script = tmp_path / "scans_tab.py"
+    script.write_text(source, encoding="utf-8")
+    at = AppTest.from_file(str(script), default_timeout=60)
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+    return at
+
+
+def test_the_rocket_lists_open_on_the_ram_view_by_ram_rank_with_blanks_last(tmp_path):
+    from ui import ui_scans as S
+    at = _ram_tab(tmp_path)
+    for key in ("playbook", "no_quarter", "price_only"):
+        if key != "playbook":
+            _control(at, "scan_layer").set_value(key).run()
+            assert not at.exception, [e.value for e in at.exception]
+        view = _control(at, "scan_view")
+        assert view.value == S.RAM_VIEW and [o.content for o in view.options] == ["RAM", "Core", "Technical"], key
+        grid = at.dataframe[0]
+        assert list(grid.proto.column_order) == list(S.RAM_VIEW_COLUMNS), key
+        t = grid.value
+        ranked = t["ram_rank"].notna().sum()
+        assert t["ram_rank"].iloc[:ranked].is_monotonic_increasing and t["ram_rank"].iloc[ranked:].isna().all(), key
+        assert t["momentum_score"].iloc[ranked:].is_monotonic_decreasing, f"{key}: the blanks keep today's order"
+        assert t["#"].tolist() == list(range(1, len(t) + 1)), key
+        assert any("sorted by RAM Rank, strongest first · no RAM last" in c.value for c in at.caption), key
+    assert t["ram_rank"].isna().any(), "C holds blanks to put last"
+
+
+def test_flipping_to_core_or_technical_is_mains_table_and_mains_caption(tmp_path):
+    from ui import ui_scans as S
+    at = _ram_tab(tmp_path)
+    for view in S.SCAN_VIEWS:
+        _control(at, "scan_view").set_value(view).run()
+        assert not at.exception, [e.value for e in at.exception]
+        grid = at.dataframe[0]
+        assert list(grid.proto.column_order) == list(S.table_columns(S.SCANS[0], view)), view
+        assert grid.value["momentum_score"].is_monotonic_decreasing and "ram_rank" not in grid.value.columns, view
+        cap = next(c.value for c in at.caption if "sorted by" in c.value)
+        assert "sorted by Momentum, high to low · click a row" in cap, cap
+
+
+def test_other_scans_offer_their_two_views_and_a_ram_choice_falls_back_to_core(tab):
+    from ui import ui_scans as S
+    assert _control(tab, "scan_view").value == S.RAM_VIEW
+    for scan in S.SCANS[1:]:
+        tab.button(key=f"scan_open_{scan['key']}").click().run()
+        assert not tab.exception, [e.value for e in tab.exception]
+        view = _control(tab, "scan_view")
+        assert view.value == "🏆 Core" and [o.content for o in view.options] == ["Core", "Technical"], scan["key"]
+        assert list(tab.dataframe[0].proto.column_order) == list(S.table_columns(scan, "🏆 Core")), scan["key"]
+        assert not any("RAM" in c.value for c in tab.caption), scan["key"]
+    tab.button(key="scan_open_playbook").click().run()
+    assert _control(tab, "scan_view").value == S.RAM_VIEW, "back on 🚀 it opens on its own view again"
+
+
+def test_a_copy_with_no_ram_reads_todays_order_and_says_so(tab):
+    t = tab.dataframe[0].value
+    assert t["ram_rank"].isna().all() and t["momentum_score"].is_monotonic_decreasing
+    assert any("sorted by Momentum, high to low · no RAM on this copy" in c.value for c in tab.caption)
+
+
+def test_a_row_click_after_the_sort_loads_that_stock(tmp_path):
+    at = _ram_tab(tmp_path, _PICKS_THE_FIRST_ROW)
+    t = at.dataframe[0].value
+    assert len(t) > 1 and t["ram_rank"].iloc[0] == t["ram_rank"].min() and t["momentum_score"].iloc[0] != t["momentum_score"].max()
+    assert at.session_state["xray_stock"] == t["name"].iloc[0], "the row on screen, not the row of the list's own order"
+
+
+def test_a_filter_renumbers_the_place_in_the_real_tab(tmp_path):
+    at = _ram_tab(tmp_path)
+    _control(at, "scan_layer").set_value("price_only").run()
+    whole = at.dataframe[0].value
+    at.selectbox(key="scan_liq").set_value(5.0).run()
+    assert not at.exception, [e.value for e in at.exception]
+    narrow = at.dataframe[0].value
+    assert 0 < len(narrow) < len(whole), "the floor must really narrow"
+    assert narrow["#"].tolist() == list(range(1, len(narrow) + 1))
+
+
+def test_the_views_caption_names_no_new_column_it_does_not_show(tmp_path):
+    from streamlit.testing.v1 import AppTest
+    records = _records_without_baselines()
+    records["scans"]["playbook"]["members_at_latest"] = _frame()["company_id"].tolist()[:150]
+    records["members_date"] = "2026-09-30"
+    script = tmp_path / "scans_tab_new.py"
+    script.write_text(_app_source(records), encoding="utf-8")
+    at = AppTest.from_file(str(script), default_timeout=60)
+    at.run()
+    assert not at.exception, [e.value for e in at.exception]
+    cap = next(c.value for c in at.caption if "sorted by" in c.value)
+    assert "🆕" not in cap and "📄" not in cap, cap

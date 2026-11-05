@@ -14,7 +14,7 @@ _SCANNER_HEADER_TIPS = {
     "rank":             "Overall PRISM rank by Score across the whole universe (1 = highest). It stays the same whatever the table is sorted or filtered by.",
     "result_when":      "How current this stock's financials are — '8d ago' = last results reported 8 days back; '📅 due 4d' = a result is SCHEDULED in 4 days and not yet declared, so every number here is still the previous quarter's. Appears when sorting by 🆕 Results.",
     "d48_breakout_readiness": "How close price is to breaking out — 🎯 IMMINENT: within 10% of the 52-week high AND 5% of the 13-week high; NEAR: within 20% of the 52-week high; FAR: more than 20% below. The categorical read of the Breakout score beside it.",
-    "d49_momentum_quality": "Whether the momentum is healthy or exhausted — ⚡ HIGH: RSI in the 50–70 zone with a confirmed trend (ADX > 20); 🔥 OVERHEATED: RSI above 70, strong but stretched, chase risk elevated; WEAK: neither. Reads the Momentum and RSI columns.",
+    "d49_momentum_quality": "Whether the momentum is healthy or exhausted — ⚡ HIGH: RSI in the 50–70 zone with a confirmed trend (ADX > 20); 🔥 OVERHEATED: RSI above 70, strong but stretched, chase risk elevated; WEAK: neither. Reads the Momentum and RSI columns beside it.",
     "verdict_direction":"The engine's one-word gate (SOUND / MIXED / FLAWED) synthesised from all 6 axes after the forensic penalty.",
     "wealth_tier":"The wealth-engine tier (CLIMBING★ / CLIMBING / RECOVERING / UNEVEN / STALLED / N/A) — which way is the business's value creation moving? Three clocks: EP% (ROE − cost of equity), Vel% (this year's change in it), 5-year margin tau. Price-blind and forensics-blind; a description, not a recommendation.",
     "corporate_class":  _GLOSSARY["Corporate Class"],
@@ -34,6 +34,7 @@ _SCANNER_HEADER_TIPS = {
     "momentum_score":   _GLOSSARY["Momentum Scr"],
     "ram_rank":         _GLOSSARY["RAM Rank"],
     "ram_pct":          _GLOSSARY["RAM %"],
+    "ram_score":        _GLOSSARY["RAM"],
     # ── Deep Scanner view-preset columns (Quality / Valuation / Forensic / Technical) ──
     # Reuse the SAME glossary the tearsheet "?" chip uses (single source of truth); bespoke text only
     # where a column has no tearsheet-cell glossary entry. Coverage is pinned by

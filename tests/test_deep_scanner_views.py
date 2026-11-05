@@ -34,8 +34,6 @@ WHAT IS PINNED
      100% of stocks), Tsunami (3 of 2,717 stocks, and it has its own tab), Price (in Valuation) and
      Smart Money (in Ownership) left Technical; Quality's parts read as numbers beside its bar, and
      Governance — a separate composite leg built from ownership signals — moved to Ownership.
-     ONE EXCEPTION since 2026-11-05: RAM Rank and RAM % joined Technical, which had 5px free, and it now reads 66px past
-     the grid (app.py _DS_W says where the rest came from). Held by _PAST_THE_GRID_PX; no other view may pass.
 
   6. ONE HOME PER COLUMN (2026-10-08). No column shows in two of the five detail views (Promoter and
      Pledged sat in Forensic AND Ownership). Core is the overview and repeats only Improvement and
@@ -211,7 +209,6 @@ def test_the_export_carries_every_sort_column():
 # (a 1,074px grid, 10px wider than today's) allowed. (The grid's scroll-area readings vary between
 # renders; its column state does not, so measure that.)
 _GRID_PX, _ROW_SELECTOR_PX = 1064, 44
-_PAST_THE_GRID_PX = {"📈 Technical": 66}     # RAM's two columns, 2026-11-05; the operator judges it on the screen
 W = {k: v.value for k, v in _dict("_DS_W").items()}
 
 
@@ -224,8 +221,7 @@ def test_every_column_a_view_can_show_has_a_set_width():
 def test_every_view_fits_a_laptop_screen():
     for view, cols in VIEWS.items():
         need = sum(W[c] for c in cols) + _ROW_SELECTOR_PX
-        allowed = _GRID_PX + _PAST_THE_GRID_PX.get(view, 0)
-        assert need <= allowed, f"{view} needs {need}px: {need - _GRID_PX}px off a 1536px laptop screen"
+        assert need <= _GRID_PX, f"{view} needs {need}px: {need - _GRID_PX}px off a 1536px laptop screen"
 
 
 # ── 4. Widths and the switcher ──────────────────────────────────────────────────────────────────

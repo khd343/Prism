@@ -288,8 +288,8 @@ SCANS = (
     # Playbook requires a 🔥 Strong Quarter, so that column is ✓ on 100% of its stocks. Only columns
     # fixed BY CONSTRUCTION are hidden; Trend stays, because "above its stop" is not "above its 30-week
     # average" and a Stage 3 or 4 is possible (tests/test_scans.py). `widths` gives the hidden column's
-    # 36px to Stock and Sector (measured 2026-10-07: names fit 79% -> 90%, sectors 51% -> 75%; re-measured
-    # 2026-10-14 in the 14px font, with Category: names 80%, sectors 72%; 2026-11-05, 40px → 36: sectors 71%).
+    # 40px to Stock and Sector (measured 2026-10-07: names fit 79% -> 90%, sectors 51% -> 75%; re-measured
+    # 2026-10-14 in the 14px font, with Category: names 80%, sectors 72%).
     # `inputs`: the engine functions that compute the columns a recipe reads. The fingerprint follows
     # them, and everything they call, so a re-defined score makes the record stale (2026-10-07).
     # The derived price inputs (dist_to_vstop, vstop_fresh, vstop_green, above_sma200, vol_ratio) ARE
@@ -308,7 +308,7 @@ SCANS = (
          order="momentum",
          uses=(strong_quarter, improvement_evidence, _pct, _num),
          inputs=(compute_momentum_score, _compute_improvement_score, price_trend_inputs),
-         fixed=("_strong_q",), widths={"name": 185, "sector": 116},
+         fixed=("_strong_q",), widths={"name": 185, "sector": 125},
          recipe="Momentum and Breakout in the top third of the market, a 🔥 Strong Quarter, Improvement "
                 "in the top half, and the price above its stop."),
     dict(key="leaders", emoji="🌬️", name="Leading-Sector Stocks", mask=leading_sector_stocks,
@@ -333,10 +333,9 @@ SCANS = (
          # "Cycle ↓" (2026-10-07): a reading aid, not part of the recipe or record; its 60px come from
          # Stock, Sector, Score, ⚠ flags and Trend so the table keeps the laptop budget (2026-10-14, with
          # Category: names in full 46%, sectors 37%, from 52% and 52% — 🌱 carries two extra columns; each
-         # stays at or above its measured floor, tests/test_scan_views.py). 2026-11-05: the shared table now sits at this
-         # Score bar and this Trend, so they pay nothing more, and 🌱 reads 22px past the others rather than cut names
-         # already the narrowest (the comment above TABLE_WIDTHS).
-         extra=("_cycle",), widths={"name": 150, "sector": 80, "_measured_flags": 120},
+         # stays at or above its measured floor, tests/test_scan_views.py).
+         extra=("_cycle",), widths={"name": 150, "sector": 80, "composite_score": 65, "_measured_flags": 120,
+                                    "weinstein_stage": 85},
          # "Left 🌱" (2026-10-07): why a stock in 🌱 on the 🆕 baseline is not in it now. Not part of the
          # recipe, so not in the fingerprint (which follows mask, uses and inputs only).
          exit_reason=compounder_exit_reason,
@@ -719,7 +718,7 @@ def liquidity_help() -> str:
             f"market can take it without moving the price much:\n\n{guide}\n\n"
             + SURVEILLANCE_NOTE)
 
-TABLE_COLUMNS = ("rank", "_new", "name", "market_category", "sector", "composite_score", "momentum_score", "ram_rank",
+TABLE_COLUMNS = ("rank", "_new", "name", "market_category", "sector", "composite_score", "momentum_score",
                  "improvement_score", "_strong_q", "_measured_flags", "weinstein_stage", "_liq_cr")
 # Set widths (an auto-sized text column grows to its longest cell): 1,030px, the room a 1536px laptop
 # leaves after the row-selection column (the Deep Scanner's measured budget; the live grid measured
@@ -730,39 +729,37 @@ TABLE_COLUMNS = ("rank", "_new", "name", "market_category", "sector", "composite
 # common "Receivables · Neg FCF" needs 142 and was cut at 135 too) — and from the Score bar, 105 → 75, the
 # width 🌱 already showed it at. Stock and Sector gained on 🌬️ (names in full 68% → 72%; its sector names
 # fit 27% anywhere from 90 to 130px).
-# RAM Rank (2026-11-05) needs 75 (its header 74, "1402" 44). The same method on the 18 Sep copy found 35 of them with no
-# header and no common value cut: Rank 50 → 46, Momentum 85 → 84, Improvement 100 → 96 and 🔥 40 → 36 (their headers), the
-# Score bar 75 → 65 (🌱's width), ⚠ Measured flags 125 → 123 ("Squeeze · Neg FCF" 123), Trend 90 → 85 ("❔ Unknown" 85, on
-# 5-21% of a list) and Sector 95 → 90 (🌬️'s sector names fit 34% anywhere from 90 to 125px, C's 49% → 48%). The other 40
-# could only come out of Stock: 175 → 135 keeps 39% and 36% of names in full on 🌬️ and C, from 76% and 75%, and 185 → 145
-# keeps 44% and 47% on 🚀 and B, from 80% and 82%. That is not room, so Core GREW: 1,070px, 40 past the budget, and the
-# operator judges it on the screen. 🌱 reads 1,092: its Cycle ↓ was paid from the Score bar and Trend, now the shared
-# widths too (tests/test_scan_views.py _TABLE_PX).
-TABLE_WIDTHS = {"rank": 46, "_new": 55, "name": 175, "market_category": 75, "sector": 90,
-                "composite_score": 65, "momentum_score": 84, "ram_rank": 75, "improvement_score": 96, "_strong_q": 36,
-                "_measured_flags": 123, "weinstein_stage": 85, "_liq_cr": 65, "_cycle": 60,
+TABLE_WIDTHS = {"rank": 50, "_new": 55, "name": 175, "market_category": 75, "sector": 95,
+                "composite_score": 75, "momentum_score": 85, "improvement_score": 100, "_strong_q": 40,
+                "_measured_flags": 125, "weinstein_stage": 90, "_liq_cr": 65, "_cycle": 60,
                 # List (2026-10-30): the 🚀 ladder's B and C tables, in New's 55px (New is hidden there).
                 "_layer": 55,
                 # 📈 Technical (2026-10-13): the Deep Scanner's widths for the same columns, Breakout as a
-                # number like Momentum here; "🔥 OVERHEATED" fits 110. RAM's two columns (2026-11-05) cost 132 and
-                # this view had 65 free: RAM % needs 57 (its header 56), and by the method above Price 80 → 70
-                # ("12345.67" 69; on 18 Sep only 🌬️ and C held a dearer share, 4 rows, 3 of them already cut at 80),
-                # Stop Δ 60 → 57 ("-18.1%" 57), RSI 50 → 40 ("100" 37) and Breakout 85 → 70 (its header). It still reads
-                # 1,049, or 1,059 on 🚀's and B's wider names, and only Stock could pay the rest; widths are per scan,
-                # not per view, so Core would pay it too.
-                "close_price": 70, "dist_to_vstop": 57, "ram_pct": 57, "d49_momentum_quality": 110, "rsi_14d": 40,
-                "breakout_score": 70, "crs_52w": 60}
+                # number like Momentum here; "🔥 OVERHEATED" fits 110.
+                "close_price": 80, "dist_to_vstop": 60, "d49_momentum_quality": 110, "rsi_14d": 50,
+                "breakout_score": 85, "crs_52w": 60,
+                # 🔢 RAM (2026-11-05), each column's header and widest value on the 4 Nov copy, by the method above: # 45 ("1000"
+                # 44), RAM Rank 75 (header 74), Symbol 105 (widest on the three lists 103), RAM % 57 (header 56), RAM 46 ("-0.12" 45).
+                "#": 45, "ram_rank": 75, "symbol": 105, "ram_pct": 57, "ram_score": 46}
 # The table's views (2026-10-13), by the app-wide names (ui_group_views.VIEWS — the Deep Scanner's and
 # Market Pulse's). 🏆 Core, the default, answers "why is it in the list"; 📈 Technical answers "is now a
 # good moment, how far is the stop, can I buy one share": the Deep Scanner's Technical columns (without
 # Readiness and Off ATH, both folded into Breakout) plus Price and ₹ Cr/day, which decide whether a
-# small account can buy a share at all. Mom. Quality sits between the two numbers it reads, with RAM's two columns
-# after Momentum (2026-11-05). Adding these
+# small account can buy a share at all. Mom. Quality sits between the two numbers it reads. Adding these
 # to Core would have pushed it ~450px past a 1536px laptop. A display choice: it changes no list, record
 # or order, and the 🧹 Clear never resets it.
 SCAN_VIEWS = ("🏆 Core", "📈 Technical")
-TECHNICAL_COLUMNS = ("rank", "_new", "name", "close_price", "_liq_cr", "dist_to_vstop", "momentum_score", "ram_rank",
-                     "ram_pct", "d49_momentum_quality", "rsi_14d", "breakout_score", "crs_52w", "weinstein_stage")
+TECHNICAL_COLUMNS = ("rank", "_new", "name", "close_price", "_liq_cr", "dist_to_vstop", "momentum_score",
+                     "d49_momentum_quality", "rsi_14d", "breakout_score", "crs_52w", "weinstein_stage")
+# 🔢 RAM (2026-11-05, the operator's call): a list you act on answers one question, so the 🚀 Playbook, B and C open on one
+# table of their own, by RAM Rank, strongest first, no RAM last. Core and Technical stay as they are, on every list. Price
+# is there because one share must fit the account. Display only: only the tab reads this view and its order, and no
+# list, record, order check, feed or fingerprint moves (tests/test_ram_display.py). It takes the 1,030px with nothing
+# shrunk: Sector at 🚀's own 125 for all three, and Stock what is left, 357. Every name on the three lists fits 280 (4 Nov).
+RAM_VIEW = "🔢 RAM"
+RAM_VIEW_COLUMNS = ("#", "ram_rank", "symbol", "name", "ram_pct", "ram_score", "close_price", "market_category", "sector",
+                    "_liq_cr")
+RAM_VIEW_WIDTHS = {"name": 357, "sector": 125}
 # The engine's Weinstein labels, shortened so the column fits; the header tip carries the words.
 TREND_SHORT = {"📈 Stage 2 Advancing": "📈 Stage 2", "🔄 Stage 1 Basing": "🔄 Stage 1",
                "⚠️ Stage 3 Top": "⚠️ Stage 3", "📉 Stage 4 Declining": "📉 Stage 4"}
@@ -778,7 +775,10 @@ def table_columns(scan: dict, view: str = SCAN_VIEWS[0]) -> tuple:
     """The columns this scan shows in `view`. 🏆 Core: every table column except those its recipe fixes,
     plus its own extra columns, each right after its anchor. 📈 Technical: TECHNICAL_COLUMNS except the
     fixed ones (none is fixed by a recipe; the ladder's B and C hide New), plus an extra only where the view
-    shows its anchor (2026-10-30): List after Rank, while 🌱's Cycle ↓, anchored on 🔥, stays out."""
+    shows its anchor (2026-10-30): List after Rank, while 🌱's Cycle ↓, anchored on 🔥, stays out. 🔢 RAM: its own columns on
+    the lists that offer it; anywhere else a choice of it reads as Core."""
+    if view == RAM_VIEW and view in scan_views(scan):
+        return RAM_VIEW_COLUMNS
     if view == SCAN_VIEWS[1]:
         cols = [c for c in TECHNICAL_COLUMNS if c not in scan.get("fixed", ())]
         extras = [e for e in scan.get("extra", ()) if EXTRA_COLUMNS[e] in cols]
@@ -793,6 +793,35 @@ def table_columns(scan: dict, view: str = SCAN_VIEWS[0]) -> tuple:
 def table_widths(scan: dict) -> dict:
     """Column widths for this scan: the shared widths, with the scan's own overrides."""
     return {**TABLE_WIDTHS, **scan.get("widths", {})}
+
+
+def scan_views(scan: dict) -> tuple:
+    """The views this list offers, the first its default: the 🚀 lists open on 🔢 RAM, every other scan on Core."""
+    return (RAM_VIEW, *SCAN_VIEWS) if scan.get("key") in {layer["key"] for layer in PLAYBOOK_LAYERS} else SCAN_VIEWS
+
+
+def ram_view_scan(scan: dict) -> dict:
+    """The scan as the 🔢 RAM view draws it: its widths are the view's, whichever of the three lists it is."""
+    return dict(scan, widths=RAM_VIEW_WIDTHS)
+
+
+def ram_view_table(table: pd.DataFrame, df: pd.DataFrame) -> pd.DataFrame:
+    """The 🔢 RAM view of a finished list (scan_table's, filters and floor applied), with RAM from the market frame beside it:
+    RAM Rank low to high, no RAM last. The sort is stable, so on a tie and among the rows with no RAM the list keeps the
+    order it came in (🚀's: momentum high to low, then Rank), and a list with no RAM at all reads exactly as it came. # is
+    the place as shown, so a filter renumbers it. Symbol is the id without its exchange."""
+    ram = df.reindex(columns=["company_id", "ram_rank", "ram_pct", "ram_score"])
+    out = (table.merge(ram, on="company_id", how="left")
+           .sort_values("ram_rank", kind="mergesort", na_position="last").reset_index(drop=True))
+    return out.assign(**{"#": np.arange(1, len(out) + 1),
+                         "symbol": out["company_id"].astype(str).str.split(":", n=1).str[-1]})
+
+
+def ram_view_order_words(table: pd.DataFrame, today: str) -> str:
+    """What the view's caption says it is sorted by: `today` is the list's own order, which it falls back on with no RAM."""
+    if table["ram_rank"].notna().any():
+        return "RAM Rank, strongest first · no RAM last"
+    return f"{today} · no RAM on this copy"
 
 
 def momentum_ordered(scan: dict) -> bool:
@@ -935,11 +964,14 @@ def table_config(members_date_label: str, scan: dict = None) -> dict:
         "composite_score": cc.ProgressColumn("Score", min_value=0, max_value=100, format="%.0f",
                                              width=w["composite_score"]),
         "momentum_score": cc.NumberColumn("Momentum", format="%.0f", width=w["momentum_score"]),
-        # RAM (2026-11-05): shown beside Momentum, read by nothing: no list, order or record moves with it.
-        "ram_rank": cc.NumberColumn("RAM Rank", format="%.0f", width=w["ram_rank"],
-                                    help=_SCANNER_HEADER_TIPS["ram_rank"]),
-        "ram_pct": cc.NumberColumn("RAM %", format="%.1f", width=w["ram_pct"],
-                                   help=_SCANNER_HEADER_TIPS["ram_pct"]),
+        # 🔢 RAM's own columns (2026-11-05); the rest of its table is the columns below, with their own headers and tips.
+        "#": cc.NumberColumn("#", format="%d", width=w["#"],
+                             help="This row's place in the list as shown, after the filters and the sort. A filter renumbers it."),
+        "ram_rank": cc.NumberColumn("RAM Rank", format="%.0f", width=w["ram_rank"], help=_SCANNER_HEADER_TIPS["ram_rank"]),
+        "symbol": cc.TextColumn("Symbol", width=w["symbol"],
+                                help="The stock's symbol without its exchange, to type into a broker or a chart."),
+        "ram_pct": cc.NumberColumn("RAM %", format="%.1f", width=w["ram_pct"], help=_SCANNER_HEADER_TIPS["ram_pct"]),
+        "ram_score": cc.NumberColumn("RAM", format="%.2f", width=w["ram_score"], help=_SCANNER_HEADER_TIPS["ram_score"]),
         "improvement_score": cc.NumberColumn("Improvement", format="%.0f", width=w["improvement_score"]),
         "_strong_q": cc.TextColumn("🔥", width=w["_strong_q"],
                                    help="🔥 Strong Quarter: latest quarter vs the same quarter last year — "

@@ -9,14 +9,15 @@ shows them and computes nothing from them. Pinned here, each against the break i
      without the headers loads, and the engine's schema guard gives every reader the four columns as blanks.
   2. The daily Data check: a date in a "number column" would have been a false red every night.
   3. The tips: one source (the glossary), read by the Tear-Sheet's ?, the Reference, the Deep Scanner and the 🎯 Scans.
-  4. The 🎯 Scans: RAM Rank right after Momentum in both views, RAM % after it in 📈 Technical; no row and no order moves.
-  5. The Deep Scanner: both columns in its 📈 Technical view, one home, numbers with a set width, the export following.
-  6. The Tear-Sheet: one line in each of its three forms under the ⏱️ strip, never a chip on it, and no nan.
+  4. The 🔢 RAM view, first and default on the 🚀 Playbook, B and C: the table the operator reads, by RAM Rank with blanks
+     last. 🏆 Core and 📈 Technical, on every list, and 🌬️ and 🌱 altogether, are exactly main's.
+  5. The Deep Scanner: main's views, and RAM Rank in its sort dropdown, low numbers first, blanks last, on screen when sorted.
+  6. The Tear-Sheet: its own RAM RANK row under the ⏱️ strip, in the strip's look, never a chip on it, and no nan.
   7. Nothing reads them: every score, tier, rank, verdict and flag identical with and without RAM values; every recipe's
      fingerprint unmoved; only the loader, the Data check and the three screens name the columns at all.
   8. No word of action, no rule and no person in their labels and tips.
 
-The widths they cost are pinned beside the others (tests/test_scan_views.py, tests/test_deep_scanner_views.py).
+tests/test_scans_tab_runs.py runs the view in the real tab.
 
 Run with: pytest tests/test_ram_display.py -v
 """
@@ -38,7 +39,7 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from config import SHEET_TAB_NAMES  # noqa: E402
+from config import COLORS, SHEET_TAB_NAMES  # noqa: E402
 from core import data_engine as de  # noqa: E402
 from core import run_scoring_pipeline  # noqa: E402
 from core.cyclicality_map import INDUSTRY_TIER  # noqa: E402
@@ -243,87 +244,178 @@ TIP_RANK = ("RAM's rank among about 1,400 liquid NSE main-board stocks: 1 is the
             "check doubted it). Display only: it changes no score, list or record.")
 TIP_PCT = "RAM's score as a percentile, 100 the strongest. Display only: it changes no score, list or record."
 CORE, TECH = S.SCAN_VIEWS
+RAM = "🔢 RAM"
 _PLAY = next(s for s in S.SCANS if s["key"] == "playbook")
-LISTS = (*S.SCANS, S.playbook_layer_scan(_PLAY, "no_quarter"), S.playbook_layer_scan(_PLAY, "price_only"))
+_LEAD = next(s for s in S.SCANS if s["key"] == "leaders")
+_SEED = next(s for s in S.SCANS if s["key"] == "compounder")
+_B, _C = S.playbook_layer_scan(_PLAY, "no_quarter"), S.playbook_layer_scan(_PLAY, "price_only")
+LISTS = (_PLAY, _B, _C)
 _LIST_IDS = [s["key"] for s in LISTS]
+OTHERS = (_LEAD, _SEED)
 
 
-def test_both_tips_have_one_source_read_by_every_surface():
-    assert _RAW_GLOSSARY["RAM Rank"] == TIP_RANK and _RAW_GLOSSARY["RAM %"] == TIP_PCT, "the tear-sheet's ? and the Reference"
-    assert _SCANNER_HEADER_TIPS["ram_rank"] == TIP_RANK and _SCANNER_HEADER_TIPS["ram_pct"] == TIP_PCT, "the Deep Scanner"
+def test_the_tips_have_one_source_read_by_every_surface():
+    assert _RAW_GLOSSARY["RAM Rank"] == TIP_RANK and _RAW_GLOSSARY["RAM %"] == TIP_PCT
+    assert _SCANNER_HEADER_TIPS["ram_rank"] == TIP_RANK, "the Deep Scanner"
     cfg = S.table_config("03 Oct", _PLAY)
     assert cfg["ram_rank"]["help"] == TIP_RANK and cfg["ram_pct"]["help"] == TIP_PCT, "the 🎯 Scans table"
+    assert cfg["ram_score"]["help"] == _RAW_GLOSSARY["RAM"], "the raw RAM, in plain words"
+    assert "z-score" not in _RAW_GLOSSARY["RAM"] and "Display only" in _RAW_GLOSSARY["RAM"]
+    assert cfg["#"]["help"] and cfg["symbol"]["help"]
 
 
-# ── 4. The 🎯 Scans tab ──────────────────────────────────────────────────────────────────────────────────────────────
+# ── 4. The 🔢 RAM view on the 🚀 lists: everything else is main's ─────────────────────────────────────────────────────
 @pytest.mark.parametrize("scan", LISTS, ids=_LIST_IDS)
-def test_ram_rank_sits_right_after_momentum_in_both_views(scan):
-    for view in S.SCAN_VIEWS:
-        cols = S.table_columns(scan, view)
-        assert cols[cols.index("momentum_score") + 1] == "ram_rank", view
+def test_the_view_is_on_the_rocket_lists_and_opens_first(scan):
+    assert S.RAM_VIEW == RAM and S.scan_views(scan) == (RAM, CORE, TECH)
+
+
+@pytest.mark.parametrize("scan", OTHERS, ids=lambda s: s["key"])
+def test_other_scans_keep_two_views_and_a_ram_choice_falls_back_to_core(scan):
+    assert S.scan_views(scan) == (CORE, TECH) == S.SCAN_VIEWS
+    assert S.table_columns(scan, RAM) == S.table_columns(scan, CORE)
+
+
+_VIEW_HEADERS = {"#": "#", "ram_rank": "RAM Rank", "symbol": "Symbol", "name": "Stock", "ram_pct": "RAM %", "ram_score": "RAM",
+                 "close_price": "Price ₹", "market_category": "Category", "sector": "Sector", "_liq_cr": "₹ Cr/day"}
 
 
 @pytest.mark.parametrize("scan", LISTS, ids=_LIST_IDS)
-def test_ram_pct_follows_it_in_technical_only(scan):
-    tech = S.table_columns(scan, TECH)
-    assert tech[tech.index("ram_rank") + 1] == "ram_pct"
-    assert "ram_pct" not in S.table_columns(scan, CORE), "Core's width budget is full: one column there"
+def test_the_views_columns_and_headers_in_their_order(scan):
+    cols = S.table_columns(scan, RAM)
+    assert cols == tuple(_VIEW_HEADERS)
+    cfg = S.table_config("03 Oct", S.ram_view_scan(scan))
+    assert {c: cfg[c]["label"] for c in cols} == _VIEW_HEADERS
 
 
-def test_the_columns_are_labelled_and_read_as_sortable_numbers():
+def test_the_numbers_read_as_the_brief_says():
     cfg = S.table_config("03 Oct", _PLAY)
-    assert (cfg["ram_rank"]["label"], cfg["ram_pct"]["label"]) == ("RAM Rank", "RAM %")
-    rank, pct = cfg["ram_rank"]["type_config"], cfg["ram_pct"]["type_config"]
-    assert (rank["type"], rank["format"]) == ("number", "%.0f"), "a whole rank, sorted as a number"
-    assert (pct["type"], pct["format"]) == ("number", "%.1f"), "the % is in the header"
+    formats = {c: (cfg[c]["type_config"]["type"], cfg[c]["type_config"].get("format")) for c in ("ram_rank", "ram_pct", "ram_score")}
+    assert formats == {"ram_rank": ("number", "%.0f"), "ram_pct": ("number", "%.1f"), "ram_score": ("number", "%.2f")}
+    assert cfg["_liq_cr"]["type_config"]["format"] == "%.2f", "the same reading and format as the other views"
 
 
-def test_mom_quality_no_longer_claims_both_its_numbers_sit_beside_it():
-    """RAM's two columns now stand between Momentum and Mom. Quality on the Scans table, so the one tip it shares with the
-    Deep Scanner says which numbers it reads and no longer where they sit."""
-    tip = S.table_config("03 Oct", _PLAY)["d49_momentum_quality"]["help"]
-    assert "Reads the Momentum and RSI columns" in tip and "beside it" not in tip
+@pytest.mark.parametrize("scan", LISTS, ids=_LIST_IDS)
+def test_the_view_fits_the_budget_shrinking_nothing_and_stock_takes_the_rest(scan):
+    w = S.table_widths(S.ram_view_scan(scan))
+    cols = S.table_columns(scan, RAM)
+    assert sum(w[c] for c in cols) == 1030
+    # Each column's header and widest value, measured 2026-11-05 on the 4 Nov copy in the grid's font (test_scan_views'
+    # method). Every name on the three lists fits 280.
+    floors = {"#": 44, "ram_rank": 75, "symbol": 103, "ram_pct": 57, "ram_score": 45, "name": 280}
+    assert {c: w[c] for c in floors} == {c: max(w[c], floors[c]) for c in floors}
+    main = {"close_price": 80, "market_category": 75, "sector": 125, "_liq_cr": 65}
+    assert {c: w[c] for c in main} == main, "main's widths, 🚀's Sector for all three lists"
 
 
-def _market() -> pd.DataFrame:
-    """Six stocks whose RAM order is the reverse of their momentum and rank, so a sort that read RAM would show."""
-    return pd.DataFrame({"company_id": [f"NSE:S{i}" for i in range(6)], "name": [f"S{i} Ltd" for i in range(6)],
-                         "rank": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0], "momentum_score": [90.0, 80.0, 70.0, 60.0, 50.0, 40.0],
-                         "ram_score": [0.1, 0.2, 0.3, 0.4, 0.5, np.nan],
-                         "ram_rank": [500.0, 400.0, 300.0, 200.0, 100.0, np.nan],
-                         "ram_pct": [10.0, 20.0, 30.0, 40.0, 50.5, np.nan],
-                         "ram_date": ["2026-11-03"] * 5 + [np.nan]})
+# Main's (9284e96) columns and widths, typed out: the old tests hold them too, and this says it of every list at once.
+_MAIN_CORE = ("rank", "_new", "name", "market_category", "sector", "composite_score", "momentum_score", "improvement_score",
+              "_strong_q", "_measured_flags", "weinstein_stage", "_liq_cr")
+_MAIN_TECH = ("rank", "_new", "name", "close_price", "_liq_cr", "dist_to_vstop", "momentum_score", "d49_momentum_quality",
+              "rsi_14d", "breakout_score", "crs_52w", "weinstein_stage")
+_MAIN_WIDTHS = {"rank": 50, "_new": 55, "name": 175, "market_category": 75, "sector": 95, "composite_score": 75,
+                "momentum_score": 85, "improvement_score": 100, "_strong_q": 40, "_measured_flags": 125,
+                "weinstein_stage": 90, "_liq_cr": 65, "_cycle": 60, "_layer": 55, "close_price": 80, "dist_to_vstop": 60,
+                "d49_momentum_quality": 110, "rsi_14d": 50, "breakout_score": 85, "crs_52w": 60}
 
 
-_EVERY_STOCK = {"key": "all", "mask": lambda d: pd.Series(True, index=d.index)}
+def _core(*out, after_rank=None, after_quarter=None):
+    cols = [c for c in _MAIN_CORE if c not in out]
+    if after_rank:
+        cols.insert(1, after_rank)
+    if after_quarter:
+        cols.insert(cols.index("_strong_q") + 1, after_quarter)
+    return tuple(cols)
 
 
-def test_the_table_carries_the_values_and_a_blank_stays_blank():
-    t = S.scan_table(_market(), _EVERY_STOCK).set_index("name")
-    assert t.loc["S4 Ltd", "ram_rank"] == 100.0 and t.loc["S4 Ltd", "ram_pct"] == 50.5
-    assert pd.isna(t.loc["S5 Ltd", "ram_rank"]) and pd.isna(t.loc["S5 Ltd", "ram_pct"]), "blank, never 0"
+_MAIN_VIEWS = {"playbook": (_core("_strong_q"), _MAIN_TECH, {"name": 185, "sector": 125}),
+               "leaders": (_MAIN_CORE, _MAIN_TECH, {}),
+               "compounder": (_core(after_quarter="_cycle"), _MAIN_TECH,
+                              {"name": 150, "sector": 80, "composite_score": 65, "_measured_flags": 120, "weinstein_stage": 85}),
+               "no_quarter": (_core("_new", "_strong_q", after_rank="_layer"),
+                              tuple(c for c in (*_MAIN_TECH[:1], "_layer", *_MAIN_TECH[1:]) if c != "_new"),
+                              {"name": 185, "sector": 125}),
+               "price_only": (_core("_new", after_rank="_layer"),
+                              tuple(c for c in (*_MAIN_TECH[:1], "_layer", *_MAIN_TECH[1:]) if c != "_new"), {})}
 
 
-@pytest.mark.parametrize("scan", S.SCANS, ids=lambda s: s["key"])
-def test_an_old_copy_without_the_columns_shows_blank_columns_never_zero(scan):
-    """Every view's column must exist, or the grid's column_order drops it; and a missing column shows no number."""
-    old = _market().drop(columns=list(RAM_COLUMNS))
-    t = S.scan_table(old, dict(scan, mask=_EVERY_STOCK["mask"]))
-    assert t["ram_rank"].isna().all() and t["ram_pct"].isna().all()
-    assert t["ram_rank"].dtype == float, "a numeric column, so the header still sorts"
+@pytest.mark.parametrize("scan", (*LISTS, *OTHERS), ids=lambda s: s["key"])
+def test_core_and_technical_are_mains_on_every_list(scan):
+    core, tech, own = _MAIN_VIEWS[scan["key"]]
+    assert S.table_columns(scan, CORE) == core and S.table_columns(scan) == core and S.table_columns(scan, TECH) == tech
+    w = S.table_widths(scan)
+    assert {c: w[c] for c in (*core, *tech)} == {c: {**_MAIN_WIDTHS, **own}[c] for c in (*core, *tech)}
 
 
-@pytest.mark.parametrize("key", ["all", "momentum"])
-def test_ram_moves_no_row_and_no_order(key):
-    """The list's rows and default order are the recipe's own, with or without RAM values."""
-    scan = dict(_EVERY_STOCK, order="momentum") if key == "momentum" else _EVERY_STOCK
-    filled, old = _market(), _market().drop(columns=list(RAM_COLUMNS))
-    assert S.scan_table(filled, scan)["name"].tolist() == S.scan_table(old, scan)["name"].tolist()
-    assert S.scan_table(filled, scan)["name"].tolist() == [f"S{i} Ltd" for i in range(6)], "by Rank or Momentum, not RAM"
+def _order_market(**over) -> pd.DataFrame:
+    """Eight stocks. RAM Rank 1, a tie at 2, then 5 and 9, and three with no RAM. Inside the tie the stronger momentum goes
+    first; among the blanks S7 and S1 tie on momentum, so the better PRISM Rank goes first (today's order)."""
+    frame = pd.DataFrame({"company_id": [f"NSE:SYM{i}" for i in range(8)], "name": [f"S{i} Ltd" for i in range(8)],
+                          "momentum_score": [90.0, 80.0, 70.0, 75.0, 60.0, 50.0, 40.0, 80.0],
+                          "rank": [1.0, 6.0, 3.0, 4.0, 5.0, 7.0, 8.0, 2.0],
+                          "ram_rank": [5.0, np.nan, 2.0, 2.0, np.nan, 1.0, 9.0, np.nan],
+                          "ram_pct": [80.0, np.nan, 95.0, 95.0, np.nan, 99.9, 70.0, np.nan],
+                          "ram_score": [1.5, np.nan, 2.0, 2.0, np.nan, 2.9, 0.5, np.nan],
+                          "ram_date": ["2026-11-04"] * 8})
+    return frame.assign(**over)
 
 
-def _render_table(table: pd.DataFrame, scan: dict, view: str):
-    """The Scans table through Streamlit's own harness, with the app's own column config and order."""
+_EVERY_STOCK = {"key": "playbook", "order": "momentum", "mask": lambda d: pd.Series(True, index=d.index)}
+
+
+def _names(table) -> list:
+    return [n.split()[0] for n in table["name"]]
+
+
+def test_the_view_lists_by_ram_rank_with_blanks_last_and_todays_order_inside_ties_and_blanks():
+    market = _order_market()
+    table = S.ram_view_table(S.scan_table(market, _EVERY_STOCK), market)
+    assert _names(table) == ["S5", "S3", "S2", "S0", "S6", "S7", "S1", "S4"]
+    assert table["ram_rank"].iloc[:5].tolist() == [1.0, 2.0, 2.0, 5.0, 9.0] and table["ram_rank"].iloc[5:].isna().all()
+
+
+@pytest.mark.parametrize("case", ["blank", "absent"])
+def test_a_list_with_no_ram_is_todays_order_byte_for_byte(case):
+    market = (_order_market(ram_rank=np.nan, ram_pct=np.nan, ram_score=np.nan, ram_date=np.nan) if case == "blank"
+              else _order_market().drop(columns=list(RAM_COLUMNS)))
+    today = S.scan_table(market, _EVERY_STOCK)
+    view = S.ram_view_table(today, market)
+    pd.testing.assert_frame_equal(view[list(today.columns)], today)
+    assert view["ram_rank"].isna().all() and view["ram_score"].isna().all(), "blank, never 0"
+
+
+def test_the_place_is_the_list_as_shown_and_a_filter_renumbers_it():
+    market = _order_market()
+    table = S.ram_view_table(S.scan_table(market, _EVERY_STOCK), market)
+    assert table["#"].tolist() == [1, 2, 3, 4, 5, 6, 7, 8]
+    kept = S.scan_table(market, _EVERY_STOCK, keep_ids={"NSE:SYM0", "NSE:SYM4", "NSE:SYM6"})
+    narrow = S.ram_view_table(kept, market)
+    assert _names(narrow) == ["S0", "S6", "S4"] and narrow["#"].tolist() == [1, 2, 3]
+
+
+def test_the_symbol_is_the_vendors_without_its_exchange():
+    market = _order_market(company_id=["NSE:LAURUSLABS", "BSE:500325", "NSE:M&M", "NSE:A", "NSE:B", "NSE:C", "NSE:D", "NSE:E"])
+    table = S.ram_view_table(S.scan_table(market, _EVERY_STOCK), market).set_index("name")
+    assert table.loc["S0 Ltd", "symbol"] == "LAURUSLABS" and table.loc["S1 Ltd", "symbol"] == "500325"
+    assert table.loc["S2 Ltd", "symbol"] == "M&M"
+
+
+def test_the_caption_words_follow_the_list():
+    market = _order_market()
+    table = S.ram_view_table(S.scan_table(market, _EVERY_STOCK), market)
+    assert S.ram_view_order_words(table, "Momentum, high to low") == "RAM Rank, strongest first · no RAM last"
+    blank = table.assign(ram_rank=np.nan)
+    assert S.ram_view_order_words(blank, "Momentum, high to low") == "Momentum, high to low · no RAM on this copy"
+
+
+@pytest.mark.parametrize("scan", (*LISTS, *OTHERS), ids=lambda s: s["key"])
+def test_the_lists_own_frame_carries_no_ram_so_core_and_technical_cannot_show_it(scan):
+    frame = S.scan_table(_order_market(), dict(scan, mask=_EVERY_STOCK["mask"]))
+    assert not set(RAM_COLUMNS) & set(frame.columns), "only the view brings RAM in (ram_view_table)"
+
+
+def _render_view(table: pd.DataFrame, scan: dict):
+    """The view's table through Streamlit's own harness, with the app's own column config and order."""
     from streamlit.testing.v1 import AppTest
 
     def _app():
@@ -333,32 +425,30 @@ def _render_table(table: pd.DataFrame, scan: dict, view: str):
 
     at = AppTest.from_function(_app)
     at.session_state["table"] = table
-    at.session_state["config"] = S.table_config("03 Oct", scan)
-    at.session_state["order"] = list(S.table_columns(scan, view))
+    at.session_state["config"] = S.table_config("03 Oct", S.ram_view_scan(scan))
+    at.session_state["order"] = list(S.table_columns(scan, RAM))
     at.run(timeout=30)
     return at
 
 
-@pytest.mark.parametrize("view", [CORE, TECH])
 @pytest.mark.parametrize("case", ["filled", "tonight's blanks", "an old copy"])
-def test_both_views_render_in_every_case(case, view):
-    market = _market()
+def test_the_view_renders_in_every_case_and_the_grids_download_gets_its_columns(case):
+    market = _order_market()
     if case == "tonight's blanks":
         market = market.assign(ram_score=np.nan, ram_rank=np.nan, ram_pct=np.nan, ram_date=np.nan)
     elif case == "an old copy":
         market = market.drop(columns=list(RAM_COLUMNS))
-    table = S.scan_table(market, _EVERY_STOCK)
-    at = _render_table(table, _PLAY, view)
+    at = _render_view(S.ram_view_table(S.scan_table(market, _EVERY_STOCK), market), _PLAY)
     assert not at.exception, [str(e.value) for e in at.exception]
-    shown = at.dataframe[0].value
-    assert "ram_rank" in shown.columns
-    want = [500.0, 400.0] if case == "filled" else [None, None]
-    got = shown["ram_rank"].iloc[:2].tolist()
-    assert (got == want) if case == "filled" else pd.isna(got).all(), got
+    grid = at.dataframe[0]
+    assert list(grid.proto.column_order) == list(_VIEW_HEADERS), "what the grid shows is what its CSV writes, in this order"
+    got = grid.value["ram_rank"].iloc[:2].tolist()
+    assert got == [1.0, 2.0] if case == "filled" else pd.isna(got).all(), got
 
 
-# ── 5. The Deep Scanner: app.py's own tables, and its own tab block run under AppTest ─────────────────────────────────
+# ── 5. The Deep Scanner: main's views, and RAM Rank in its sort dropdown ──────────────────────────────────────────────
 _TREE = ast.parse((ROOT / "app.py").read_text(encoding="utf-8"))
+_SORT = "RAM Rank ↑"
 
 
 def _app_dict(name: str) -> dict:
@@ -367,50 +457,58 @@ def _app_dict(name: str) -> dict:
     return ast.literal_eval(node)
 
 
-def test_the_deep_scanners_technical_view_shows_both_columns_between_momentum_and_breakout():
-    """After the momentum group and before the breakout group: each verdict keeps the number it reads beside it."""
+def test_every_deep_scanner_view_is_mains():
+    views = _app_dict("_DS_VIEWS")
+    assert views["📈 Technical"] == ["rank", "name", "dist_to_vstop", "momentum_score", "d49_momentum_quality", "rsi_14d",
+                                    "breakout_score", "d48_breakout_readiness", "dist_ath", "crs_52w", "weinstein_stage"]
+    assert not {"ram_rank", "ram_pct", "ram_score"} & {c for cols in views.values() for c in cols}, "only while sorted by it"
+    w = _app_dict("_DS_W")
+    assert ({c: w[c] for c in views["📈 Technical"]} ==
+            {"rank": 50, "name": 180, "dist_to_vstop": 60, "momentum_score": 105, "d49_momentum_quality": 110, "rsi_14d": 50,
+             "breakout_score": 105, "d48_breakout_readiness": 90, "dist_ath": 65, "crs_52w": 60, "weinstein_stage": 140})
+
+
+def test_the_dropdown_offers_ram_rank_low_numbers_first():
+    assert _app_dict("_DS_SORTS")[_SORT] == ("ram_rank", True)
+    assert _app_dict("_num_fmt")["ram_rank"] == ("RAM Rank", "%.0f")
+    assert _app_dict("_DS_W")["ram_rank"] >= 75, "its width entry: the header in full"
+
+
+def test_a_view_on_an_old_frame_without_the_column_simply_leaves_it_out():
     view = _app_dict("_DS_VIEWS")["📈 Technical"]
-    i = view.index("ram_rank")
-    assert view[i - 3:i + 3] == ["momentum_score", "d49_momentum_quality", "rsi_14d", "ram_rank", "ram_pct", "breakout_score"]
+    assert ds_view_columns(view, "ram_rank", set(view)) == view
 
 
-def test_they_appear_in_no_other_view():
-    homes = {v for v, cols in _app_dict("_DS_VIEWS").items() if "ram_rank" in cols or "ram_pct" in cols}
-    assert homes == {"📈 Technical"}, "one home per column (tests/test_deep_scanner_views.py)"
-
-
-def test_they_read_as_sortable_numbers_with_a_set_width():
-    fmt = _app_dict("_num_fmt")
-    assert fmt["ram_rank"] == ("RAM Rank", "%.0f") and fmt["ram_pct"] == ("RAM %", "%.1f")
-    width = _app_dict("_DS_W")
-    assert width["ram_rank"] >= 75 and width["ram_pct"] >= 57, "the header in full: RAM Rank needs 75, RAM % 57"
-
-
-def test_a_view_on_an_old_frame_without_the_columns_simply_leaves_them_out():
-    view = _app_dict("_DS_VIEWS")["📈 Technical"]
-    available = set(view) - {"ram_rank", "ram_pct"}
-    assert ds_view_columns(view, "composite_score", available) == [c for c in view if c in available]
-
-
-_DS_HARNESS = textwrap.dedent('''
+_DS_HARNESS = textwrap.dedent("""
     import sys
     sys.path.insert(0, {root!r})
     import numpy as np
     import pandas as pd
-    import streamlit as st
+    import streamlit as _st
     from config import COLORS
     from ui.ui_group_views import OWNERSHIP, OWNERSHIP_NOTE
     from ui.ui_scanner import _SCANNER_HEADER_TIPS, ds_view_columns
 
+
+    class _Keeps:                # st, except that it keeps the bytes the export hands its button (AppTest cannot read them)
+        def __getattr__(self, name):
+            return getattr(_st, name)
+
+        def download_button(self, label, data=None, **kw):
+            _st.session_state["export"] = data
+            return _st.download_button(label, data=data, **kw)
+
+
+    st = _Keeps()
     clear_all_filters = lambda: None
     analysis_mode = "Hybrid"
-    tabs = [None, None, st.container()]
-    df = st.session_state["market"]
+    tabs = [None, None, _st.container()]
+    df = _st.session_state["market"]
     filt = df
-''')
+""")
 
 
-def _run_deep_scanner(tmp_path, market: pd.DataFrame, view: str = "📈 Technical"):
+def _run_deep_scanner(tmp_path, market: pd.DataFrame, view: str = "📈 Technical", sort: str = _SORT):
     """The Deep Scanner exactly as app.py has it, its width table and its tab block, on a small market (the way
     tests/test_scans_tab_runs.py runs the 🎯 Scans tab)."""
     from streamlit.testing.v1 import AppTest
@@ -422,67 +520,58 @@ def _run_deep_scanner(tmp_path, market: pd.DataFrame, view: str = "📈 Technica
     at = AppTest.from_file(str(script), default_timeout=60)
     at.session_state["market"] = market
     at.session_state["ds_view"] = view
+    at.session_state["ds_sort"] = sort
     at.run()
     assert not at.exception, [str(e.value) for e in at.exception]
     return at
 
 
-def _export_columns(at) -> int:
-    label = at.get("download_button")[0].proto.label
-    return int(re.search(r"(\d+) columns", label).group(1))
+@pytest.mark.parametrize("view", list(_app_dict("_DS_VIEWS")))
+def test_the_sort_lists_low_numbers_first_with_blanks_last_and_the_column_on_screen_in_every_view(tmp_path, view):
+    grid = _run_deep_scanner(tmp_path, _order_market(), view=view).dataframe[0]
+    shown = grid.value
+    assert list(shown.columns[:3]) == ["rank", "name", "ram_rank"], "right after Stock: the rule whatever is sorted is on screen"
+    assert shown["ram_rank"].iloc[:5].tolist() == [1.0, 2.0, 2.0, 5.0, 9.0] and shown["ram_rank"].iloc[5:].isna().all()
+    config = json.loads(grid.proto.columns)["ram_rank"]
+    assert (config["label"], config["help"], config["width"]) == ("RAM Rank", TIP_RANK, 75)
+    assert config["type_config"]["type"] == "number"
 
 
-def test_the_real_tab_shows_both_columns_with_their_header_tip_and_width(tmp_path):
-    at = _run_deep_scanner(tmp_path, _market())
-    shown = at.dataframe[0].value
-    assert shown["ram_rank"].iloc[:2].tolist() == [500.0, 400.0] and shown["ram_pct"].iloc[4] == 50.5
-    config = json.loads(at.dataframe[0].proto.columns)
-    assert config["ram_rank"]["label"] == "RAM Rank" and config["ram_pct"]["label"] == "RAM %"
-    assert config["ram_rank"]["help"] == TIP_RANK and config["ram_pct"]["help"] == TIP_PCT
-    assert config["ram_rank"]["width"] == 75 and config["ram_pct"]["width"] == 57
-    assert config["ram_rank"]["type_config"]["type"] == "number", "a number column: its header sorts"
+def test_without_the_sort_no_view_shows_it(tmp_path):
+    assert "ram_rank" not in _run_deep_scanner(tmp_path, _order_market(), sort="Score ↓").dataframe[0].value.columns
 
 
-def test_no_other_view_of_the_real_tab_shows_them(tmp_path):
-    shown = _run_deep_scanner(tmp_path, _market(), view="🏆 Core").dataframe[0].value
-    assert "ram_rank" not in shown.columns and "ram_pct" not in shown.columns
+def test_the_export_follows_the_sort(tmp_path):
+    at = _run_deep_scanner(tmp_path, _order_market())
+    export = pd.read_csv(io.BytesIO(at.session_state["export"]), encoding="utf-8-sig")
+    assert export["ram_rank"].iloc[:5].tolist() == [1.0, 2.0, 2.0, 5.0, 9.0] and export["ram_rank"].iloc[5:].isna().all()
 
 
-def test_the_real_tabs_export_follows_the_view(tmp_path):
-    """Its columns are the views', so the two go along where the frame holds them, and the file invents no column."""
-    with_ram = _export_columns(_run_deep_scanner(tmp_path, _market()))
-    without = _export_columns(_run_deep_scanner(tmp_path, _market().drop(columns=list(RAM_COLUMNS))))
-    assert with_ram == without + 2
-
-
-def test_tonights_blanks_show_blank_on_the_real_tab(tmp_path):
-    market = _market().assign(ram_score=np.nan, ram_rank=np.nan, ram_pct=np.nan, ram_date=np.nan)
+@pytest.mark.parametrize("case", ["tonight's blanks", "an old copy"])
+def test_the_sort_on_a_list_with_no_ram_runs_and_shows_no_number(tmp_path, case):
+    market = (_order_market(ram_rank=np.nan, ram_pct=np.nan, ram_score=np.nan, ram_date=np.nan) if case == "tonight's blanks"
+              else _order_market().drop(columns=list(RAM_COLUMNS)))
     shown = _run_deep_scanner(tmp_path, market).dataframe[0].value
-    assert shown["ram_rank"].isna().all() and shown["ram_pct"].isna().all(), "blank, never 0"
+    assert "ram_rank" not in shown.columns or shown["ram_rank"].isna().all(), "blank, never 0"
 
 
-def test_an_old_copy_runs_the_real_tab_without_the_columns(tmp_path):
-    shown = _run_deep_scanner(tmp_path, _market().drop(columns=list(RAM_COLUMNS))).dataframe[0].value
-    assert "ram_rank" not in shown.columns and shown["momentum_score"].notna().all()
-
-
-# ── 6. The Tear-Sheet's RAM line, through the real render (AppTest; a synthetic row needs no data folder) ─────────────
+# ── 6. The Tear-Sheet's RAM row, through the real render (AppTest; a synthetic row needs no data folder) ──────────────
 _BLANK = {"ram_score": np.nan, "ram_rank": np.nan, "ram_pct": np.nan, "ram_date": np.nan}
-_RANKED = {"ram_score": 0.5, "ram_rank": 312.0, "ram_pct": 78.44, "ram_date": "2026-11-03"}
+_RANKED = {"ram_score": 2.5, "ram_rank": 4.0, "ram_pct": 99.84, "ram_date": "2026-11-04"}
 _LINES = [
-    ("ranked", _RANKED, "RAM 78.4% · #312 · 3 Nov"),
-    ("the_top_of_the_list", {**_RANKED, "ram_rank": 1.0, "ram_pct": 100.0}, "RAM 100.0% · #1 · 3 Nov"),
-    ("a_date_cell_timestamp", {**_RANKED, "ram_date": pd.Timestamp("2026-11-03")}, "RAM 78.4% · #312 · 3 Nov"),
-    ("a_date_cell_datetime", {**_RANKED, "ram_date": datetime(2026, 11, 3)}, "RAM 78.4% · #312 · 3 Nov"),
-    ("another_month", {**_RANKED, "ram_date": "2026-12-01"}, "RAM 78.4% · #312 · 1 Dec"),
-    ("a_rank_without_a_date", {**_RANKED, "ram_date": np.nan}, "RAM 78.4% · #312"),
-    ("a_rank_without_a_percentile", {**_RANKED, "ram_pct": np.nan}, "RAM — · #312 · 3 Nov"),
-    ("not_ranked", {**_BLANK, "ram_date": "2026-11-03"}, "RAM — · not ranked on 3 Nov"),
-    ("not_ranked_on_a_date_cell", {**_BLANK, "ram_date": datetime(2026, 11, 3)}, "RAM — · not ranked on 3 Nov"),
-    ("all_four_blank", _BLANK, "RAM —"),
-    ("blank_date_as_nat", {**_BLANK, "ram_date": pd.NaT}, "RAM —"),
-    ("blank_date_as_none", {**_BLANK, "ram_date": None}, "RAM —"),
-    ("an_old_copy_without_the_columns", {}, "RAM —"),
+    ("ranked", _RANKED, "#4 · 99.8% · 4 Nov"),
+    ("the_top_of_the_list", {**_RANKED, "ram_rank": 1.0, "ram_pct": 100.0}, "#1 · 100.0% · 4 Nov"),
+    ("a_date_cell_timestamp", {**_RANKED, "ram_date": pd.Timestamp("2026-11-04")}, "#4 · 99.8% · 4 Nov"),
+    ("a_date_cell_datetime", {**_RANKED, "ram_date": datetime(2026, 11, 4)}, "#4 · 99.8% · 4 Nov"),
+    ("another_month", {**_RANKED, "ram_date": "2026-12-01"}, "#4 · 99.8% · 1 Dec"),
+    ("a_rank_without_a_date", {**_RANKED, "ram_date": np.nan}, "#4 · 99.8%"),
+    ("a_rank_without_a_percentile", {**_RANKED, "ram_pct": np.nan}, "#4 · 4 Nov"),
+    ("not_ranked", {**_BLANK, "ram_date": "2026-11-04"}, "— · not ranked on 4 Nov"),
+    ("not_ranked_on_a_date_cell", {**_BLANK, "ram_date": datetime(2026, 11, 4)}, "— · not ranked on 4 Nov"),
+    ("all_four_blank", _BLANK, "—"),
+    ("blank_date_as_nat", {**_BLANK, "ram_date": pd.NaT}, "—"),
+    ("blank_date_as_none", {**_BLANK, "ram_date": None}, "—"),
+    ("an_old_copy_without_the_columns", {}, "—"),
 ]
 
 
@@ -506,34 +595,40 @@ def _visible(block: str) -> str:
 
 
 def _ram_blocks(blocks: list) -> list:
-    return [b for b in blocks if _visible(b).startswith("RAM ")]
+    return [b for b in blocks if _visible(b).startswith("RAM RANK")]
 
 
 @pytest.mark.parametrize("cells,want", [c[1:] for c in _LINES], ids=[c[0] for c in _LINES])
-def test_the_tear_sheet_reads_one_line_in_each_form(cells, want):
+def test_the_tear_sheet_reads_its_row_in_each_form(cells, want):
     found = _ram_blocks(_scorecard_blocks(pd.Series({"rs_score": 85.0, **cells})))
-    assert len(found) == 1, "one line"
-    assert _visible(found[0]).removesuffix("?").strip() == want
+    assert len(found) == 1, "one row"
+    assert _visible(found[0]) == f"RAM RANK ? {want}"
 
 
 @pytest.mark.parametrize("cells", [_RANKED, _BLANK, {}], ids=["ranked", "blank", "absent"])
 def test_the_whole_scorecard_leaks_no_nan(cells):
-    text = " ".join(_scorecard_blocks(pd.Series(cells))).lower()
+    blocks = _scorecard_blocks(pd.Series(cells))
+    text = " ".join(blocks).lower()
     assert not re.findall(r"[+\-₹ >#]nan[%<· ]", text), "no nan, no nan%, no #nan"
-    assert "nat" not in _visible(" ".join(_ram_blocks(_scorecard_blocks(pd.Series(cells))))).lower().split()
+    assert "nat" not in _visible(_ram_blocks(blocks)[0]).lower().split()
 
 
-def test_it_is_a_line_of_its_own_not_a_chip_on_the_entry_timing_strip():
+def test_it_is_a_row_of_its_own_in_the_strips_look_not_a_chip_on_the_entry_timing_strip():
     """That strip's admission is closed by a live rule (tests/test_deep_signal_chips.py)."""
     blocks = _scorecard_blocks(pd.Series(_RANKED))
-    timing = next(b for b in blocks if "ENTRY TIMING" in b)
-    assert "RAM" not in timing and "#312" not in timing
-    assert blocks.index(_ram_blocks(blocks)[0]) == blocks.index(timing) + 1, "right under the strip, in the momentum area"
+    timing, row = next(b for b in blocks if "ENTRY TIMING" in b), _ram_blocks(blocks)[0]
+    assert "RAM" not in timing and "#4" not in timing
+    assert blocks.index(row) == blocks.index(timing) + 1, "right under the strip"
+    label = 'font-size:0.6rem;font-weight:800;color:' + COLORS["text_muted"] + ';letter-spacing:0.5px;">'
+    assert label + "RAM RANK<" in row and label + "⏱️ ENTRY TIMING<" in timing, "the strip's own small label"
+    chip = "font-size:0.62rem;font-weight:700;padding:2px 8px;border-radius:10px;"
+    assert chip in row and chip in timing, "one pill in the strip's own chip style"
+    assert f'color:{COLORS["text_secondary"]};white-space:nowrap;' in row, "neutral: nothing here grades the stock"
 
 
-def test_the_line_carries_the_one_tip_on_its_question_mark():
+def test_the_row_carries_the_one_tip_on_its_question_mark():
     block = _ram_blocks(_scorecard_blocks(pd.Series(_RANKED)))[0]
-    assert html.escape(TIP_RANK) in block, "the same words as the two tables"
+    assert html.escape(TIP_RANK) in block, "the same words as the table"
 
 
 # ── 7. Nothing reads them ────────────────────────────────────────────────────────────────────────────────────────────
@@ -624,7 +719,7 @@ def test_ram_moves_nothing_on_the_real_market(real):
 @pytest.mark.parametrize("key", ["playbook", "no_quarter", "price_only", "leaders", "compounder"])
 def test_every_list_holds_the_same_stocks_in_the_same_order_on_the_real_market(real, key):
     plain, with_ram = real
-    scan = next(s for s in LISTS if s["key"] == key)
+    scan = next(s for s in (*LISTS, *OTHERS) if s["key"] == key)
     a, b = S.scan_table(plain, scan), S.scan_table(with_ram, scan)
     assert len(a) > 0 and a["company_id"].tolist() == b["company_id"].tolist()
 
@@ -635,7 +730,7 @@ _BEFORE_RAM = {"playbook": "80251b8b4da6d635", "leaders": "a5fa9c66bfd431e0", "c
                "no_quarter": "1f17120242b5640f", "price_only": "1f17120242b5640f"}
 
 
-@pytest.mark.parametrize("scan", LISTS, ids=_LIST_IDS)
+@pytest.mark.parametrize("scan", (*LISTS, *OTHERS), ids=lambda s: s["key"])
 def test_no_recipes_fingerprint_moved(scan):
     assert S.recipe_fingerprint(scan) == _BEFORE_RAM[scan["key"]]
 
@@ -643,7 +738,7 @@ def test_no_recipes_fingerprint_moved(scan):
 _RAM_NAME = re.compile(r"\bram_(score|rank|pct|date)\b")
 
 
-@pytest.mark.parametrize("scan", LISTS, ids=_LIST_IDS)
+@pytest.mark.parametrize("scan", (*LISTS, *OTHERS), ids=lambda s: s["key"])
 def test_nothing_a_recipe_reaches_names_a_ram_column(scan):
     """The lasting half of the pin above: it survives a real recipe change and still fails on a recipe that reads RAM."""
     reached = S._dependencies([*S._recipe_functions(scan), *scan.get("inputs", ())], scan.get("values"), scan.get("skip", ()))
@@ -670,16 +765,45 @@ _ACTION_WORDS = re.compile(r"\b(buy|buys|buying|sell|sells|selling|hold|avoid|ki
 def test_no_word_of_action_and_no_rule_or_person_anywhere_on_screen():
     from ui.ui_tearsheet import ram_line
     cfg = S.table_config("03 Oct", _PLAY)
-    words = [_RAW_GLOSSARY["RAM Rank"], _RAW_GLOSSARY["RAM %"], *(cfg[c][k] for c in ("ram_rank", "ram_pct")
-                                                                  for k in ("label", "help")),
+    words = [_RAW_GLOSSARY["RAM Rank"], _RAW_GLOSSARY["RAM %"], _RAW_GLOSSARY["RAM"], S.RAM_VIEW,
+             S.ram_view_order_words(pd.DataFrame({"ram_rank": [1.0]}), "x"),
+             *(cfg[c][k] for c in ("#", "ram_rank", "symbol", "ram_pct", "ram_score") for k in ("label", "help")),
              *(ram_line(pd.Series(line[1])) for line in _LINES)]
     assert all(words)
     for text in words:
         assert not _ACTION_WORDS.search(text), text
 
 
-def test_the_guides_stamps_are_untouched():
-    """A column explains nothing in a guide's stamp (test_a_guide_never_outlives_its_scan), and no scan setting moved."""
+def test_the_guides_stamps_are_mains():
+    """A view explains nothing in a guide's stamp, and no scan setting moved, so no prose went stale."""
     from ui import scan_guide as G
-    for scan in S.SCANS:
-        assert G.GUIDES[scan["key"]]["written_for"] == G.guide_stamp(scan), scan["key"]
+    assert {s["key"]: G.guide_stamp(s) for s in S.SCANS} == {
+        "playbook": "135cfc40d93df721", "leaders": "c5b0c3512a06fdd2", "compounder": "63ba93225ce77da7"}
+
+
+def test_the_guide_says_how_the_rocket_lists_open_and_what_the_order_check_still_measures():
+    from ui import scan_guide as G
+    t = " ".join(map(str, dict(G.general_sections())["How to read the table"]))
+    for words in ("🔢 RAM", "RAM Rank", "🏆 Core and 📈 Technical", "as before", "order check", "Momentum's top"):
+        assert words in t, words
+    assert "RAM view" in " ".join(G._order(_PLAY)) and "RAM view" not in " ".join(G._order(_LEAD))
+
+
+def _source_files() -> list:
+    return [ROOT / "app.py", ROOT / "config.py", *sorted((ROOT / "core").glob("*.py")), *sorted((ROOT / "ui").glob("*.py"))]
+
+
+def test_nothing_else_reads_the_display_order():
+    """The view's order is made by one function the tab alone calls: the records job, the feed, the v2 lists and the order
+    check read their own frames (scan_records_job.hold_reading sorts momentum and Rank itself), and no job calls scan_table."""
+    readers = {name: {p.relative_to(ROOT).as_posix() for p in _source_files() if re.search(rf"\b{name}\b", p.read_text(encoding="utf-8"))}
+               for name in ("ram_view_table", "scan_table", "scan_views")}
+    assert readers == {"ram_view_table": {"app.py", "ui/ui_scans.py"}, "scan_table": {"app.py", "ui/ui_scans.py"},
+                       "scan_views": {"app.py", "ui/scan_guide.py", "ui/ui_scans.py"}}
+
+
+def test_the_view_moves_no_record_or_recipe():
+    """The order is the view's: the scan's `order`, which the card and guide speak of, is still main's Momentum."""
+    assert S.momentum_ordered(_PLAY) and S.momentum_ordered(_B) and S.momentum_ordered(_C) and S.momentum_ordered(_LEAD)
+    assert sorted(S.ORDER_RULE["scans"]) == ["leaders", "playbook"]
+    assert S.recipe_fingerprint(S.ram_view_scan(_PLAY)) == _BEFORE_RAM["playbook"]

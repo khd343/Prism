@@ -14,11 +14,6 @@ columns, with Mom. Quality between the two numbers it reads (Momentum and RSI); 
 every view configured with the Deep Scanner's header and tip, inside the screen; the table carries
 every column a view can show; the view is a display choice the 🧹 Clear never resets.
 
-RAM Rank joined both views right after Momentum, and RAM % after it in 📈 Technical (2026-11-05; the columns themselves
-are pinned by tests/test_ram_display.py). Two pins here moved with that, because the behaviour they hold really changed:
-Mom. Quality still sits between the two numbers it reads, no longer touching Momentum; and the widest lists now pass the
-1,030px budget, by the exact amounts in _TABLE_PX (the width comment above ui_scans.TABLE_WIDTHS says why).
-
 Run with: pytest tests/test_scan_views.py -v
 """
 import ast
@@ -38,7 +33,7 @@ from ui.ui_scanner import _SCANNER_HEADER_TIPS  # noqa: E402
 
 _APP = (ROOT / "app.py").read_text(encoding="utf-8")
 CORE, TECH = "🏆 Core", "📈 Technical"
-TECH_COLS = ("rank", "_new", "name", "close_price", "_liq_cr", "dist_to_vstop", "momentum_score", "ram_rank", "ram_pct",
+TECH_COLS = ("rank", "_new", "name", "close_price", "_liq_cr", "dist_to_vstop", "momentum_score",
              "d49_momentum_quality", "rsi_14d", "breakout_score", "crs_52w", "weinstein_stage")
 
 
@@ -58,23 +53,15 @@ def test_the_technical_view_holds_the_entry_columns(scan):
     cols = S.table_columns(scan, TECH)
     assert cols == TECH_COLS
     i = cols.index("d49_momentum_quality")
-    assert cols[i - 3:i] == ("momentum_score", "ram_rank", "ram_pct") and cols[i + 1] == "rsi_14d", (
-        "Mom. Quality sits between the two numbers it reads, with RAM's two columns right after Momentum (2026-11-05)")
-
-
-# The most each list's table may measure, in set widths. A 1536px laptop leaves 1,030px (ui_scans.TABLE_WIDTHS); RAM Rank
-# took Core past it and RAM's two columns took 📈 Technical past it, by these exact amounts, and no further without a new
-# measurement (2026-11-05). 🌱's Technical is the one table still inside: its names are the narrowest.
-_TABLE_PX = {("playbook", CORE): 1070, ("leaders", CORE): 1070, ("compounder", CORE): 1092,
-             ("playbook", TECH): 1059, ("leaders", TECH): 1049, ("compounder", TECH): 1024}
+    assert cols[i - 1] == "momentum_score" and cols[i + 1] == "rsi_14d", (
+        "Mom. Quality sits between the two numbers it reads, as in the Deep Scanner")
 
 
 @pytest.mark.parametrize("view", (CORE, TECH))
 @pytest.mark.parametrize("scan", S.SCANS, ids=lambda s: s["key"])
-def test_every_view_stays_inside_its_measured_width_with_the_deep_scanners_headers(scan, view):
+def test_every_view_fits_a_laptop_screen_with_the_deep_scanners_headers(scan, view):
     cols, w = S.table_columns(scan, view), S.table_widths(scan)
-    most = _TABLE_PX[(scan["key"], view)]
-    assert sum(w[c] for c in cols) <= most, f"{scan['key']} {view}: wider than the {most}px measured for it"
+    assert sum(w[c] for c in cols) + 44 <= 1074, f"{scan['key']} {view}: wider than a 1536px laptop"
     cfg = S.table_config("03 Oct", scan)
     for c in cols:
         assert c in cfg and cfg[c]["width"] == w[c], c
@@ -106,13 +93,8 @@ def test_the_table_carries_each_stocks_category():
 # headers Rank 46, Momentum 84, Improvement 96, ⚠ Measured flags 119, ₹ Cr/day 64, Cycle ↓ 59, 🔥 36,
 # Category 69; values "2717" 44, "1234.56" 62, "📈 Stage 2" 81, "Small Cap" / "Large Cap" 75. A width
 # below its floor cuts the header or the common value.
-# Added 2026-11-05 with the RAM columns, measured from Streamlit's own Source Sans file at 14px + 16px (no browser; that
-# method reads the numbers above within 1px, but for ⚠, which is not in the font): headers RAM Rank 75, RAM % 57, Breakout
-# 70; values "100" under RSI 37,
-# "-18.1%" under Stop Δ 57, "12345.67" under Price 69. Trend rises from 81 to 85: "❔ Unknown" (85) is 5-21% of a list.
 _FLOOR = {"rank": 46, "momentum_score": 84, "improvement_score": 96, "_measured_flags": 119, "_liq_cr": 64,
-          "_cycle": 59, "_strong_q": 36, "weinstein_stage": 85, "market_category": 75,
-          "ram_rank": 75, "ram_pct": 57, "breakout_score": 70, "rsi_14d": 37, "dist_to_vstop": 57, "close_price": 69}
+          "_cycle": 59, "_strong_q": 36, "weinstein_stage": 81, "market_category": 75}
 
 
 @pytest.mark.parametrize("scan", S.SCANS, ids=lambda s: s["key"])
@@ -152,7 +134,7 @@ def _scans_block():
 
 def test_the_tab_lets_the_reader_switch_views_and_shows_the_chosen_one():
     src = ast.unparse(_scans_block())
-    assert "st.segmented_control('Column View', list(SCAN_VIEWS), default='🏆 Core', key='scan_view')" in src
+    assert "st.segmented_control('Column View', list(_sc_views), default=_sc_views[0], key='scan_view')" in src
     # Repointed 2026-10-30, not loosened: the view applies to the chosen LIST of the selected scan (_sc_tbl_scan is
     # _sc_sel itself, or 🚀's B or C — tests/test_scan_ladder.py), whose key the widget key now carries.
     assert "_sc_tbl_scan = _sc_sel" in src and "_sc_tbl_scan = playbook_layer_scan(_sc_sel, _sc_layer)" in src

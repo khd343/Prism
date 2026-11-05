@@ -175,6 +175,7 @@ from ui.ui_scans import (SCANS, CANDIDATES as SCAN_CANDIDATES, LIQUIDITY_STEPS a
                          members_label as scan_members_label,
                          record_state as scan_record_state, scan_table, table_config as scan_table_config,
                          SCAN_VIEWS, TREND_SHORT as SCAN_TREND_SHORT, momentum_ordered as scan_momentum_ordered,
+                         RAM_VIEW as SCAN_RAM_VIEW, ram_view_order_words, ram_view_scan, ram_view_table, scan_views,
                          PLAYBOOK_LAYERS, playbook_layer_mask, playbook_layer_scan)
 from ui.scan_guide import (guide_html as scan_guide_html, guide_markdown as scan_guide_markdown,
                            reference_html as scan_reference_html)
@@ -1079,12 +1080,20 @@ with tabs[1]:
         # The two views (2026-10-13, ui_scans.SCAN_VIEWS): 🏆 Core = why it is in the list; 📈 Technical =
         # is now a good moment, how far is the stop, can I buy one share. A display choice under the
         # app-wide names, never a filter: the 🧹 Clear does not reset it (tests/test_scan_views.py).
-        _sc_view = st.segmented_control("Column View", list(SCAN_VIEWS), default="🏆 Core", key="scan_view")
+        # 🔢 RAM (2026-11-05, ui_scans.RAM_VIEW) comes first on the 🚀 lists. Other options make another widget here, so a
+        # choice of it falls back to Core on the other scans.
+        _sc_views = scan_views(_sc_tbl_scan)
+        _sc_view = st.segmented_control("Column View", list(_sc_views), default=_sc_views[0], key="scan_view")
         if not _sc_view:
-            _sc_view = "🏆 Core"
+            _sc_view = _sc_views[0]
         # "load it into", not "open": Streamlit cannot switch tabs from code, so the reader clicks the tab.
         # The order is the scan's own (2026-10-13): 🚀 and 🌬️ by momentum, high to low; 🌱 by Rank.
         _sc_sort = "Momentum, high to low" if scan_momentum_ordered(_sc_sel) else "Rank"
+        # The view holds its own order, so flipping views can reorder the rows, and each caption says which. It has no New
+        # column, so no legend for one. The row pick below reads this same table, and the grid's CSV writes these columns.
+        if _sc_view == SCAN_RAM_VIEW:
+            _sc_tbl_scan, _sc_tbl = ram_view_scan(_sc_tbl_scan), ram_view_table(_sc_tbl, df)
+            _sc_sort, _sc_new = ram_view_order_words(_sc_tbl, _sc_sort), ""
         st.caption(f"{len(_sc_tbl):,}{_sc_of} · sorted by {_sc_sort}{_sc_new} · click a row to load it into "
                    f"the Tear-Sheet tab")
         # The key follows the VISIBLE list: when any control changes it, the table is a new widget and
@@ -1161,7 +1170,7 @@ with tabs[1]:
 # is a click away. Kept OUTSIDE the tab block on purpose: the label-map scans there read dict keys
 # as header labels, and a width table must not count as a label.
 _DS_W = {
-    "rank": 46, "name": 180,
+    "rank": 50, "name": 180,
     # 🏆 Core — Improvement and Momentum take their widths from Quality and Technical. Liquidity (2026-10-09)
     # took 65px from space no text used, measured in the grid's own font (13px Source Sans + 16px): its
     # header needs 62; Rank's widest value "2712" 42 (55 → 50, every view gains 5); Soundness's header 78
@@ -1171,7 +1180,7 @@ _DS_W = {
     # widest, WATCH★, needed exactly 70). The 23px came from the two Core-only columns with room to give:
     # Sector 130 → 115 (the full name still shows for 69.7% of stocks, from 71.9% — no sector name falls
     # between 115 and 117) and the Score bar 105 → 97 (its header needs 49). Momentum stays at 105, beside
-    # the Technical view's Breakout bar (both 85 since 2026-11-05, below). tests/test_wealth_tier_display.py pins the 93.
+    # the Technical view's Breakout bar. tests/test_wealth_tier_display.py pins the 93.
     "verdict_direction": 80, "wealth_tier": 93, "sector": 115, "market_category": 80,
     "traded_value_cr": 65,
     "composite_score": 97, "gate_pass": 60,
@@ -1189,19 +1198,13 @@ _DS_W = {
     "data_coverage_pct": 75,
     # 📈 Technical — Trend 140 and Smart Money 160 (👥 Ownership) still show their longest labels
     # in full (135px, 156px; measured 2026-10-08) and bring both views inside the screen
-    # RAM (2026-11-05): RAM Rank needs 75 and RAM % 57 (their headers 74 and 56), 132px in a view with 5 free. The Scans
-    # table's method (ui_scans.TABLE_WIDTHS, the grid's 14px font) found 61 with no header or common value cut: Rank 50 → 46
-    # (every view gains 4), Stop Δ 60 → 57 ("-18.1%" 57), RSI 50 → 40 ("100" 37), Off ATH 65 → 61 (its header) and the two
-    # bars 105 → 85 (headers Momentum 84, Breakout 70; Momentum's bar in Core follows). The other 66 would take Stock to
-    # 114px, so this one view passes the grid by 66 on a 1536px laptop: Trend, last, shows about "📈 Stage 2" until
-    # scrolled. tests/test_deep_scanner_views.py holds the number; the operator judges it on the screen.
-    "dist_to_vstop": 57, "momentum_score": 85, "d49_momentum_quality": 110, "rsi_14d": 40, "ram_rank": 75, "ram_pct": 57,
-    "breakout_score": 85, "d48_breakout_readiness": 90, "dist_ath": 61, "crs_52w": 60, "weinstein_stage": 140,
+    "dist_to_vstop": 60, "momentum_score": 105, "d49_momentum_quality": 110, "rsi_14d": 50,
+    "breakout_score": 105, "d48_breakout_readiness": 90, "dist_ath": 65, "crs_52w": 60, "weinstein_stage": 140,
     # 👥 Ownership
     "governance_bonus": 90, "promoter_holdings": 80, "change_promoter_1y": 110, "pledged_percentage": 75,
     "fii_holdings": 55, "change_fii_lq": 80, "dii_holdings": 55, "change_dii_lq": 80, "smart_money_flow": 160,
     # shown only while its sort is active
-    "result_when": 95,
+    "result_when": 95, "ram_rank": 75,
 }
 
 with tabs[2]:
@@ -1250,9 +1253,8 @@ with tabs[2]:
         # feeds the Breakout score (config BREAKOUT_SIGNALS["ath_distance"]); on its own it added
         # +0.04 to +0.05 beyond Breakout and Momentum in all four test windows, so its WEIGHT is
         # December's question (docs/december-2026-plan.md rule 15; tests/test_ath_and_new_highs.py).
-        # RAM (2026-11-05) follows the momentum group and leaves each verdict beside its number. Display only.
         "📈 Technical": ["rank","name","dist_to_vstop","momentum_score","d49_momentum_quality",
-                         "rsi_14d","ram_rank","ram_pct","breakout_score","d48_breakout_readiness","dist_ath",
+                         "rsi_14d","breakout_score","d48_breakout_readiness","dist_ath",
                          "crs_52w","weinstein_stage"],
         # 👥 Ownership (2026-10-05): each stake sits directly BEFORE its change, so level and move read
         # in one glance. Promoters rarely move in a quarter (68% flat), so theirs is the 1-year change.
@@ -1292,6 +1294,9 @@ with tabs[2]:
         # proportionate use of that evidence. breakout_score is already a Technical-view column,
         # so this satisfies the sort-by-visible doctrine without adding an orphan.
         "🚀 Breakout ↓": ("breakout_score", False),
+        # RAM Rank ↑ (2026-11-05): low numbers first, and pandas' own na_position puts the stocks with no RAM last. A display
+        # order: nothing reads it. In no view: the rule above puts it right after Stock while this sort is active.
+        "RAM Rank ↑": ("ram_rank", True),
     }
 
     # ── Control bar ────────────────────────────────────────────────
@@ -1431,8 +1436,7 @@ with tabs[2]:
         "dii_holdings":    ("DII",      "%.1f%%"),
         "change_dii_lq":   ("DII Δ qtr", "%+.2fpp"),
         "rsi_14d":         ("RSI",      "%.0f"),
-        "ram_rank":        ("RAM Rank", "%.0f"),      # Technical: read by nothing (2026-11-05)
-        "ram_pct":         ("RAM %",    "%.1f"),
+        "ram_rank":        ("RAM Rank", "%.0f"),      # shown while its sort is active (2026-11-05)
         "dividend_yield":  ("Div Yield", "%.2f%%"),   # Valuation: vendor TTM yield beside E.Yield; 0.00% = does not pay (2026-09-19)
         "fcf_yield":       ("FCF Yld",  "%.1f%%"),
         "market_cap":      ("MCap ₹Cr", "%.0f"),

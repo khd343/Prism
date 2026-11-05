@@ -2096,17 +2096,16 @@ def render_financial_insights(stock: pd.Series):
 # ═══════════════════════════════════════════════════════════════
 
 def ram_line(stock: pd.Series) -> str:
-    """The RAM line, in words (2026-11-05): 'RAM 78.4% · #312 · 3 Nov'; 'RAM — · not ranked on 3 Nov' when RAM ran for
-    that session and did not rank this stock; 'RAM —' when the sheet holds no RAM for it (blank columns, an old copy).
+    """The RAM RANK row's pill, in words (2026-11-05): '#4 · 99.8% · 4 Nov'; '— · not ranked on 4 Nov' when RAM ran for
+    that session and did not rank this stock; '—' when the sheet holds no RAM for it (blank columns, an old copy).
     No 'of N': the sheet holds only this app's stocks, so N cannot be read from it. RAM comes from the sheet, and no
     score, list or record reads it."""
     rank, pct = _finite(stock.get("ram_rank")), _finite(stock.get("ram_pct"))
     iso = ram_date_text(pd.Series([stock.get("ram_date")], dtype=object)).iloc[0]
     day = "" if pd.isna(iso) else f"{pd.Timestamp(iso).day} {pd.Timestamp(iso):%b}"
     if np.isnan(rank):
-        return f"RAM — · not ranked on {day}" if day else "RAM —"
-    head = "RAM —" if np.isnan(pct) else f"RAM {pct:.1f}%"
-    return " · ".join(part for part in (head, f"#{rank:.0f}", day) if part)
+        return f"— · not ranked on {day}" if day else "—"
+    return " · ".join(part for part in (f"#{rank:.0f}", "" if np.isnan(pct) else f"{pct:.1f}%", day) if part)
 
 
 def render_verdict_scorecard(stock: pd.Series):
@@ -2204,7 +2203,7 @@ def render_verdict_scorecard(stock: pd.Series):
     # ── Deep Signals: cross-cutting synthesis metrics that were computed-but-invisible ──
     # (WCS wealth-creation composite, economic profit, Buffett VCR, terms-of-trade, cash machine).
     # Scales verified 2026-06-14: wcs 0-10, EP ₹Cr, VCR ~1x, ToT days, cash 0/50/100.
-    def _ds(label, val_str, good):
+    def _ds(label, val_str, good, help_label=None):
         # Same NumPy-bool trap as _row (fixed 2026-08-24): the Deep Signals chips pass raw
         # comparisons ((_wcs >= 5) etc.) so all 5 rendered permanently neutral on every stock,
         # while the Entry-Timing chips were correct only because _good() returns Python bools.
@@ -2214,7 +2213,7 @@ def render_verdict_scorecard(stock: pd.Series):
                COLORS["red"] if good is False else COLORS["text_secondary"])
         return (f'<span style="font-size:0.62rem;font-weight:700;padding:2px 8px;border-radius:10px;'
                 f'background:{COLORS["bg_tertiary"]};border:1px solid {COLORS["border"]};'
-                f'color:{clr};white-space:nowrap;">{label}{help_chip(label)}&nbsp;{val_str}</span>')
+                f'color:{clr};white-space:nowrap;">{label}{help_chip(help_label or label)}&nbsp;{val_str}</span>')
 
     _wcs, _ep = _v("wcs_score"), _v("economic_profit")
     _vcr, _tot, _cash = _v("value_creation_ratio"), _v("terms_of_trade_spread"), _v("cash_machine_score")
@@ -2294,11 +2293,12 @@ def render_verdict_scorecard(stock: pd.Series):
         f'letter-spacing:0.5px;">⏱️ ENTRY TIMING</span>{timing}</div>',
         unsafe_allow_html=True,
     )
-    # RAM (2026-11-05): a line of its own under the strip, not a chip on it (that strip's admission is closed by a live
-    # rule, tests/test_deep_signal_chips.py). No colour: nothing here grades the stock.
+    # RAM RANK (2026-11-05): a row of its own under the strip, in the strip's look, not a chip on it (that strip's admission
+    # is closed by a live rule, tests/test_deep_signal_chips.py). Neutral: nothing here grades the stock.
     st.markdown(
-        f'<div style="font-size:0.62rem;font-weight:700;color:{COLORS["text_secondary"]};margin:0 0 12px 0;">'
-        f'{ram_line(stock)}{help_chip("RAM Rank")}</div>',
+        f'<div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:0 0 12px 0;">'
+        f'<span style="font-size:0.6rem;font-weight:800;color:{COLORS["text_muted"]};'
+        f'letter-spacing:0.5px;">RAM RANK</span>{_ds("", ram_line(stock), None, help_label="RAM Rank")}</div>',
         unsafe_allow_html=True,
     )
 

@@ -738,6 +738,7 @@ _RAW_GLOSSARY = {
     "Momentum Scr":  "The engine's overall price-momentum score (0-100), blending relative strength, trend quality, breakout proximity, volume confirmation and sector leadership.",
     "RAM Rank":      "RAM's rank among about 1,400 liquid NSE main-board stocks: 1 is the strongest. Momentum over 1 to 12 months, risk-adjusted, from NSE's own closes. Blank: not ranked (BSE, thin, under a year of prices, or a check doubted it). Display only: it changes no score, list or record.",
     "RAM %":         "RAM's score as a percentile, 100 the strongest. Display only: it changes no score, list or record.",
+    "RAM":           "RAM's raw score, the number RAM Rank and RAM % are read from: momentum over 1 to 12 months, risk-adjusted, from NSE's own closes, measured against the other liquid stocks, so 0 is about average and above 2 is rare. Blank: not ranked. Display only: it changes no score, list or record.",
     "Weinstein Stage":"Stan Weinstein's stage of the price cycle — Stage 2 (advancing) is the buy zone, Stage 4 (declining) is avoid.",
     # ── Forensic Summary ──
     "Red Flags":     "How many accounting/governance warning signs fired, out of all the forensic checks. Fewer is better.",

@@ -513,14 +513,10 @@ def test_no_result_mark_without_a_window():
 @pytest.mark.parametrize("scan", S.SCANS, ids=lambda s: s["key"])
 def test_the_table_fits_a_laptop_screen_with_one_header_each(scan):
     """Per scan (2026-10-07): every shown column has a set width, the total fits the 1,030px a 1536px
-    laptop leaves, and a scan that hides a column gives its width to the others (no dead strip).
-    RAM Rank (2026-11-05) took Core past the 1,030px, to 1,070 (test_scan_views._TABLE_PX). 🌱 reads 22px more: its own
-    column's 60px had been paid from the Score bar and Trend, and the shared table now sits at those widths too; the
-    rest would come out of names and sectors already the narrowest. So the sum may exceed the shared table's, never fall
-    short of it."""
+    laptop leaves, and a scan that hides a column gives its width to the others (no dead strip)."""
     cols, w = S.table_columns(scan), S.table_widths(scan)
-    assert sum(w[c] for c in cols) <= (1092 if scan["key"] == "compounder" else 1070)
-    assert sum(w[c] for c in cols) >= sum(S.TABLE_WIDTHS[c] for c in S.TABLE_COLUMNS), (
+    assert sum(w[c] for c in cols) + 44 <= 1074
+    assert sum(w[c] for c in cols) == sum(S.TABLE_WIDTHS[c] for c in S.TABLE_COLUMNS), (
         f"{scan['key']}: a hidden column's width must go to the columns still shown")
     cfg = S.table_config("03 Oct", scan)
     for c in cols:
