@@ -495,7 +495,7 @@ def _order_check_words() -> str:
             f"windows with RAM and at least {rule['min_n']} such stocks, does the top {S.HOLD_K} by RAM Rank beat at "
             f"least {rule['min_avg_pct']:.0f}% of random picks of them on average, and beat the top {S.HOLD_K} by "
             f"Rank? \"Held\" or \"did not hold\" — evidence about the order, never an automatic switch. "
-            f"{S.ORDER_NOT_IN_DATA} {S.ORDER_FROM_RAM}.")
+            f"{S.ORDER_NOT_IN_DATA} {S.ORDER_ON_C} {S.ORDER_FROM_RAM}.")
 
 
 def _order_check(scan: dict, rec, state: str) -> list:

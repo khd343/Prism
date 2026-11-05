@@ -14,6 +14,8 @@ again from the first window that has it. Pinned here, each against the break it 
   4. "Holding 20" and every other reading moved no number; only momentum's figure is gone.
   5. order_rule reads `order` alone, so an old window does not count.
   6. The words on the card and in the guide; today's records file still loads and renders.
+  7. On 🚀 the check reads list C, the list Kite trades from, after the filters (the operator: "only on list C ... and that also
+     after filter"). Everything else in 🚀's record stays on the 🚀 list until May.
 
 The word is "trade", not the "buy" of the request: tests/test_scans.py::test_no_buy_wording and
 tests/test_scan_guide.py::test_the_guide_promises_nothing_and_never_says_buy hold every scan surface to it.
@@ -318,9 +320,11 @@ def test_every_other_reading_moved_no_number_and_only_momentums_figure_is_gone()
 
 def test_every_window_carries_the_reading_on_every_scan():
     early, ret = _market()
-    for key in ("toy", *_BY_KEY):
+    for key in ("toy", "leaders", "compounder"):
         w = J.measure_window(early, _late(early, ret), {"key": key, "mask": _SCAN["mask"]}, "2026-10-31", "2026-11-28")
         assert w["order"]["ram_pct"] >= 99, key
+    w = J.measure_window(early, _late(early, ret), {"key": "playbook", "mask": _SCAN["mask"]}, "2026-10-31", "2026-11-28")
+    assert "order" in w, "🚀 carries it too, read on list C: its own section below"
 
 
 def test_holding_twenty_keeps_its_own_pool():
@@ -578,3 +582,78 @@ def test_the_filter_words_follow_their_settings(monkeypatch):
     assert S.order_pool_words() == want
     assert want in _guide("playbook")
     assert want in _card("playbook", [_window()])
+
+
+# ── 7. On 🚀 the check reads list C, after the filters ──
+def _list_c_market():
+    """120 stocks that pass every filter. The first 41 are the market's top third on momentum and breakout (80 of 120 is on the line, and
+    the line is in) and above their stop, so list C; the first 32 of those are also the scan's own matches, as 🚀's are inside C. RAM Rank runs with the returns."""
+    n = 120
+    early = pd.DataFrame({"company_id": [f"NSE:K{i:03d}" for i in range(n)], **_PASSES, "equity_shares": 10.0,
+                          "flag": (np.arange(n) < 32).astype(int), "ram_rank": np.arange(1.0, n + 1),
+                          "rank": np.arange(float(n), 0.0, -1.0), "momentum_score": np.arange(float(n), 0.0, -1.0),
+                          "breakout_score": np.arange(float(n), 0.0, -1.0)})
+    return early, pd.Series(np.arange(float(n), 0.0, -1.0), index=early.index)
+
+
+def _measured(key, early, ret):
+    return J.measure_window(early, _late(early, ret), {"key": key, "mask": _SCAN["mask"]}, "2026-10-31", "2026-11-28")
+
+
+def test_list_c_is_the_ladder_layer_of_price_only():
+    layer = next(x for x in S.PLAYBOOK_LAYERS if x["key"] == S.ORDER_LIST["playbook"])
+    assert layer["tag"] == "C" and set(layer["conditions"]) == {"momentum", "breakout", "stop"}
+    assert set(S.ORDER_LIST) == {"playbook"}, "only 🚀's check moves to another list"
+
+
+def test_the_playbooks_check_reads_list_c_not_its_own_matches():
+    early, ret = _list_c_market()
+    assert _measured("playbook", early, ret)["order"]["n"] == 41, "list C after the filters, not the 32 on the scan"
+
+
+def test_every_other_scan_reads_its_own_matches():
+    early, ret = _list_c_market()
+    for key in ("leaders", "compounder", "toy"):
+        assert _measured(key, early, ret)["order"]["n"] == 32, key
+
+
+def test_the_playbooks_other_readings_stay_on_its_own_matches():
+    early, ret = _list_c_market()
+    w = _measured("playbook", early, ret)
+    assert w["n"] == 32 and w["hold"]["n"] == 32, "only the order check moves to list C; the rest of the record is May's"
+
+
+@pytest.mark.parametrize("change", [dict(shariah_status="Non-Shariah"), dict(company_id="BSE:K"), dict(market_category="Micro Cap"),
+                                    dict(close_price=5001.0), dict(dist_to_vstop=26.0), dict(weinstein_stage="📉 Stage 3 Topping")],
+                         ids=["label", "exchange", "cap", "price", "zone", "stage"])
+def test_list_c_is_read_after_every_filter(change):
+    early, ret = _list_c_market()
+    for col, value in change.items():
+        early.loc[35, col] = value + "035" if col == "company_id" else value
+    assert _measured("playbook", early, ret)["order"]["n"] == 40, change
+
+
+def test_a_list_c_stock_with_no_return_is_out_as_it_is_for_the_scan():
+    early, ret = _list_c_market()
+    late = _late(early, ret)
+    late.loc[35, "close_price"] = np.nan
+    w = J.measure_window(early, late, {"key": "playbook", "mask": _SCAN["mask"]}, "2026-10-31", "2026-11-28")
+    assert w["order"]["n"] == 40 and w["order"]["ram_pct"] is not None
+
+
+def test_a_set_aside_stock_leaves_list_cs_reading_too():
+    early, ret = _list_c_market()
+    gone = pd.Series(early.index == 35, index=early.index)
+    assert J._order_matches(early, ret.where(~gone), pd.Series(True, index=early.index), {"key": "playbook"}).sum() == 40
+
+
+def test_a_copy_with_no_list_c_inputs_reads_nothing_and_never_raises():
+    early, ret = _list_c_market()
+    w = _measured("playbook", early.drop(columns=["momentum_score", "breakout_score"]), ret)
+    assert w["order"]["n"] == 0, "the job's other readings go on"
+
+
+def test_the_playbooks_card_and_the_guides_say_it_reads_list_c():
+    assert S.ORDER_ON_C in _card("playbook", [_window()])
+    assert S.ORDER_ON_C not in _card("leaders", [_window()])
+    assert S.ORDER_ON_C in _guide("playbook")

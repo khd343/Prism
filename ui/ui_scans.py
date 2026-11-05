@@ -126,6 +126,11 @@ ORDER_ZONE = (0.0, 25.0)
 ORDER_STAGES = ("1", "2")
 ORDER_NOT_IN_DATA = "The price band, ASM, GSM and the SME lot size are not in PRISM's data."
 ORDER_FROM_RAM = "Older windows have no RAM, so the check counts from the first window that has it"
+# On 🚀 the check reads list C, the ladder's last layer, because that is the list Kite trades from (the operator, 2026-11-05:
+# "only on list C ... and that also after filter"). The rest of 🚀's record stays on the 🚀 list until list C has a record of
+# its own, in May. Every other checked scan reads its own matches.
+ORDER_LIST = {"playbook": "price_only"}
+ORDER_ON_C = "On 🚀 it reads list C, the list Kite trades from, not the 🚀 list."
 # The revenue-led check (registered 2026-10-15, before any unseen window has a result). Inside 🚀, do the matches
 # that are also revenue_led (the test 🌱 uses) beat the rest? A Kite-side plan proposed trading that in Kite's window
 # 2; the frozen go-rule needs the SAME design in two windows in a row, so the operator kept Kite as it is and chose to
@@ -1130,9 +1135,10 @@ def _hold_line(scan: dict, ws, c: dict, esc) -> str:
     rule = note = ""
     if scan.get("key") in ORDER_RULE["scans"]:
         # 2026-11-05: the check reads RAM Rank whichever way the table lists, so the sentence says whose order is whose.
+        on_c = f"{ORDER_ON_C} " if scan.get("key") in ORDER_LIST else ""
         lists = (f"🏆 Core and 📈 Technical list by momentum since 13 Oct and {RAM_VIEW} by RAM Rank"
                  if RAM_VIEW in scan_views(scan) else "The table lists by momentum since 13 Oct")
-        note = (f' {lists}; the order check reads RAM Rank. What Kite can trade: {order_pool_words()}. {ORDER_NOT_IN_DATA} '
+        note = (f' {lists}; the order check reads RAM Rank. What Kite can trade: {order_pool_words()}. {ORDER_NOT_IN_DATA} {on_c}'
                 f'The check holds if RAM Rank\'s top {k} beats {ORDER_RULE["min_avg_pct"]:.0f}%+ of random picks of those '
                 f'stocks on average over {ORDER_RULE["windows"]} separate windows, and beats Rank\'s. {ORDER_FROM_RAM}, and '
                 f'only with {ORDER_RULE["min_n"]}+ of those stocks.')

@@ -228,9 +228,16 @@ def hold_reading(early: pd.DataFrame, ret: pd.Series, match: pd.Series) -> dict:
     return out
 
 
+def _order_matches(early: pd.DataFrame, ret: pd.Series, match: pd.Series, scan: dict) -> pd.Series:
+    """The stocks the order check starts from: the scan's matches, or, for a scan in S.ORDER_LIST (🚀), that ladder layer's on
+    the same whole-market copy (list C, the list Kite trades from), those with a return, as the matches are."""
+    layer = S.ORDER_LIST.get(scan.get("key"))
+    return match if layer is None else S.playbook_layer_mask(early, layer) & ret.notna()
+
+
 def order_reading(early: pd.DataFrame, ret: pd.Series, match: pd.Series) -> dict:
     """What ORDER_RULE reads (2026-11-05, the operator's call): does RAM Rank's order beat random picks of what Kite can
-    trade? The pool is the scan's matches that pass Kite's buy filters as far as PRISM can see them: the Shariah label, by
+    trade? The pool is the stocks _order_matches gives (on 🚀, list C) that pass Kite's buy filters as far as PRISM can see them: the Shariah label, by
     equality as shariah_reading reads it; an NSE id; S.HOLD_CAPS; S.SHARIAH_MIN_CR a day or more; one share at most
     S.HOLD_MAX_PRICE; S.ORDER_ZONE above the V-Stop, both ends in, as kite_v2/engine/select.py reads its zone; and
     S.ORDER_STAGES, in the feed's own codes. The price band, ASM, GSM and the SME lot size are not in PRISM's data. A blank,
@@ -363,7 +370,7 @@ def _readings(early: pd.DataFrame, ret: pd.Series, in_scan: pd.Series, scan: dic
                beat_pct=int(round(float((excess[match] > 0).mean() * 100))),
                n=int(match.sum()), **head, net=net)
     out["hold"] = hold_reading(early, ret, match)
-    out["order"] = order_reading(early, ret, match)
+    out["order"] = order_reading(early, ret, _order_matches(early, ret, match, scan))
     cut = shariah_reading(early, ret, match)
     if cut is not None:
         out["shariah"] = cut
