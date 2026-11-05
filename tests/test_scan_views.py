@@ -33,8 +33,8 @@ from ui.ui_scanner import _SCANNER_HEADER_TIPS  # noqa: E402
 
 _APP = (ROOT / "app.py").read_text(encoding="utf-8")
 CORE, TECH = "🏆 Core", "📈 Technical"
-TECH_COLS = ("rank", "_new", "name", "close_price", "_liq_cr", "dist_to_vstop", "momentum_score",
-             "d49_momentum_quality", "rsi_14d", "breakout_score", "crs_52w", "weinstein_stage")
+TECH_COLS = ("rank", "ram_rank", "name", "close_price", "_liq_cr", "dist_to_vstop", "momentum_score",
+             "d49_momentum_quality", "rsi_14d", "breakout_score", "improvement_score", "crs_52w", "weinstein_stage")
 
 
 def test_the_scans_offer_two_views_by_their_app_wide_names():
@@ -60,9 +60,10 @@ def test_the_technical_view_holds_the_entry_columns(scan):
 @pytest.mark.parametrize("view", (CORE, TECH))
 @pytest.mark.parametrize("scan", S.SCANS, ids=lambda s: s["key"])
 def test_every_view_fits_a_laptop_screen_with_the_deep_scanners_headers(scan, view):
-    cols, w = S.table_columns(scan, view), S.table_widths(scan)
+    drawn = S.technical_view_scan(scan) if view == TECH else scan      # 2026-11-05: 📈 Technical draws at its own widths
+    cols, w = S.table_columns(scan, view), S.table_widths(drawn)
     assert sum(w[c] for c in cols) + 44 <= 1074, f"{scan['key']} {view}: wider than a 1536px laptop"
-    cfg = S.table_config("03 Oct", scan)
+    cfg = S.table_config("03 Oct", drawn)
     for c in cols:
         assert c in cfg and cfg[c]["width"] == w[c], c
         label = cfg[c]["label"]
@@ -99,8 +100,8 @@ _FLOOR = {"rank": 46, "momentum_score": 84, "improvement_score": 96, "_measured_
 
 @pytest.mark.parametrize("scan", S.SCANS, ids=lambda s: s["key"])
 def test_no_column_is_narrower_than_its_header_and_common_values(scan):
-    w = S.table_widths(scan)
     for view in S.SCAN_VIEWS:
+        w = S.table_widths(S.technical_view_scan(scan) if view == TECH else scan)
         for c in S.table_columns(scan, view):
             if c in _FLOOR:
                 assert w[c] >= _FLOOR[c], f"{scan['key']} {view}: {c} at {w[c]}px is under its {_FLOOR[c]}px"
@@ -122,7 +123,7 @@ def test_the_table_carries_every_column_a_view_can_show():
     t = S.scan_table(df, {"key": "all", "mask": lambda d: pd.Series(True, index=d.index)})
     for view in S.SCAN_VIEWS:
         for c in S.table_columns(S.SCANS[0], view):
-            assert c in t.columns, f"{view} shows {c}, the table must carry it"
+            assert c in t.columns or c == "ram_rank", f"{view} shows {c}, the table must carry it (RAM Rank joins in technical_view_table)"
     assert t.loc[0, "close_price"] == 250.0 and t.loc[0, "d49_momentum_quality"] == "⚡ HIGH"
     assert np.isnan(t.loc[0, "dist_to_vstop"]), "a missing input shows blank, never a made-up 0"
 

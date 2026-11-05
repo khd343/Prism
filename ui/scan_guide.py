@@ -249,8 +249,8 @@ GUIDES = {
 # (tests/test_scan_guide.py).
 VIEW_WHAT = {
     "🏆 Core": "why a stock is in the list.",
-    "📈 Technical": "price and trend readings: is now a good moment, how far is the stop, and does one share "
-                   "fit a small account.",
+    "📈 Technical": "price and trend readings, with RAM Rank and Improvement beside them: is now a good moment, how far is the "
+                   "stop, and does one share fit a small account.",
 }
 
 # What each measured flag means, in plain words — keyed by the flag's column, so a new flag needs its words
@@ -475,7 +475,7 @@ def general_sections(scans=None) -> list:
             f"📈 Technical read as before. Where a list has an order check, it reads RAM Rank too, on what Kite can trade, whichever view is open.",
             "- **Filters** only hide rows of the finished list. The recipe always ranks the whole market, so a "
             "filter can never put a stock into a scan.",
-            "- **🆕**, in 🏆 Core and 📈 Technical — not in the scan on the last archived month-end copy. **📄** — its quarterly result was "
+            "- **🆕**, in 🏆 Core — not in the scan on the last archived month-end copy. **📄** — its quarterly result was "
             "declared since then. Both together: it entered on a fresh result; 🆕 alone: it entered on price "
             "movement.",
             "- **Category** — the company's market-cap band from the data vendor: Mega, Large, Mid, Small, Micro "

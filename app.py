@@ -176,7 +176,9 @@ from ui.ui_scans import (SCANS, CANDIDATES as SCAN_CANDIDATES, LIQUIDITY_STEPS a
                          record_state as scan_record_state, scan_table, table_config as scan_table_config,
                          SCAN_VIEWS, TREND_SHORT as SCAN_TREND_SHORT, momentum_ordered as scan_momentum_ordered,
                          RAM_VIEW as SCAN_RAM_VIEW, ram_view_order_words, ram_view_scan, ram_view_table,
+                         technical_view_scan, technical_view_table,
                          TABLE_VIEWS as SCAN_TABLE_VIEWS, PLAYBOOK_LAYERS, playbook_layer_mask, playbook_layer_scan)
+from ui.ram_guide import markdown as ram_markdown, reference_html as ram_reference_html
 from ui.scan_guide import (guide_html as scan_guide_html, guide_markdown as scan_guide_markdown,
                            reference_html as scan_reference_html)
 from config import (COLORS, TIER_COLORS, CONVICTION_TIERS, UI, HARD_GATES,
@@ -1093,6 +1095,11 @@ with tabs[1]:
         if _sc_view == SCAN_RAM_VIEW:
             _sc_tbl_scan, _sc_tbl = ram_view_scan(_sc_tbl_scan), ram_view_table(_sc_tbl, df)
             _sc_sort, _sc_new = ram_view_order_words(_sc_tbl, _sc_sort, df), ""
+        elif _sc_view == SCAN_VIEWS[1]:
+            # 📈 Technical (2026-11-05, the operator's ask): RAM Rank joins it at the view's own widths, and the list keeps its order.
+            # New stays in 🏆 Core, so its legend does too.
+            _sc_tbl_scan, _sc_tbl = technical_view_scan(_sc_tbl_scan), technical_view_table(_sc_tbl, df)
+            _sc_new = ""
         st.caption(f"{len(_sc_tbl):,}{_sc_of} · sorted by {_sc_sort}{_sc_new} · click a row to load it into "
                    f"the Tear-Sheet tab")
         # The key follows the VISIBLE list: when any control changes it, the table is a new widget and
@@ -1103,8 +1110,8 @@ with tabs[1]:
             column_order=list(scan_table_columns(_sc_tbl_scan, _sc_view)),
             hide_index=True, width="stretch", height=min(560, 38 + 35 * len(_sc_tbl)),
             on_select="rerun", selection_mode="single-row",
-            # A dash under the three RAM columns on half of the list, not the word None; Core and Technical keep Streamlit's.
-            placeholder="—" if _sc_view == SCAN_RAM_VIEW else None,
+            # A dash under the RAM columns on half of the list, not the word None; Core keeps Streamlit's.
+            placeholder="—" if _sc_view != SCAN_VIEWS[0] else None,
             key=f"scan_tbl_{_sc_tbl_scan['key']}_{_sc_view}_{_sc_ids}")
         _sc_rows = _sc_pick.selection.rows if _sc_pick and hasattr(_sc_pick, "selection") else []
         if _sc_rows:
@@ -1200,13 +1207,27 @@ _DS_W = {
     # 📈 Technical — Trend 140 and Smart Money 160 (👥 Ownership) still show their longest labels
     # in full (135px, 156px; measured 2026-10-08) and bring both views inside the screen
     "dist_to_vstop": 60, "momentum_score": 105, "d49_momentum_quality": 110, "rsi_14d": 50,
-    "breakout_score": 105, "d48_breakout_readiness": 90, "dist_ath": 65, "crs_52w": 60, "weinstein_stage": 140,
+    "breakout_score": 105, "d48_breakout_readiness": 90, "crs_52w": 60, "weinstein_stage": 140,
     # 👥 Ownership
     "governance_bonus": 90, "promoter_holdings": 80, "change_promoter_1y": 110, "pledged_percentage": 75,
     "fii_holdings": 55, "change_fii_lq": 80, "dii_holdings": 55, "change_dii_lq": 80, "smart_money_flow": 160,
     # shown only while its sort is active
     "result_when": 95, "ram_rank": 75,
+    # 🔢 RAM's own columns (2026-11-05): "#" 45 ("2692" 44), Symbol 107 (JAMESWARREN 106), RAM % 57 (header 56), RAM 46 ("-0.12" 45)
+    "#": 45, "symbol": 107, "ram_pct": 57, "ram_score": 46,
 }
+# The two views that hold other widths than the table above (2026-11-05, the operator's ask), each measured that day on the live
+# sheet and summing to exactly the 1,020px the grid gives. 📈 Technical takes RAM Rank and Improvement: Off ATH left it, Trend reads
+# short ("📈 Stage 2" 81) as the 🎯 Scans do, its two bars narrow to their headers, Rank to 46 ("1027" 44), Stop Δ to 57 ("-11.4%" 56)
+# and RSI to 40, and what is left goes to Stock, 180 → 196. 🔢 RAM: Stock 295 shows 99.6% of the market's names in full, Sector 170 80%.
+_DS_W_VIEWS = {
+    "📈 Technical": {"rank": 46, "name": 196, "dist_to_vstop": 57, "momentum_score": 85, "rsi_14d": 40, "breakout_score": 85,
+                     "weinstein_stage": 81},
+    "🔢 RAM": {"name": 295, "sector": 170},
+}
+# The Deep Scanner's 🔢 RAM view: the 🎯 Scans' table on the whole market. Outside _DS_VIEWS, whose names and order are the app's one
+# vocabulary with Market Pulse (tests/test_market_pulse_views.py): sectors and industries have no RAM.
+_DS_RAM_COLUMNS = ["#", "ram_rank", "symbol", "name", "ram_pct", "ram_score", "close_price", "market_category", "sector", "traded_value_cr"]
 
 with tabs[2]:
 
@@ -1254,8 +1275,11 @@ with tabs[2]:
         # feeds the Breakout score (config BREAKOUT_SIGNALS["ath_distance"]); on its own it added
         # +0.04 to +0.05 beyond Breakout and Momentum in all four test windows, so its WEIGHT is
         # December's question (docs/december-2026-plan.md rule 15; tests/test_ath_and_new_highs.py).
-        "📈 Technical": ["rank","name","dist_to_vstop","momentum_score","d49_momentum_quality",
-                         "rsi_14d","breakout_score","d48_breakout_readiness","dist_ath",
+        # RAM Rank and Improvement (2026-11-05, the operator's ask): RAM Rank right after Stock, where its sort places it on every
+        # other view; Improvement is the one column with two homes among the detail views. Off ATH left for them: it feeds Breakout
+        # already, and it stays in the CSV.
+        "📈 Technical": ["rank","name","ram_rank","dist_to_vstop","momentum_score","d49_momentum_quality",
+                         "rsi_14d","breakout_score","d48_breakout_readiness","improvement_score",
                          "crs_52w","weinstein_stage"],
         # 👥 Ownership (2026-10-05): each stake sits directly BEFORE its change, so level and move read
         # in one glance. Promoters rarely move in a quarter (68% flat), so theirs is the 1-year change.
@@ -1307,7 +1331,7 @@ with tabs[2]:
         f'🔍 Deep Scanner</div>',
         unsafe_allow_html=True,
     )
-    _ds_c1, _ds_c2, _ds_c3 = st.columns([1.5, 5.5, 2])
+    _ds_c1, _ds_c2, _ds_c3 = st.columns([1.4, 6.2, 1.4])    # 2026-11-05: seven views on one row, measured at 1536px
     with _ds_c1:
         ds_search = st.text_input(
             "Search", placeholder="Search stock name…",
@@ -1316,16 +1340,20 @@ with tabs[2]:
     with _ds_c2:
         # A segmented control, not pills: the widget for 'pick one view' — pills read as tags.
         ds_view = st.segmented_control(
-            "Column View", list(_DS_VIEWS.keys()),
+            "Column View", ["🏆 Core", SCAN_RAM_VIEW, *[_v for _v in _DS_VIEWS if _v != "🏆 Core"]],
             default="🏆 Core", key="ds_view",
         )
         if not ds_view:
             ds_view = "🏆 Core"
     with _ds_c3:
-        ds_sort_label = st.selectbox(
-            "Sort", list(_DS_SORTS.keys()),
-            key="ds_sort", label_visibility="collapsed",
-        )
+        # 🔢 RAM holds its own order, so its box shows that and cannot be changed: a live box that did nothing would mislead.
+        if ds_view == SCAN_RAM_VIEW:
+            ds_sort_label = st.selectbox("Sort", ["RAM Rank ↑"], key="ds_sort_ram", disabled=True, label_visibility="collapsed")
+        else:
+            ds_sort_label = st.selectbox(
+                "Sort", list(_DS_SORTS.keys()),
+                key="ds_sort", label_visibility="collapsed",
+            )
     if ds_view == OWNERSHIP:
         st.caption(OWNERSHIP_NOTE)
 
@@ -1334,7 +1362,14 @@ with tabs[2]:
     if ds_search and ds_search.strip():
         ds_df = ds_df[ds_df["name"].str.contains(ds_search.strip(), case=False, na=False)]
     _sort_col, _sort_asc = _DS_SORTS[ds_sort_label]
-    if _sort_col in ds_df.columns:
+    if ds_view == SCAN_RAM_VIEW:
+        # By RAM Rank, a tie and the stocks with no RAM by PRISM's Rank. # is the place as shown; Symbol is the id without its exchange.
+        ds_df = ds_df.reindex(columns=[*ds_df.columns, *[_c for _c in ("ram_rank", "ram_date") if _c not in ds_df.columns]])
+        ds_df = ds_df.sort_values(["ram_rank", "rank"], na_position="last", kind="mergesort")
+        ds_df = ds_df.assign(**{"#": np.arange(1, len(ds_df) + 1),
+                                "symbol": ds_df["company_id"].astype(str).str.split(":", n=1).str[-1]})
+        st.caption(f"{len(ds_df):,} stocks · sorted by {ram_view_order_words(ds_df, 'Rank', df)}")
+    elif _sort_col in ds_df.columns:
         ds_df = ds_df.sort_values(_sort_col, ascending=_sort_asc)
 
     # ── Stats strip ────────────────────────────────────────────────
@@ -1380,8 +1415,12 @@ with tabs[2]:
     # the sorted column gets it right after Stock (Rank stands for Score, result_when for Results);
     # a view that carries it keeps its curated order. Measured before: in 5 of 6 views the rows were
     # ordered by a Score no column showed.
-    _view_cols = ds_view_columns(_DS_VIEWS.get(ds_view, _DS_VIEWS["🏆 Core"]), _sort_col, ds_df.columns)
+    _view_cols = ds_view_columns(_DS_RAM_COLUMNS if ds_view == SCAN_RAM_VIEW else _DS_VIEWS.get(ds_view, _DS_VIEWS["🏆 Core"]),
+                                 _sort_col, ds_df.columns)
     _display_df = ds_df[_view_cols].reset_index(drop=True)
+    _ds_w = {**_DS_W, **_DS_W_VIEWS.get(ds_view, {})}
+    if ds_view == "📈 Technical" and "weinstein_stage" in _display_df.columns:
+        _display_df["weinstein_stage"] = _display_df["weinstein_stage"].replace(SCAN_TREND_SHORT)   # the view's short words; the tip has the rest
 
     # ── Column config ──────────────────────────────────────────────
     _CC: dict = {}
@@ -1393,10 +1432,10 @@ with tabs[2]:
     for _sp, _sl in _DS_SPINE.items():
         if _sp in _display_df.columns:
             _CC[_sp] = (st.column_config.NumberColumn(_sl, help=_SCANNER_HEADER_TIPS.get(_sp), format="%.0f",
-                                                      width=_DS_W.get(_sp))
+                                                      width=_ds_w.get(_sp))
                         if _sp == "rank" else
                         st.column_config.TextColumn(_sl, help=_SCANNER_HEADER_TIPS.get(_sp),
-                                                    width=_DS_W.get(_sp)))
+                                                    width=_ds_w.get(_sp)))
     # Every column takes its width from _DS_W (above the tab block): Streamlit's defaults — ~150px a
     # score bar, text sized to its longest cell — pushed the views off a 1536px laptop screen.
     # Score BARS for the headline scores only — Quality's parts and Governance read as numbers
@@ -1408,10 +1447,10 @@ with tabs[2]:
         if _sc in _display_df.columns:
             _CC[_sc] = st.column_config.ProgressColumn(
                 _sl, help=_SCANNER_HEADER_TIPS.get(_sc), min_value=0, max_value=100, format="%.0f",
-                width=_DS_W.get(_sc))
+                width=_ds_w.get(_sc))
     for _bc, _lbl in {"gate_pass": "✅ Gate", "schilit_pass": "Schilit"}.items():
         if _bc in _display_df.columns:
-            _CC[_bc] = st.column_config.CheckboxColumn(_lbl, help=_SCANNER_HEADER_TIPS.get(_bc), width=_DS_W.get(_bc))
+            _CC[_bc] = st.column_config.CheckboxColumn(_lbl, help=_SCANNER_HEADER_TIPS.get(_bc), width=_ds_w.get(_bc))
     _num_fmt = {
         "moat_score":      ("Moat",     "%.0f"),   # Quality's parts, as numbers beside its bar (2026-10-05)
         "growth_score":    ("Growth",   "%.0f"),
@@ -1437,7 +1476,10 @@ with tabs[2]:
         "dii_holdings":    ("DII",      "%.1f%%"),
         "change_dii_lq":   ("DII Δ qtr", "%+.2fpp"),
         "rsi_14d":         ("RSI",      "%.0f"),
-        "ram_rank":        ("RAM Rank", "%.0f"),      # shown while its sort is active (2026-11-05)
+        "ram_rank":        ("RAM Rank", "%.0f"),      # 📈 Technical and 🔢 RAM, and while its sort is active (2026-11-05)
+        "ram_pct":         ("RAM %",    "%.1f"),      # 🔢 RAM: the rest of its table (2026-11-05)
+        "ram_score":       ("RAM",      "%.2f"),
+        "#":               ("#",        "%.0f"),
         "dividend_yield":  ("Div Yield", "%.2f%%"),   # Valuation: vendor TTM yield beside E.Yield; 0.00% = does not pay (2026-09-19)
         "fcf_yield":       ("FCF Yld",  "%.1f%%"),
         "market_cap":      ("MCap ₹Cr", "%.0f"),
@@ -1449,17 +1491,16 @@ with tabs[2]:
         "close_price":     ("Price ₹",  "%.2f"),     # Valuation+Technical: the number every ₹ column is measured against
         "fair_value_qglp": ("Fair ₹",   "%.0f"),     # Valuation: QGLP fair PE × EPS (blank = loss-maker, undefined)
         "dist_to_vstop":   ("Stop Δ",   "%.1f%%"),   # Technical: % above(+)/below(−) the Volatility Stop
-        "dist_ath":        ("Off ATH",  "%.1f%%"),   # Technical: % below the all-time high (0 = at it)
         "data_coverage_pct":      ("Evidence",   "%.0f%%"),   # Forensic: score-confidence % (high score on thin data = trap)
         "forensic_multiplier":    ("Forensic ×", "%.2f"),     # Forensic: the penalty cutting composite (1.00 clean → 0.50 high-risk)
     }
     for _nc, (_nl, _nf) in _num_fmt.items():
         if _nc in _display_df.columns:
             _CC[_nc] = st.column_config.NumberColumn(_nl, help=_SCANNER_HEADER_TIPS.get(_nc), format=_nf,
-                                                     width=_DS_W.get(_nc))
+                                                     width=_ds_w.get(_nc))
     # String decision-signal + identity columns get clean headers (else they show raw snake_case).
     for _tc, _tl in {
-        "sector": "Sector", "market_category": "Market Cap",
+        "symbol": "Symbol", "sector": "Sector", "market_category": "Market Cap",
         "verdict_direction": "Soundness", "wealth_tier": "Wealth", "weinstein_stage": "Trend",
         "smart_money_flow": "Smart Money",
         "buy_zone_label": "Buy Zone",
@@ -1469,13 +1510,13 @@ with tabs[2]:
         "d49_momentum_quality": "Mom. Quality",
     }.items():
         if _tc in _display_df.columns:
-            _CC[_tc] = st.column_config.TextColumn(_tl, help=_SCANNER_HEADER_TIPS.get(_tc), width=_DS_W.get(_tc))
+            _CC[_tc] = st.column_config.TextColumn(_tl, help=_SCANNER_HEADER_TIPS.get(_tc), width=_ds_w.get(_tc))
     # Safety net: a future _DS_VIEWS column with a tip but no typed config above still gets its
     # hover tooltip (raw header). NOTE: Streamlit issue #10841 — header tooltips don't render in
     # the dataframe's FULL-SCREEN mode; they work in the normal embedded view.
     for _col in _display_df.columns:
         if _col not in _CC and _SCANNER_HEADER_TIPS.get(_col):
-            _CC[_col] = st.column_config.Column(help=_SCANNER_HEADER_TIPS[_col], width=_DS_W.get(_col))
+            _CC[_col] = st.column_config.Column(help=_SCANNER_HEADER_TIPS[_col], width=_ds_w.get(_col))
 
     # ── Render table — or a smart, cause-specific empty-state ──────
     if filt.empty:
@@ -1508,6 +1549,8 @@ with tabs[2]:
             hide_index=True,
             on_select="rerun",
             selection_mode="single-row",
+            # A dash under RAM's columns, not the word None. The other views keep Streamlit's: here it would change every P/E blank.
+            placeholder="—" if ds_view in (SCAN_RAM_VIEW, "📈 Technical") else None,
         )
 
         # ── Tearsheet shortcut on row select ──────────────────────────
@@ -1535,9 +1578,10 @@ with tabs[2]:
         # …plus every SORT column (2026-10-05): MCap left the views as size, not value, and the file
         # should carry whatever the table can be ordered by.
         # …and the Shariah screen's status and reason (2026-10-16): every CSV download carries them.
+        # …and RAM's numbers, and Off ATH, which left its view but not the file (2026-11-05).
         _export_cols = [c for c in dict.fromkeys([*(_c for _v in _DS_VIEWS.values() for _c in _v),
                                                   *(_s for _s, _ in _DS_SORTS.values()),
-                                                  "shariah_status", "shariah_reason"])
+                                                  "shariah_status", "shariah_reason", "ram_pct", "ram_score", "dist_ath"])
                         if c in ds_df.columns]
         _safe_mode = analysis_mode.replace(" ", "_").lower()
         # Encode via the shared _to_csv_bytes (UTF-8-with-BOM) — the SAME Excel-safe path the sidebar
@@ -3828,7 +3872,7 @@ def _render_reference():
     st.download_button(
         "📥 Download Reference (Markdown)",
         data=build_reference_markdown(_RAW_GLOSSARY, CONCEPT_REFERENCE, _FLAG_DISPLAY, frameworks=_fw_md,
-                                      studies=WCS_STUDIES, scans=scan_guide_markdown(_scan_recs)),
+                                      studies=WCS_STUDIES, scans=scan_guide_markdown(_scan_recs), ram=ram_markdown()),
         file_name="prism_reference.md", mime="text/markdown",
         width="stretch",
     )
@@ -3839,7 +3883,7 @@ def _render_reference():
     # corpora — preserving the one-box-searches-everything power; splitting search per-tab would
     # recreate the export/search asymmetry class (frameworks, 2026-08-28). The five pure render
     # helpers are reused identically in both branches, so the modes can never drift. A sixth corpus, 🎯 Scans
-    # (the scan guide), joined both modes on 2026-10-14.
+    # (the scan guide), joined both modes on 2026-10-14, and a seventh, 🔢 RAM (ui/ram_guide.py), on 2026-11-05.
     def _sec_head(text_html, color, top=6):
         st.markdown(
             f'<div style="font-size:0.72rem;font-weight:800;color:{color};'
@@ -3887,10 +3931,17 @@ def _render_reference():
             _sec_head(f"🎯 Scans — how each of the {len(SCANS)} lists works", COLORS["cyan"], top=20)
             st.markdown(h, unsafe_allow_html=True)
 
+    def _show_ram(q):
+        # What RAM is, how it is worked out and how to read it (ui/ram_guide.py): the same words as the download above.
+        h = ram_reference_html(q)
+        if h:
+            _sec_head("🔢 RAM — the risk-adjusted momentum score", COLORS["cyan"], top=20)
+            st.markdown(h, unsafe_allow_html=True)
+
     if _ref_q.strip():
         st.markdown(
             f'<div style="font-size:0.68rem;color:{COLORS["text_muted"]};margin:2px 0 8px 0;">'
-            f'🔎 Searching across all six sections — clear the box to browse by tab.</div>',
+            f'🔎 Searching across all seven sections — clear the box to browse by tab.</div>',
             unsafe_allow_html=True)
         _show_concepts(_ref_q)
         _show_glossary(_ref_q)
@@ -3898,9 +3949,10 @@ def _render_reference():
         _show_frameworks(_ref_q)
         _show_wcs(_ref_q)
         _show_scans(_ref_q)
+        _show_ram(_ref_q)
     else:
         _ref_tabs = st.tabs(["🏷️ Labels & Verdicts", "📖 Glossary", "🚩 Red Flags",
-                             "🏛️ Frameworks", "📚 WCS Studies", "🎯 Scans"])
+                             "🏛️ Frameworks", "📚 WCS Studies", "🎯 Scans", "🔢 RAM"])
         with _ref_tabs[0]:
             _show_concepts("")
         with _ref_tabs[1]:
@@ -3913,6 +3965,8 @@ def _render_reference():
             _show_wcs("")
         with _ref_tabs[5]:
             _show_scans("")
+        with _ref_tabs[6]:
+            _show_ram("")
 
 
 with tabs[6]:

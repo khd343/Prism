@@ -221,8 +221,8 @@ def test_the_rocket_layer_is_the_scan_itself():
 # ── 4. The B and C tables ─────────────────────────────────────────────────────────────────────────────────────
 _WIDE_CORE = ("rank", "_layer", "name", "market_category", "sector", "composite_score", "momentum_score",
               "improvement_score", "_strong_q", "_measured_flags", "weinstein_stage", "_liq_cr")
-_WIDE_TECH = ("rank", "_layer", "name", "close_price", "_liq_cr", "dist_to_vstop", "momentum_score",
-              "d49_momentum_quality", "rsi_14d", "breakout_score", "crs_52w", "weinstein_stage")
+_WIDE_TECH = ("rank", "_layer", "ram_rank", "name", "close_price", "_liq_cr", "dist_to_vstop", "momentum_score",     # 2026-11-05: B and C keep List
+              "d49_momentum_quality", "rsi_14d", "breakout_score", "improvement_score", "crs_52w", "weinstein_stage")
 
 
 @pytest.mark.parametrize("key", WIDE)
@@ -258,11 +258,14 @@ def test_b_and_c_keep_the_rockets_core_budget(key):
     assert w["_layer"] == S.TABLE_WIDTHS["_new"] == 55
     own = S.table_widths(PLAY if key == "no_quarter" else {})
     assert (w["name"], w["sector"]) == (own["name"], own["sector"]), "B as wide as 🚀's names; C the shared widths"
-    assert sum(w[c] for c in S.table_columns(wide, TECH)) + 44 <= 1074, "📈 Technical fits a 1536px laptop"
+    drawn = S.technical_view_scan(wide)      # 2026-11-05: 📈 Technical draws at its own widths, Core's untouched
+    assert sum(S.table_widths(drawn)[c] for c in S.table_columns(wide, TECH)) + 44 <= 1074, "📈 Technical fits a 1536px laptop"
     cfg = S.table_config("30 Sep", wide)
-    for view in S.SCAN_VIEWS:
-        for c in S.table_columns(wide, view):
-            assert c in cfg and cfg[c]["width"] == w[c], (view, c)
+    for c in S.table_columns(wide, CORE):
+        assert c in cfg and cfg[c]["width"] == w[c], c
+    cfg = S.table_config("30 Sep", drawn)
+    for c in S.table_columns(wide, TECH):
+        assert c in cfg and cfg[c]["width"] == S.table_widths(drawn)[c], c
 
 
 def test_the_note_says_what_the_list_is_and_that_it_has_no_record():
@@ -324,8 +327,8 @@ def test_the_quarter_column_varies_on_the_price_only_list():
 # ── 5. 🚀's table and 🌱's, exactly as they were ───────────────────────────────────────────────────────────────
 _ROCKET_CORE = ("rank", "_new", "name", "market_category", "sector", "composite_score", "momentum_score",
                 "improvement_score", "_measured_flags", "weinstein_stage", "_liq_cr")
-_TECH = ("rank", "_new", "name", "close_price", "_liq_cr", "dist_to_vstop", "momentum_score", "d49_momentum_quality",
-         "rsi_14d", "breakout_score", "crs_52w", "weinstein_stage")
+_TECH = ("rank", "ram_rank", "name", "close_price", "_liq_cr", "dist_to_vstop", "momentum_score", "d49_momentum_quality",
+         "rsi_14d", "breakout_score", "improvement_score", "crs_52w", "weinstein_stage")
 _ROCKET_WIDTHS = {"rank": 50, "_new": 55, "name": 185, "market_category": 75, "sector": 125, "composite_score": 75,
                   "momentum_score": 85, "improvement_score": 100, "_measured_flags": 125, "weinstein_stage": 90,
                   "_liq_cr": 65, "close_price": 80, "dist_to_vstop": 60, "d49_momentum_quality": 110, "rsi_14d": 50,
@@ -340,7 +343,7 @@ _FRAME_COLUMNS = ("rank", "_new", "name", "market_category", "sector", "composit
 def test_the_rockets_table_is_the_table_it_was():
     assert S.table_columns(PLAY, CORE) == _ROCKET_CORE and S.table_columns(PLAY, TECH) == _TECH
     w = S.table_widths(PLAY)
-    assert {c: w[c] for c in (*_ROCKET_CORE, *_TECH)} == _ROCKET_WIDTHS
+    assert {c: w[c] for c in _ROCKET_CORE} == {c: _ROCKET_WIDTHS[c] for c in _ROCKET_CORE}
     df = _market(7)
     members = set(df["company_id"][::2])
     for scan in S.SCANS:
@@ -353,7 +356,7 @@ def test_the_rockets_table_is_the_table_it_was():
     assert t["_new"].str.startswith("🆕").tolist() == (~want["company_id"].isin(members)).tolist()
 
 
-def test_the_compounder_columns_are_unchanged_in_both_views():
+def test_the_compounders_core_is_unchanged_and_its_technical_is_every_lists():
     assert S.table_columns(SEED, CORE) == ("rank", "_new", "name", "market_category", "sector", "composite_score",
                                            "momentum_score", "improvement_score", "_strong_q", "_cycle",
                                            "_measured_flags", "weinstein_stage", "_liq_cr")
