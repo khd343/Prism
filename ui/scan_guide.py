@@ -247,7 +247,7 @@ GUIDES = {
             "its 12-month windows.",
             "- **The backtest is in-sample.** The recipe was found and tested on the same three years, on "
             "companies that are still listed today.",
-            "- **\"Cycle ↓\"** marks stocks whose cash conversion cycle shortened by 15+ days while sales grew "
+            "- **\"Cycle ↓\"**, in 🏆 Core, marks stocks whose cash conversion cycle shortened by 15+ days while sales grew "
             "more than 15% in the same year. It did well inside this list in the backtest, but it is a reading "
             "aid — not part of the recipe or the record.",
         ],
@@ -603,10 +603,10 @@ def general_sections(scans=None) -> list:
         ("How to read the table", [
             *(f"- **{view}** — {VIEW_WHAT[view]}" for view in S.SCAN_VIEWS),
             f"- **{S.RAM_VIEW}** — every list opens on this view, sorted by RAM Rank, strongest first, no RAM last; 🏆 Core and "
-            f"📈 Technical read as before, and the order check still measures Momentum's top picks.",
+            f"📈 Technical read as before, and where a list has an order check, it still measures Momentum's top picks.",
             "- **Filters** only hide rows of the finished list. The recipe always ranks the whole market, so a "
             "filter can never put a stock into a scan.",
-            "- **🆕** — not in the scan on the last archived month-end copy. **📄** — its quarterly result was "
+            "- **🆕**, in 🏆 Core and 📈 Technical — not in the scan on the last archived month-end copy. **📄** — its quarterly result was "
             "declared since then. Both together: it entered on a fresh result; 🆕 alone: it entered on price "
             "movement.",
             "- **Category** — the company's market-cap band from the data vendor: Mega, Large, Mid, Small, Micro "

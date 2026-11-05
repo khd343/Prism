@@ -740,7 +740,7 @@ TABLE_WIDTHS = {"rank": 50, "_new": 55, "name": 175, "market_category": 75, "sec
                 "close_price": 80, "dist_to_vstop": 60, "d49_momentum_quality": 110, "rsi_14d": 50,
                 "breakout_score": 85, "crs_52w": 60,
                 # 🔢 RAM (2026-11-05), each column's header and widest value on the 4 Nov copy, by the method above: # 45 ("1000"
-                # 44), RAM Rank 75 (header 74), Symbol 105 (widest on the three lists 103), RAM % 57 (header 56), RAM 46 ("-0.12" 45).
+                # 44), RAM Rank 75 (header 74), Symbol 105 (widest on the five lists 103), RAM % 57 (header 56), RAM 46 ("-0.12" 45).
                 "#": 45, "ram_rank": 75, "symbol": 105, "ram_pct": 57, "ram_score": 46}
 # The table's views (2026-10-13), by the app-wide names (ui_group_views.VIEWS — the Deep Scanner's and
 # Market Pulse's). 🏆 Core answers "why is it in the list"; 📈 Technical answers "is now a
@@ -808,7 +808,7 @@ def ram_view_scan(scan: dict) -> dict:
 def ram_view_table(table: pd.DataFrame, df: pd.DataFrame) -> pd.DataFrame:
     """The 🔢 RAM view of a finished list (scan_table's, filters and floor applied), with RAM from the market frame beside it:
     RAM Rank low to high, no RAM last. The sort is stable, so on a tie and among the rows with no RAM the list keeps the
-    order it came in (🚀's: momentum high to low, then Rank), and a list with no RAM at all reads exactly as it came. # is
+    order it came in (🚀's and 🌬️'s: momentum high to low, then Rank; 🌱's: Rank), and a list with no RAM at all reads as it came. # is
     the place as shown, so a filter renumbers it. Symbol is the id without its exchange."""
     ram = df.reindex(columns=["company_id", "ram_rank", "ram_pct", "ram_score", "ram_date"])
     out = (table.merge(ram, on="company_id", how="left")
