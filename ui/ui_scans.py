@@ -2,13 +2,13 @@
 🎯 Scans — measured stock lists, one definition each (2026-10-06).
 
 A screener usually shows a list with no evidence. Each scan here is shown beside ITS OWN record: how
-its stocks did against the market on PRISM's saved snapshots. Only recipes that beat the market in
-every test window get a card (docs/december-2026-plan.md section 8); the rest wait as "being
-measured" until December's review.
+its stocks do against the market on the PRISM Archive's month-end copies, in windows nobody looked at
+while choosing its recipe. Candidates with no card wait as "being measured" until December's review.
+Every record starts fresh from 2026-11-05 (the operator's call; DESIGNED_ON).
 
 THREE RULES, each pinned in tests/test_scans.py:
 1. ONE DEFINITION. Each recipe is one function below. The tab calls it on the whole market and the
-   local record tool (tools/scan_records.py) imports the same function, so a record always describes
+   records job (ui/scan_records_job.py) imports the same function, so a record always describes
    exactly the stocks on screen.
 2. A RECORD NEVER OUTLIVES ITS RECIPE. scan_records.json stores a fingerprint of the logic it
    measured (the recipe plus every engine function it reads). Change the logic and the card shows no
@@ -19,7 +19,6 @@ THREE RULES, each pinned in tests/test_scans.py:
 Each window also carries what the headline leaves out (2026-10-07): how many matches had no return
 (no price at the end: delisted, suspended or missing) or were dropped as corporate actions, and a NET
 record: only matches trading NET_MIN_CR a day or more, each charged NET_COST_PP for the round trip.
-The card labels the design-period record "in-sample" in so many words: the recipe was chosen on it.
 
 Display only, like ui_movers: no widgets here. app.py owns the scan choice, the liquidity floor and
 the row click.
@@ -38,7 +37,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from config import BENCHMARK_INDICES, COLORS
+from config import BENCHMARK_INDICES, COLORS, SHARIAH_STATUSES
 from core.data_engine import price_trend_inputs, traded_value_cr   # ONE liquidity number (moved there 2026-10-09)
 from core.data_engine import ram_date_text, ram_day                 # 🔢 RAM's date words, the Tear-Sheet's own
 from core.forward_returns import MIN_HORIZON_DAYS
@@ -73,14 +72,11 @@ NET_COST_PP = 1.0
 # never flatters a scan. Each scan's main index is its `benchmark`; every declared index is recorded.
 FUND_FEE_PCT_YR = 0.2
 # "What if you held 20 of them?" (2026-10-13, fixed before the first unseen window; December plan rule
-# 26 E-F, rule 27). Measured first: on windows that do not overlap, the ORDER inside a scan barely
-# mattered (Rank's top 25 at the 38/33/73th percentile of random picks, momentum's at 93/63/83), while
-# HOW MANY you hold mattered a lot (random picks from the buyable Playbook list: 10 names 0 to +29%, 20
-# names +4.7 to +24%). So each unseen window also records HOLD_K stocks picked at random HOLD_DRAWS
+# 26 E-F, rule 27). Each unseen window also records HOLD_K stocks picked at random HOLD_DRAWS
 # times with a FIXED seed, from the matches a Rs 1 lakh account can hold — a Mega, Large, Mid or Small
 # cap (HOLD_CAPS) AND one share at most HOLD_MAX_PRICE (13 of 185 buyable stocks cost more on 2026-10-12)
 # — after NET_COST_PP: the typical result, its 10th-90th range, how often it lost money, and where the
-# top HOLD_K by momentum and by Rank land among those picks.
+# top HOLD_K by Rank lands among those picks (by momentum too, until the order check moved to RAM Rank, 2026-11-05).
 # HOLD_CAPS replaced a NET_MIN_CR (Rs 2 Cr a day) floor on this reading the same day, before any unseen
 # window (the user's call): at ~Rs 5,000 a stock, turnover is not what limits a Rs 1 lakh account. The
 # after-costs and index-fund readings keep NET_MIN_CR. Measured 2026-10-13: NEITHER rule keeps out SME
@@ -108,23 +104,44 @@ HOLD_DRAWS = 2000
 HOLD_SEED = 20261013
 # The order check (2026-10-13). Written before any unseen window as the rule that would SWITCH a scan's
 # table to momentum order; the same day, still before any result, the operator switched 🚀 and 🌬️ to
-# momentum order (SCANS `order`), so it now CHECKS the order in use, its bar unchanged: over the scan's
-# FIRST `windows` separate (non-overlapping), finished unseen windows with at least `min_n` holdable
-# matches, momentum's top HOLD_K must beat on average at least `min_avg_pct`% of the random picks AND
-# average above Rank's top HOLD_K — "held"; otherwise "did not hold", which goes to the operator as
-# evidence (nothing switches back by itself; December plan rule 27). Luck alone passes a 70% average over
-# four windows about 1 time in 12 (8.6%); "3 of 4 above half" would pass 31% of the time. 🌱 lists by
-# Rank and is not checked (its 3-year study found momentum inside it flips year to year).
+# momentum order (SCANS `order`), so it then CHECKED the order in use, its bar unchanged. Since 2026-11-05 (the
+# operator's call, before any unseen window had a result) it reads RAM Rank instead, on what Kite can trade
+# (scan_records_job.order_reading), whichever way the table lists: over the scan's FIRST `windows` separate
+# (non-overlapping), finished unseen windows with at least `min_n` such stocks, RAM Rank's top HOLD_K must beat on
+# average at least `min_avg_pct`% of the random picks AND average above Rank's top HOLD_K — "held"; otherwise "did
+# not hold", which goes to the operator as evidence (nothing switches by itself; December plan rule 27). A window
+# with no RAM has no place to count, so the check starts again from the first window that has it. Luck alone passes
+# a 70% average over four windows about 1 time in 12 (8.6%); "3 of 4 above half" would pass 31% of the time. 🌱 lists
+# by Rank and is not checked.
 ORDER_RULE = dict(scans=("playbook", "leaders"), windows=4, min_avg_pct=70.0, min_n=30)
+# Kite's buy filters beyond HOLD_CAPS, SHARIAH_MIN_CR and HOLD_MAX_PRICE, as far as PRISM can see them
+# (kite_v2/engine/select.py and rules.py read zone_lo, zone_hi and stages the same way): an NSE stock, 0-25% above its
+# V-Stop inclusive, Weinstein stage 1 or 2, in the codes the feed writes (playbook_feed_job.STAGE_CODES).
+ORDER_EXCHANGE = "NSE"
+ORDER_ZONE = (0.0, 25.0)
+ORDER_STAGES = ("1", "2")
+ORDER_NOT_IN_DATA = "The price band, ASM, GSM and the SME lot size are not in PRISM's data."
+ORDER_FROM_RAM = "A window on a copy with no RAM does not count, so the check counts from the first window that has it"
+# On 🚀 the check reads list C, the ladder's last layer, because that is the list Kite trades from (the operator, 2026-11-05:
+# "only on list C ... and that also after filter"). The rest of 🚀's record stays on the 🚀 list until list C has a record of
+# its own, in May. Every other checked scan reads its own matches.
+ORDER_LIST = {"playbook": "price_only"}
+ORDER_ON_C = "On 🚀 it reads list C, the list Kite trades from, not the 🚀 list."
+# The seal (Kite's addendum 37, "Sealed until then"): before its one sealed run, nothing may work out a book that orders by RAM
+# over a session from 30 Nov 2026, in any code, and a figure of one, computed or seen, makes that paper test no evidence. RAM's
+# top HOLD_K among what Kite can trade is such a book. So while this is True the job draws nothing and records no figure for the
+# check, and the card shows none. Set it to False only after that run's read-out, and rebuild the windows then.
+ORDER_SEALED = True
+ORDER_SEALED_WORDS = "Its figures stay sealed until Kite's one sealed run, since they would show that test's result early."
 # The revenue-led check (registered 2026-10-15, before any unseen window has a result). Inside 🚀, do the matches
 # that are also revenue_led (the test 🌱 uses) beat the rest? A Kite-side plan proposed trading that in Kite's window
 # 2; the frozen go-rule needs the SAME design in two windows in a row, so the operator kept Kite as it is and chose to
 # measure the idea here instead. Every unseen window records both arms (scan_records_job.revenue_led_reading). It
 # HOLDS if, over the scan's first `windows` separate finished windows with both arms at least `min_n`, the
 # revenue-led matches beat the rest by at least `min_gap_pp` on the mean AND on the median in EVERY one; otherwise
-# "did not hold", decided once. Three monthly windows because the archive keeps month-end copies: 31 Oct -> 30 Nov
-# -> 31 Dec -> 31 Jan cover the months of Kite's windows 1 and 2. In-sample before registering (data to 12 Oct):
-# +2.0 / +0.3 / +6.0 points on the mean, so the middle window would already miss this bar. It decides nothing by
+# "did not hold", decided once. Three monthly windows because the archive keeps month-end copies. Registered on 31 Oct
+# -> 30 Nov -> 31 Dec -> 31 Jan, the months of Kite's windows 1 and 2; the fresh start of 2026-11-05 (DESIGNED_ON) moved it
+# a month on, to 30 Nov -> 31 Dec -> 31 Jan -> 28 Feb, so it no longer reads November. It decides nothing by
 # itself: nothing reaches the list, the feed or Kite; a hold makes it a candidate for Kite's next design, tested in
 # that design's own windows.
 REVENUE_LED_RULE = dict(scans=("playbook",), windows=3, min_gap_pp=1.0, min_n=30)
@@ -133,9 +150,12 @@ REVENUE_LED_RULE = dict(scans=("playbook",), windows=3, min_gap_pp=1.0, min_n=30
 # is recorded beside it, but the rules read the month without it), and a month is written final only once every fall
 # it names is checked (scan_records_job), so neither rule ever decides on a month with an unchecked named fall.
 RECORD_VERSION = 2
-# The day the recipes were chosen. Every window that STARTS on or after it is out of sample: data
-# nobody looked at while choosing. Windows before it are the design-period record (in sample).
-DESIGNED_ON = "2026-10-06"
+# The day every record starts (the operator, 2026-11-05: "Remove old record of scan record completely, and from today is
+# the fresh"). Only a month-end copy dated after it can start a window, so the first is the 30 Nov 2026 copy and the
+# 31 Oct one never starts any: data nobody looked at while choosing the recipes, which were chosen on 6 and 7 Oct. The records
+# from before it stay in git's history, at b19d485. A scan that needs a later date, after a recipe change, carries its own
+# `designed_on` (scan_records_job.check_recipe_dates).
+DESIGNED_ON = "2026-11-05"
 
 
 def _num(df: pd.DataFrame, col: str) -> pd.Series:
@@ -154,9 +174,7 @@ def playbook_shortlist(df: pd.DataFrame) -> pd.Series:
     """Momentum and Breakout in the market's top third, a 🔥 Strong Quarter (the engine's own
     definition; a quarter that cannot be judged is not strong), Improvement in the top half, and the
     price at or above its stop. A stock with no measurable Improvement leg never passes on the neutral
-    fill (2026-10-15). In-sample record (re-measured 2026-10-15 with the corrected inputs,
-    ui/scan_records.json): +7.1 / +10.7 / +3.3 / +3.1pp against the market median, 62-70% of matches
-    beating it."""
+    fill (2026-10-15)."""
     return playbook_conditions(df).all(axis=1)
 
 
@@ -210,41 +228,26 @@ def revenue_led(df: pd.DataFrame) -> pd.Series:
 def compounder_candidates(df: pd.DataFrame) -> pd.Series:
     """Profit growth AND margin widening over the last year, each in the top 40% of the stocks that can
     be judged on it (whole market), AND revenue-led (sales up more than 10%, profit growing faster).
-
-    Backtest of 2026-10-07 (PRISM's export of 2026-10-06 for the fiscal history, joined to StockScans
-    returns, 2,712 stocks; traits as they stood in FY23, public by mid-2023): matches compounded
-    +20.4%/yr against +4.4%/yr for the rest from Oct 2023 to Oct 2026. Year by year, each judged only
-    on results public at its start, points above the market's median stock: 23→24 +31.2 against -6.8,
-    24→25 +13.5 against -2.6, 25→26 +23.6 against -2.2. The same data reproduces the study in
-    docs/december-2026-plan.md section 1 to the stock (358 vs 1,102 matches), and without the
-    revenue-led leg the edge all but vanishes, so it is part of the recipe, not an option."""
+    Revenue-led is part of the recipe, not an option."""
     profit = _growth(df, "pat", "pat_1yb")
     margin = _num(df, "opm") - _num(df, "opm_1yb")
     # Top 40% = percentile rank ABOVE 0.6: of 10 stocks, ranks 7-10 (rank 6 sits at exactly 0.6). The
-    # percentiles rank the whole market BEFORE the revenue-led leg narrows it, as in the backtest.
+    # percentiles rank the whole market BEFORE the revenue-led leg narrows it.
     top = (profit.rank(pct=True) > 0.6) & (margin.rank(pct=True) > 0.6)
     return (top & revenue_led(df)).fillna(False).astype(bool)
 
 
 # ── Why a stock LEFT 🌱 (2026-10-07) ──────────────────────────────────────────────────────────────
-# Measured in the yearly backtest (December section 9c): a 🌱 stock judged on its NEXT annual results,
-# points against the market's median stock the following year — still revenue-led +9.8 / +26.6, growing
-# but no longer revenue-led +2.4 / +0.5, profit fell -11.1 / -8.1. Only the first two reasons below are
-# measured; the others say so. Order = how bad the news is: a stock that fell AND stopped being
-# revenue-led is listed under "profit fell".
+# Order = how bad the news is: a stock that fell AND stopped being revenue-led is listed under "profit fell".
 EXIT_REASONS = {
-    "profit_fell": ("🔴", "profit fell",
-                    "measured: a 🌱 stock whose next annual profit fell trailed the market's median "
-                    "stock by 8 to 11 points the following year"),
+    "profit_fell": ("🔴", "profit fell", "its latest annual profit is below the year before"),
     "not_revenue_led": ("🟠", "no longer revenue-led",
-                        "measured: profit did not fall, but sales are no longer up 10%+ with profit "
-                        "growing faster; its edge was gone (+2.4 and +0.5 points against +9.8 and +26.6 "
-                        "for those that stayed revenue-led)"),
+                        "profit did not fall, but sales are no longer up 10%+ with profit growing faster"),
     "rank_slipped": ("⚪", "others grew faster",
-                     "not measured: still revenue-led with profit up, but its profit growth or margin "
-                     "change slipped out of the market's top 40%"),
-    "unjudged": ("⚪", "a figure is missing", "not measured: a number the recipe needs is missing"),
-    "gone": ("⚪", "not in today's data", "not measured: delisted, suspended or renamed"),
+                     "still revenue-led with profit up, but its profit growth or margin change slipped out of "
+                     "the market's top 40%"),
+    "unjudged": ("⚪", "a figure is missing", "a number the recipe needs is missing"),
+    "gone": ("⚪", "not in today's data", "delisted, suspended or renamed"),
 }
 
 
@@ -264,11 +267,9 @@ def cycle_shortened(df: pd.DataFrame) -> pd.Series:
     the P&L 🌱 is judged on — supply-chain velocity, the December candidate, as a READING AID on the 🌱
     table (not part of its recipe or record).
 
-    Measured 2026-10-07 over three yearly windows: inside 🌱, same-year velocity beat the market by +24
-    to +54 points, ahead of 🌱 without it every year. A YEAR-OLD cash-cycle improvement did not help
-    (+9.4 vs +15.9 and +32.0 vs +32.0), and the vendor rolls the balance sheet months after the P&L
-    (cf_year_lag == 1 on ~83% of stocks in October). So the ✓ needs the balance sheet ON the P&L's year
-    (cf_year_lag == 0): a lagging or undecided stock gets no ✓ until its balance sheet rolls."""
+    The vendor rolls the balance sheet months after the P&L (cf_year_lag == 1 on ~83% of stocks in
+    October), so the ✓ needs the balance sheet ON the P&L's year (cf_year_lag == 0): a lagging or undecided
+    stock gets no ✓ until its balance sheet rolls."""
     same_year = _num(df, "cf_year_lag") == 0
     change = _num(df, "ccc") - _num(df, "ccc_1yb")
     sales = _growth(df, "revenue", "revenue_1yb")
@@ -276,9 +277,7 @@ def cycle_shortened(df: pd.DataFrame) -> pd.Series:
 
 
 def leading_sector_stocks(df: pd.DataFrame) -> pd.Series:
-    """Every stock in the leading sectors — the whole sector, not only its leaders. In-sample record
-    (2026-10-06, ui/scan_records.json): +3.9 / +11.2 / +2.4 / +3.4pp against the market median,
-    58-67% of matches beating it."""
+    """Every stock in the leading sectors — the whole sector, not only its leaders."""
     if "sector" not in df.columns:
         return pd.Series(False, index=df.index)
     return df["sector"].isin(leading_sectors(df)).astype(bool)
@@ -322,15 +321,15 @@ SCANS = (
          skip=("MEASURES",),
          recipe="Every stock in the 5 sectors (of 5+ stocks) with the most stocks near their 52-week "
                 "high and reporting strong quarters, as ranked on 📈 Sectors."),
-    # 🌱 (2026-10-07): a LONG-horizon list. Its record is a 3-year backtest, not saved windows, so its
-    # unseen windows are 12 months long (`horizon_days`) and start after its own design date.
+    # 🌱 (2026-10-07): a LONG-horizon list, so its unseen windows are 12 months long (`horizon_days`).
     dict(key="compounder", emoji="🌱", name="Compounder Candidates", mask=compounder_candidates,
          benchmark="NSE:NS250MQ100",                  # the plan's main test for 🌱
-         uses=(revenue_led, _growth, _num), designed_on="2026-10-07", horizon_days=365,
-         # One unseen window a YEAR, starting each October (2026-10-07): annual results are public by
-         # then, as in the yearly backtest. A window from every month-end would put ~12 bars on the card
+         uses=(revenue_led, _growth, _num), horizon_days=365,
+         # One unseen window a YEAR, starting each November (the operator, 2026-11-05: October until then, but the record's
+         # fresh start would have made its first window wait for October 2027; annual results are just as public by
+         # November). A window from every month-end would put ~12 bars on the card
          # by 2028 that overlap by 11 months — one year of evidence that looks like twelve.
-         start_month=10,
+         start_month=11,
          # "Cycle ↓" (2026-10-07): a reading aid, not part of the recipe or record; its 60px come from
          # Stock, Sector, Score, ⚠ flags and Trend so the table keeps the laptop budget (2026-10-14, with
          # Category: names in full 46%, sectors 37%, from 52% and 52% — 🌱 carries two extra columns; each
@@ -341,20 +340,19 @@ SCANS = (
          # recipe, so not in the fingerprint (which follows mask, uses and inputs only).
          exit_reason=compounder_exit_reason,
          recipe="Sales up more than 10% with profit growing faster, and profit growth and margin "
-                "widening each in the top 40% of the market. Starting points for research: better odds, "
-                "not a promise."),
+                "widening each in the top 40% of the market. Starting points for research, not a promise."),
 )
 
 
 # ── The 🚀 ladder (2026-10-30, the operator's call) ─────────────────────────────────────────────────────────────
 # Two wider lists of 🚀's own recipe, shown on its table as plain lists: B drops the 🔥 Strong Quarter, C keeps the
-# price legs only. They are exactly the L0/L1/L2 lists of Kite's frozen ladder test (Kite v2 addendum 36), so B and C
-# carry NO record: they are no scan — not in SCANS, so scan_records_job, tools/scan_records.py, the Playbook feed,
-# Kite's v2 lists and scan_records.json never see them (tests/test_scan_ladder.py). A record would publicly score the
-# comparison that test must judge blind until it is read in May 2027. Tightest first; `conditions` are the columns of
+# price legs only. They are exactly the L0/L1/L2 lists of Kite's frozen ladder test (Kite v2 addendum 36), whose comparison
+# addendum (37) no longer runs, and B and C carry NO record of their own: they are no scan — not in SCANS, so the Playbook feed,
+# Kite's v2 lists and the records' windows never list them (tests/test_scan_ladder.py). The one exception, since 2026-11-05, is
+# the order check, sealed, which reads C's mask (ORDER_LIST). Tightest first; `conditions` are the columns of
 # playbook_conditions, so the 🚀 layer (all six) is the shortlist itself. `note` is the line under the control: ONE
 # line on a 1536px laptop (≤ 148 characters, measured 2026-10-30), with no addendum number and no promise of a record.
-_NO_RECORD = "No record of its own: Kite's ladder test judges these lists in May 2027."
+_NO_RECORD = "No record of its own: the card and its record are the 🚀 list's."
 PLAYBOOK_LAYERS = (
     dict(key="playbook", tag="🚀", label="🚀 Playbook", note="",
          conditions=("momentum", "breakout", "quarter", "improvement", "evidence", "stop")),
@@ -404,7 +402,7 @@ def playbook_layer_scan(scan: dict, key: str) -> dict:
 
 
 def scan_designed_on(scan: dict) -> str:
-    """The day this scan's recipe was chosen: windows starting after it are out of sample."""
+    """The day this scan's record starts: only a window starting after it counts."""
     return scan.get("designed_on", DESIGNED_ON)
 
 
@@ -416,14 +414,6 @@ def scan_horizon(scan: dict) -> int:
 def scan_start_month(scan: dict):
     """The one calendar month this scan's unseen windows start in (1-12), or None: every month-end."""
     return scan.get("start_month")
-
-
-def measured_on_snapshots(scan: dict) -> bool:
-    """True when the scan's design-period record is measured on the saved snapshots by the local
-    tools/scan_records.py, whose windows are MIN_HORIZON_DAYS long. A longer-horizon scan (🌱, a year)
-    carries a study instead: a 25-day window is no evidence for it, and writing one would overwrite the
-    study (2026-10-08)."""
-    return scan_horizon(scan) <= MIN_HORIZON_DAYS
 
 
 def _month_end(year: int, month: int) -> date:
@@ -756,7 +746,8 @@ TECHNICAL_COLUMNS = ("rank", "_new", "name", "close_price", "_liq_cr", "dist_to_
 # own, by RAM Rank, strongest first, no RAM last: the 🚀 Playbook, B and C first, 🌬️ and 🌱 the same evening. Core and Technical
 # stay as they are, on every list, and one choice of a view carries from list to list. Price
 # is there because one share must fit the account. Display only: only the tab reads this view and its order, and no
-# list, record, order check, feed or fingerprint moves (tests/test_ram_display.py). It takes the 1,030px with nothing
+# list, record, feed or fingerprint moves (tests/test_ram_display.py); the order check sorts RAM Rank on its own frame
+# (scan_records_job.order_reading). It takes the 1,030px with nothing
 # shrunk: every name on the five lists fits Stock 312 (5 Nov: 🌱's longest needs 310), and Sector 170 shows 79-82% of its
 # names in full where 125 showed 73% (seen cut in the browser: "Capital Goods - Elec", "Air Transport Servic"). On 🌬️ it
 # shows 57%: one long name, "E-Commerce/App based Aggregator", fills 32 of its 74 rows that day, and the five sectors change.
@@ -925,7 +916,7 @@ def left_summary(left: pd.DataFrame) -> str:
 
 
 def left_legend() -> str:
-    """One line per reason: its mark, its words and whether it is measured."""
+    """One line per reason: its mark, its words and what it means."""
     return "\n".join(f"- {m} **{lab}** — {why}" for m, lab, why in EXIT_REASONS.values())
 
 
@@ -939,11 +930,11 @@ def table_config(members_date_label: str, scan: dict = None) -> dict:
         "rank": cc.NumberColumn("Rank", format="%.0f", width=w["rank"], help=(
             _UNRECORDED_RANK_TIP if "_layer" in (scan or {}).get("extra", ()) else      # 🚀's B or C
             "PRISM's overall rank — click this header, then Sort ascending, to list by it. The list is "
-            "sorted by Momentum, high to low (since 2026-10-13); the card's order check records whether "
-            "that order keeps beating random picks. Inside this scan the top of the Rank did not beat the "
-            "rest in the 2026-10-06 test, so every match is the scan." if momentum_ordered(scan or {}) else
-            "PRISM's overall rank. The list is sorted by it for reading only: inside this scan the top of "
-            "the Rank did not beat the rest in the 2026-10-06 test, so every match is the scan.")),
+            "sorted by Momentum, high to low (since 2026-10-13); " + (
+                "the card's order check reads RAM Rank, and its figures are sealed for now" if ORDER_SEALED else
+                "the card's order check records whether RAM Rank's order keeps beating random picks") +
+            ". Every match is the scan." if momentum_ordered(scan or {}) else
+            "PRISM's overall rank. The list is sorted by it for reading only: every match is the scan.")),
         "_new": cc.TextColumn("New", width=w["_new"],
                               help=f"🆕 = not in this scan {since}. 📄 = its quarterly result was declared "
                                    f"since then, so its Strong Quarter and Improvement readings are fresh. "
@@ -954,8 +945,8 @@ def table_config(members_date_label: str, scan: dict = None) -> dict:
         "_layer": cc.TextColumn("List", width=w["_layer"], help=(
             "The tightest of the three lists the stock is in: 🚀 = the whole 🚀 recipe · B = all of it but the 🔥 "
             "Strong Quarter · C = price only — Momentum and Breakout in the top third of the market and the price "
-            "above its stop. Each list holds the one before it. B and C have no record of their own: Kite's ladder "
-            "test compares the three lists blind until May 2027, and a record here would score them early.")),
+            "above its stop. Each list holds the one before it. B and C have no record of their own: the card and its "
+            "record are the 🚀 list's.")),
         "name": cc.TextColumn("Stock", width=w["name"]),
         # "Category" (2026-10-14): the user's word and the data vendor's own ("Market Category"); the Deep
         # Scanner shows the same column as Market Cap.
@@ -997,10 +988,8 @@ def table_config(members_date_label: str, scan: dict = None) -> dict:
         "_cycle": cc.TextColumn(
             "Cycle ↓", width=w["_cycle"],
             help="✓ = cash conversion cycle down 15+ days with sales up more than 15%, both in the same "
-                 "year as the profit and sales 🌱 is judged on (supply-chain velocity). Inside 🌱, stocks "
-                 "like this beat the market by +24 to +54 points in each of three years (Oct 2023 to "
-                 "Oct 2026), ahead of 🌱 stocks without it (in-sample). A year-old improvement did not help, "
-                 "so a company whose balance sheet is still last year's stays blank until it updates. A "
+                 "year as the profit and sales 🌱 is judged on (supply-chain velocity). A company whose "
+                 "balance sheet is still last year's stays blank until it updates. A "
                  "reading aid, not part of 🌱's recipe or record."),
         "_liq_cr": cc.NumberColumn(LIQUIDITY_HEADER, format="%.2f", width=w["_liq_cr"],
                                    help="Average daily traded value over 20 days (average volume × price), "
@@ -1035,8 +1024,8 @@ def _range(vals, fmt) -> str:
 
 def non_overlapping(ws) -> int:
     """The most windows that share no days (2026-10-13). A window ending on the day the next starts is
-    separate — the first's end price is the second's start. Greedy by earliest end, which is optimal. The
-    design record's 4 windows from 3 snapshot dates are 2 independent stretches, not 4 results."""
+    separate — the first's end price is the second's start. Greedy by earliest end, which is optimal. Two
+    windows from one start date share days: one stretch of the market, not two results."""
     n, last = 0, ""
     for w in sorted(ws, key=lambda w: (w["end"], w["start"])):
         if w["start"] >= last:
@@ -1047,10 +1036,12 @@ def non_overlapping(ws) -> int:
 def order_rule(ws) -> dict:
     """ORDER_RULE applied to a scan's unseen windows: state 'pending' until it has ORDER_RULE['windows']
     separate (non-overlapping, earliest end first — the same greedy choice as non_overlapping), finished
-    windows carrying a hold reading of at least min_n matches; then 'held' or 'did not hold' on those
-    first windows only, so a later window can never reopen it. counted = windows that count so far."""
-    usable = [w for w in ws if w.get("final") and int((w.get("hold") or {}).get("n", 0)) >= ORDER_RULE["min_n"]
-              and w["hold"].get("momentum_pct") is not None and w["hold"].get("rank_pct") is not None]
+    windows whose order reading has at least min_n stocks and places both RAM Rank and Rank; then 'held' or
+    'did not hold' on those first windows only, so a later window can never reopen it. A window from before the
+    reading, or from a copy with no RAM, does not count. counted = windows that count so far."""
+    read = lambda w: w.get("order") or {}
+    usable = [w for w in ws if w.get("final") and int(read(w).get("n", 0)) >= ORDER_RULE["min_n"]
+              and read(w).get("ram_pct") is not None and read(w).get("rank_pct") is not None]
     picked, last = [], ""
     for w in sorted(usable, key=lambda w: (w["end"], w["start"])):
         if w["start"] >= last and len(picked) < ORDER_RULE["windows"]:
@@ -1058,10 +1049,10 @@ def order_rule(ws) -> dict:
             last = w["end"]
     out = dict(counted=len(picked), state="pending")
     if len(picked) == ORDER_RULE["windows"]:
-        mom = float(np.mean([float(w["hold"]["momentum_pct"]) for w in picked]))
-        rank = float(np.mean([float(w["hold"]["rank_pct"]) for w in picked]))
-        held = mom >= ORDER_RULE["min_avg_pct"] and mom > rank
-        out.update(state="held" if held else "did not hold", mom_avg=mom, rank_avg=rank)
+        ram = float(np.mean([float(w["order"]["ram_pct"]) for w in picked]))
+        rank = float(np.mean([float(w["order"]["rank_pct"]) for w in picked]))
+        held = ram >= ORDER_RULE["min_avg_pct"] and ram > rank
+        out.update(state="held" if held else "did not hold", ram_avg=ram, rank_avg=rank)
     return out
 
 
@@ -1086,11 +1077,20 @@ def revenue_led_rule(ws) -> dict:
     return out
 
 
+def order_pool_words() -> str:
+    """What the order check's pool passes, from the settings the job reads: one line for the card and the guide."""
+    first, last = (str(HOLD_CAPS[i]).replace(" Cap", "") for i in (0, -1))
+    return (f"{SHARIAH_STATUSES[0]}, {ORDER_EXCHANGE}, {first} to {last}, ₹{SHARIAH_MIN_CR:g} Cr a day, up to "
+            f"₹{HOLD_MAX_PRICE:,.0f} a share, {ORDER_ZONE[0]:g}–{ORDER_ZONE[1]:g}% above the V-Stop, "
+            f"Stage {' or '.join(ORDER_STAGES)}")
+
+
 def _hold_line(scan: dict, ws, c: dict, esc) -> str:
     """Under the unseen record: per window, HOLD_K matches a Rs 1 lakh account can hold, picked at random
-    — the typical result after costs and its 10th-90th range — and where momentum's and Rank's top HOLD_K
-    land among those picks; then, for the scans ORDER_RULE checks, where the check stands. Empty until a
-    window carries the reading."""
+    — the typical result after costs and its 10th-90th range — and where Rank's top HOLD_K lands among those
+    picks; then, for the scans ORDER_RULE checks, where RAM Rank's and Rank's top HOLD_K land among random picks of
+    what Kite can trade, "–" for a window with no such reading, and where the check stands. Empty until a window
+    carries the reading."""
     rows = [w for w in ws if "median_pp" in (w.get("hold") or {})]
     if not rows:
         return ""
@@ -1099,27 +1099,33 @@ def _hold_line(scan: dict, ws, c: dict, esc) -> str:
                      f'{float(w["hold"]["p90_pp"]):+.1f})' for w in rows)
     loss = " / ".join(f'{int(w["hold"]["loss_pct"])}%' for w in rows)
     pct = lambda v: "–" if v is None else f"{int(v)}%"
-    mom = " / ".join(pct(w["hold"].get("momentum_pct")) for w in rows)
     rnk = " / ".join(pct(w["hold"].get("rank_pct")) for w in rows)
     h0 = rows[0]["hold"]
     names = [str(v).replace(" Cap", "") for v in h0.get("caps", HOLD_CAPS)]
     caps = ", ".join(names[:-1]) + " and " + names[-1] if len(names) > 1 else "".join(names)
     rule = note = ""
     if scan.get("key") in ORDER_RULE["scans"]:
-        # 2026-11-05: every list opens on 🔢 RAM, so the sentence says whose order is whose; the check reads momentum's.
-        note = (f' 🏆 Core and 📈 Technical list by momentum since 13 Oct, chosen before any of these windows, and {RAM_VIEW} by '
-                f'RAM Rank; the order check records whether momentum\'s order keeps beating random picks — it holds if its top {k} '
-                f'beats {ORDER_RULE["min_avg_pct"]:.0f}%+ of them on average over {ORDER_RULE["windows"]} '
-                f'separate windows, and beats Rank\'s.')
+        # 2026-11-05: every list opens on 🔢 RAM and the check reads RAM Rank whichever way the table lists, so the sentence says
+        # whose order is whose.
+        on_c = f"{ORDER_ON_C} " if scan.get("key") in ORDER_LIST else ""
+        note = (f' 🏆 Core and 📈 Technical list by momentum since 13 Oct and {RAM_VIEW} by RAM Rank; the order check reads RAM Rank. '
+                f'What Kite can trade: {order_pool_words()}. {ORDER_NOT_IN_DATA} {on_c}'
+                f'The check holds if RAM Rank\'s top {k} beats {ORDER_RULE["min_avg_pct"]:.0f}%+ of random picks of those '
+                f'stocks on average over {ORDER_RULE["windows"]} separate windows, and beats Rank\'s. {ORDER_FROM_RAM}, and '
+                f'only with {ORDER_RULE["min_n"]}+ of those stocks.' + (f' {ORDER_SEALED_WORDS}' if ORDER_SEALED else ''))
+        placed = lambda key: " / ".join(pct((w.get("order") or {}).get(key)) for w in rows)
         v = order_rule(ws)
-        rule = (f' · Order check: {v["counted"]} of {ORDER_RULE["windows"]} separate windows in'
-                if v["state"] == "pending" else
-                f' · Order check after {ORDER_RULE["windows"]} separate windows: momentum order {v["state"]} '
-                f'(its top {k} beat {v["mom_avg"]:.0f}% of random picks on average, Rank\'s '
-                f'{v["rank_avg"]:.0f}%)')
+        rule = " · Order check: sealed until Kite's sealed run" if ORDER_SEALED else (
+                f' · Among what Kite can trade, RAM Rank\'s top {k} beat {placed("ram_pct")} of random picks, '
+                f'Rank\'s top {k} {placed("rank_pct")}'
+                + (f' · Order check: {v["counted"]} of {ORDER_RULE["windows"]} separate windows in'
+                   if v["state"] == "pending" else
+                   f' · Order check after {ORDER_RULE["windows"]} separate windows: RAM Rank\'s order {v["state"]} '
+                   f'(its top {k} beat {v["ram_avg"]:.0f}% of random picks on average, Rank\'s '
+                   f'{v["rank_avg"]:.0f}%)'))
     return (f'<div style="font-size:0.7rem;color:{c["text_secondary"]};margin-top:5px;">Holding {k} of them, '
             f'picked at random: {esc(res)} after costs · lost money in {esc(loss)} of picks · '
-            f'momentum\'s top {k} beat {esc(mom)} of them, Rank\'s top {k} {esc(rnk)}{esc(rule)}</div>'
+            f'Rank\'s top {k} beat {esc(rnk)} of them{esc(rule)}</div>'
             f'<div style="font-size:0.66rem;color:{c["text_muted"]};margin-top:2px;">From the {esc(caps)} cap '
             f'matches with one share at most ₹{float(h0["max_price"]):,.0f} (what ₹1 lakh across {k} can hold, '
             f'whatever they trade a day), {int(h0["draws"]):,} random picks each window with a fixed seed, a '
@@ -1161,18 +1167,18 @@ def _overlap_note(ws, sep: str, end: str = "") -> str:
     return f"{sep}{k} non-overlapping{end}" if k < len(ws) else ""
 
 
-def _bars(ws, c, esc, out_of_sample: bool = False) -> str:
-    """One bar per window: height by size (12 points fills it), green above the median, red below. An
-    unseen window still RUNNING (it ends on the latest copy, which changes until its month is over) reads
+def _bars(ws, c, esc) -> str:
+    """One bar per window: height by size (12 points fills it), green above the median, red below. A
+    window still RUNNING (it ends on the latest copy, which changes until its month is over) reads
     "so far" under its bar (2026-10-15), so a reading in progress never looks like a result. That line is kept
     under every bar of such a row, blank under a finished one, so the bars still stand on one baseline."""
     out = ""
-    tagged = out_of_sample and any(not w.get("final") for w in ws)
+    tagged = any(not w.get("final") for w in ws)
     for w in ws:
         v = float(w["median_excess_pp"])
         h = 6 + round(28 * min(abs(v) / 12.0, 1.0))
         col = c["green"] if v > 0 else c["red"]
-        running = out_of_sample and not w.get("final")
+        running = not w.get("final")
         tip = (f'{w["start"]} → {w["end"]}, {int(w["days"])} days, {int(w["n"])} stocks'
                + (", still running" if running else ""))
         out += (f'<div style="display:flex;flex-direction:column;align-items:center;justify-content:flex-end;'
@@ -1239,21 +1245,22 @@ def _fall_word(w: dict, sid: str) -> str:
     return "checked: no demerger" if sid in (w.get("checked") or []) else "to check"
 
 
-def _first_unseen_due(scan: dict = None) -> str:
-    """When the first unseen window can exist: a start must be a month-end copy taken after the scan's
-    design date (in the scan's start month, if it has one), and a window needs the scan's horizon — so
-    about that many days after that first start. The year is shown when it differs from the design
-    year."""
-    scan = scan or {}
+def _first_unseen_start(scan: dict) -> date:
+    """The month-end the first unseen window can start on: the first after the scan's record date (scan_designed_on), in its
+    start month if it has one. A calendar month-end: the archive dates its copy by the month's last trading day."""
     d = date.fromisoformat(scan_designed_on(scan))
     m = scan_start_month(scan)
-    start = _month_end(d.year, d.month)
-    if m is not None:
-        start = _month_end(d.year, m)
-        if start <= d:
-            start = _month_end(d.year + 1, m)
-    due = start + timedelta(days=scan_horizon(scan))
-    return f"{due:%d %b %Y}" if due.year != d.year else f"{due:%d %b}"
+    start = _month_end(d.year, m or d.month)
+    if start > d:
+        return start
+    return _month_end(d.year + 1, m) if m else _month_end(d.year, d.month + 1)
+
+
+def no_record_words(scan: dict) -> str:
+    """What a card says before its scan has any window (2026-11-05). The year is shown when it differs from the record date's."""
+    start = _first_unseen_start(scan)
+    day = f"{start:%d %b}" if start.year == date.fromisoformat(scan_designed_on(scan)).year else f"{start:%d %b %Y}"
+    return f"No record yet. The first window starts on the {day} copy."
 
 
 def _extras(ws, c, esc) -> str:
@@ -1338,119 +1345,33 @@ def _vs_index(scan: dict, ws, c: dict, esc) -> str:
             f'{float(v0["fee_pct_yr"]):.1f}%/yr fund fee. Hover a number for every index.</div>')
 
 
-def _year_bars(years: list, cleanest: str, c: dict, esc) -> str:
-    """One bar per one-year window: the matches' median return above the market's median stock, in
-    points. Green above, red below; scaled to the largest year, so the years compare by height. The
-    cleanest test carries a ✦."""
-    out = ""
-    top = max([abs(float(y["match_excess_pp"])) for y in years] + [1.0])
-    for y in years:
-        v = float(y["match_excess_pp"])
-        col = c["green"] if v > 0 else c["red"]
-        h = 6 + round(28 * abs(v) / top)
-        mark = " ✦" if y["label"] == cleanest else ""
-        tip = (f'{y["window"]}, judged on {y["known"]} results: matches {v:+.1f} vs rest '
-               f'{float(y["rest_excess_pp"]):+.1f} points above the market median · beat it '
-               f'{int(y["match_beat_pct"])}% vs {int(y["rest_beat_pct"])}% · {int(y["n_match"])} vs '
-               f'{int(y["n_rest"])} stocks')
-        out += (f'<div style="display:flex;flex-direction:column;align-items:center;justify-content:flex-end;'
-                f'min-width:46px;" title="{esc(tip)}">'
-                f'<div style="width:14px;height:{h}px;background:{col};border-radius:3px;"></div>'
-                f'<div style="font-size:0.78rem;font-weight:800;color:{col};margin-top:3px;">{v:+.1f}</div>'
-                f'<div style="font-size:0.6rem;color:{c["text_muted"]};">{esc(y["label"])}{mark}</div></div>')
-    return out
-
-
-def year_claims(years: list) -> tuple:
-    """(years ahead, of how many, the controls that held in EVERY year) — computed from the record, so
-    the card never claims more than it measured. A control a year did not measure (no momentum before
-    the first window) is judged on the years that did."""
-    ahead = sum(float(y["match_excess_pp"]) > float(y["rest_excess_pp"]) for y in years)
-    controls = []
-    if years and all(all(float(m) > float(r) for m, r in y["size_pp"].values()) for y in years):
-        controls.append("inside every size group")
-    if years and all(float(y["match_vs_industry_pp"]) > float(y["rest_vs_industry_pp"]) for y in years):
-        controls.append("against its own industry")
-    held = [float(y["momentum_held_pp"]) for y in years if y.get("momentum_held_pp") is not None]
-    if held and all(v > 0 for v in held):
-        controls.append("with last year's momentum held")
-    return ahead, len(years), controls
-
-
-def _study_body(scan: dict, rec: dict, c: dict, esc) -> str:
-    """A record that is a STUDY, not saved windows (🌱, 2026-10-07): traits known at the start, returns
-    over the years after. Named in-sample (the recipe was chosen on it), its caveats on the card, and
-    the share of matches that did NOT double, so 'better odds' never reads as 'will compound'. When the
-    study has a year-by-year record, one bar per year (each judged only on results public at its
-    start) with the controls that held in every year. Then the out-of-sample section: the scan's own
-    long windows, or when the first is due."""
-    st_ = rec["study"]
-    muted = f'font-size:0.66rem;color:{c["text_muted"]};margin-top:2px;'
-    years = st_.get("years") or []
-    cleanest = (st_.get("cleanest") or {}).get("label", "")
-    if years:
-        bars = _year_bars(years, cleanest, c, esc)
-        bars_tip = "Each year: matches' median return above the market's median stock, in points"
-    else:
-        bars, bars_tip = "", ""
-        for label, v in (("Matches", st_["match_cagr_pct"]), ("Rest", st_["rest_cagr_pct"])):
-            col = c["green"] if v > 0 else c["red"]
-            h = 6 + round(28 * min(abs(v) / 12.0, 1.0))
-            bars += (f'<div style="display:flex;flex-direction:column;align-items:center;justify-content:flex-end;'
-                     f'min-width:46px;"><div style="width:14px;height:{h}px;background:{col};border-radius:3px;">'
-                     f'</div><div style="font-size:0.78rem;font-weight:800;color:{col};margin-top:3px;">'
-                     f'{v:+.1f}%</div><div style="font-size:0.6rem;color:{c["text_muted"]};">{label}</div></div>')
-    body = (f'<div style="display:flex;flex-wrap:wrap;gap:6px 14px;align-items:flex-end;justify-content:space-between;">'
+def _unseen_body(scan: dict, unseen: list, c: dict, esc) -> str:
+    """The record, once it has a window: one row, the words on the left and a bar per window on the right, so the card is
+    about half the height of a stacked one and the list starts on the first screen (2026-10-07); then each window's other
+    readings."""
+    since = f"{date.fromisoformat(scan_designed_on(scan)):%d %b %Y}"
+    u_beat = _range([int(w["beat_pct"]) for w in unseen], "{}") + "%"
+    bars_tip = "Points above the market median in each window, before costs; hover a bar for its dates and size."
+    return (f'<div style="display:flex;flex-wrap:wrap;gap:6px 14px;align-items:flex-end;justify-content:space-between;">'
             f'<div style="flex:1 1 200px;min-width:0;">'
             f'<div style="font-size:0.66rem;font-weight:700;color:{c["text_muted"]};letter-spacing:.3px;">'
-            f'{esc(st_["title"].upper())} · IN-SAMPLE</div>'
-            f'<div style="{muted}">Traits known at the start ({esc(st_["from"])}); returns to '
-            f'{esc(st_["to"])}</div>'
+            f'OUT-OF-SAMPLE · SINCE {esc(since.upper())} — WINDOWS IT NEVER SAW</div>'
             f'<div style="font-size:0.74rem;color:{c["text_secondary"]};margin-top:3px;">'
-            f'<b>{st_["match_cagr_pct"]:+.1f}%/yr</b> vs {st_["rest_cagr_pct"]:+.1f}%/yr for the rest</div>'
-            f'<div style="{muted}">Doubled: {st_["match_doubled_pct"]:.1f}% vs {st_["rest_doubled_pct"]:.1f}% · '
-            f'{int(st_["n_match"]):,} vs {int(st_["n_rest"]):,} stocks</div>'
-            f'</div><div style="display:flex;gap:4px;align-items:flex-end;" title="{esc(bars_tip)}">{bars}</div></div>')
-    if years:
-        ahead, total, controls = year_claims(years)
-        head = (f"Ahead in all {total} years" if ahead == total else f"Ahead in {ahead} of {total} years")
-        beat_m = " / ".join(f'{int(y["match_beat_pct"])}%' for y in years)
-        beat_r = " / ".join(f'{int(y["rest_beat_pct"])}%' for y in years)
-        body += (f'<div style="font-size:0.7rem;color:{c["text_secondary"]};margin-top:6px;">'
-                 f'<b>Year by year</b> (each judged on results public at its start): {esc(head)}'
-                 f'{" — " + esc(", ".join(controls)) if controls else ""}.</div>'
-                 f'<div style="{muted}">Beat the market: {beat_m} of matches, against {beat_r} of the rest.</div>')
-        if cleanest:
-            body += (f'<div style="{muted}">✦ Cleanest test: {esc(cleanest)} — '
-                     f'{esc(st_["cleanest"].get("why", ""))}.</div>')
-    body += (f'<div style="font-size:0.7rem;color:{c["text_secondary"]};margin-top:5px;">Better odds, not a '
-             f'promise: {100 - st_["match_doubled_pct"]:.0f}% of matches did not double.</div>'
-             f'<div style="{muted}">{esc(st_["caveats"])} {esc(st_["definition_note"])}'
-             f'{" " + esc(st_["years_note"]) if years and st_.get("years_note") else ""}</div>')
-    unseen = rec.get("out_of_sample") or []
-    built = f"{date.fromisoformat(scan_designed_on(scan)):%d %b %Y}"
-    years = scan_horizon(scan) / 365
-    span = f"{years:g}-year" if years >= 1 else f"{scan_horizon(scan)}-day"
-    if unseen:
-        u_beat = _range([int(w["beat_pct"]) for w in unseen], "{}") + "%"
-        body += (f'<div style="display:flex;flex-wrap:wrap;gap:6px 14px;align-items:flex-end;justify-content:space-between;'
-                 f'border-top:1px solid {c["border"]};margin-top:8px;padding-top:7px;">'
-                 f'<div style="flex:1 1 200px;min-width:0;">'
-                 f'<div style="font-size:0.66rem;font-weight:700;color:{c["text_muted"]};letter-spacing:.3px;">'
-                 f'OUT-OF-SAMPLE · SINCE IT WAS BUILT ({esc(built.upper())}) — WINDOWS IT NEVER SAW</div>'
-                 f'<div style="font-size:0.74rem;color:{c["text_secondary"]};margin-top:3px;">'
-                 f'{u_beat} of matches beat the market · before costs · the most trustworthy record{_overlap_note(unseen, " · ")}</div></div>'
-                 f'<div style="display:flex;gap:4px;align-items:flex-end;">{_bars(unseen, c, esc, out_of_sample=True)}</div></div>'
-                 f'{_extras(unseen, c, esc)}{_vs_index(scan, unseen, c, esc)}{_hold_line(scan, unseen, c, esc)}'
-                 f'{_revenue_led_line(scan, unseen, c, esc)}')
-    else:
-        body += (f'<div style="border-top:1px solid {c["border"]};margin-top:8px;padding-top:7px;{muted}">'
-                 f'<b style="color:{c["text_secondary"]};">Out-of-sample: pending</b> — this list is judged '
-                 + (f'on one {span} window a year, each starting at the end of '
-                    f'{date(2000, scan_start_month(scan), 1):%B}, after it was built ({built})'
-                    if scan_start_month(scan) else f'on {span} windows that start after it was built ({built})')
-                 + f'; the first is due about {_first_unseen_due(scan)}.</div>')
-    return body + _unseen_notes(rec, unseen, c, esc)
+            f'{u_beat} of matches beat the market · before costs{_overlap_note(unseen, " · ")}</div></div>'
+            f'<div style="display:flex;gap:4px;align-items:flex-end;" title="{esc(bars_tip)}">{_bars(unseen, c, esc)}</div></div>'
+            f'{_extras(unseen, c, esc)}{_vs_index(scan, unseen, c, esc)}{_hold_line(scan, unseen, c, esc)}'
+            f'{_revenue_led_line(scan, unseen, c, esc)}')
+
+
+def _no_record_body(scan: dict, c: dict, esc) -> str:
+    """The record before its first window: that there is none yet and when the first starts; for a scan judged once a year,
+    why that may be a long way off."""
+    body = f'<div style="font-size:0.74rem;color:{c["text_secondary"]};">{esc(no_record_words(scan))}</div>'
+    m = scan_start_month(scan)
+    if m:
+        body += (f'<div style="font-size:0.66rem;color:{c["text_muted"]};margin-top:2px;">This list is judged on one '
+                 f'{scan_horizon(scan) / 365:g}-year window a year, each starting at the end of {date(2000, m, 1):%B}.</div>')
+    return body
 
 
 def _card_head(scan: dict, n_now: int, c: dict, esc) -> str:
@@ -1464,64 +1385,19 @@ def _card_head(scan: dict, n_now: int, c: dict, esc) -> str:
             f'{esc(scan["recipe"])}</div>')
 
 
-def card_html(scan: dict, n_now: int, state: str, rec, selected: bool, latest: str,
-              with_head: bool = True) -> str:
-    """One scan card: name, today's count, the recipe in words, and two records — the IN-SAMPLE one
-    (the design period: windows studied while the recipe was chosen, frozen) and the OUT-OF-SAMPLE one
-    (windows that start after DESIGNED_ON, measured automatically from the PRISM Archive). Each shows
-    one bar per window, the share of matches that beat the market, the sample size, the net-of-costs
-    reading, what was left out and "provisional". A stale or missing record shows no numbers at all."""
+def card_html(scan: dict, n_now: int, state: str, rec, selected: bool, with_head: bool = True) -> str:
+    """One scan card: name, today's count, the recipe in words, and the record: its unseen windows (windows that start after
+    DESIGNED_ON, measured automatically from the PRISM Archive), one bar per window, the share of matches that beat the
+    market, the net-of-costs reading and what was left out. A record with no window yet says so and when the first starts; a
+    stale or missing record shows no numbers at all. It reads only `out_of_sample`: a design-period window or a study left
+    in a file is never shown (2026-11-05)."""
     c = COLORS
     esc = html.escape
     border = c["gold"] if selected else c["border"]
     head = _card_head(scan, n_now, c, esc) if with_head else ""
-    if state == "measured" and rec and rec.get("study"):
-        body = _study_body(scan, rec, c, esc)
-    elif state == "measured" and rec and rec.get("windows"):
-        # One ROW per record — the words on the left, the bars on the right — so the card is about half
-        # the height of a stacked one and the list starts on the first screen (2026-10-07).
-        ws = rec["windows"]
-        beat = _range([int(w["beat_pct"]) for w in ws], "{}") + "%"
-        n = _range([int(w["n"]) for w in ws], "{}")
-        starts = len({w["start"] for w in ws})
-        built = f"{date.fromisoformat(scan_designed_on(scan)):%d %b}"
+    if state == "measured" and rec:
         unseen = rec.get("out_of_sample") or []
-        bars_tip = ("Points above the market median in each window, before costs; hover a bar for its "
-                    "dates and size. In-sample = windows studied while the recipe was chosen.")
-        # Named in so many words (2026-10-07): "provisional" alone read as "proven, just early".
-        body = (f'<div style="display:flex;flex-wrap:wrap;gap:6px 14px;align-items:flex-end;justify-content:space-between;">'
-                f'<div style="flex:1 1 200px;min-width:0;">'
-                f'<div style="font-size:0.66rem;font-weight:700;color:{c["text_muted"]};letter-spacing:.3px;">'
-                f'IN-SAMPLE · DESIGN-PERIOD RECORD</div>'
-                f'<div style="font-size:0.66rem;color:{c["text_muted"]};margin-top:2px;">The recipe was chosen '
-                f'on these windows: worth testing, not proven</div>'
-                f'<div style="font-size:0.74rem;color:{c["text_secondary"]};margin-top:3px;">'
-                f'{beat} of matches beat the market · before costs</div>'
-                f'<div style="font-size:0.66rem;color:{c["text_muted"]};margin-top:2px;">{n} stocks per '
-                f'window · provisional</div>'
-                f'<div style="font-size:0.66rem;color:{c["text_muted"]};margin-top:2px;">{len(ws)} short '
-                f'windows from {starts} start date{"s" if starts != 1 else ""}{_overlap_note(ws, ", ")}'
-                f'{f", measured to {esc(latest)}" if latest else ""}</div>'
-                + ("" if unseen else
-                   f'<div style="font-size:0.66rem;color:{c["text_muted"]};margin-top:2px;" title="Windows '
-                   f'that start after the recipe was chosen ({built}) — data nobody looked at while '
-                   f'choosing it.">Out-of-sample: pending — unseen windows: none yet, the first is due '
-                   f'about {_first_unseen_due(scan)}</div>')
-                + f'</div><div style="display:flex;gap:4px;align-items:flex-end;" title="{esc(bars_tip)}">'
-                f'{_bars(ws, c, esc)}</div></div>{_extras(ws, c, esc)}')
-        if unseen:
-            u_beat = _range([int(w["beat_pct"]) for w in unseen], "{}") + "%"
-            body += (f'<div style="display:flex;flex-wrap:wrap;gap:6px 14px;align-items:flex-end;justify-content:space-between;'
-                     f'border-top:1px solid {c["border"]};margin-top:8px;padding-top:7px;">'
-                     f'<div style="flex:1 1 200px;min-width:0;">'
-                     f'<div style="font-size:0.66rem;font-weight:700;color:{c["text_muted"]};letter-spacing:.3px;">'
-                     f'OUT-OF-SAMPLE · SINCE IT WAS BUILT ({esc(built.upper())}) — WINDOWS IT NEVER SAW</div>'
-                     f'<div style="font-size:0.74rem;color:{c["text_secondary"]};margin-top:3px;">'
-                     f'{u_beat} of matches beat the market · before costs · the most trustworthy record{_overlap_note(unseen, " · ")}</div></div>'
-                     f'<div style="display:flex;gap:4px;align-items:flex-end;">{_bars(unseen, c, esc, out_of_sample=True)}</div></div>'
-                     f'{_extras(unseen, c, esc)}{_vs_index(scan, unseen, c, esc)}{_hold_line(scan, unseen, c, esc)}'
-                     f'{_revenue_led_line(scan, unseen, c, esc)}')
-        body += _unseen_notes(rec, unseen, c, esc)
+        body = (_unseen_body(scan, unseen, c, esc) if unseen else _no_record_body(scan, c, esc)) + _unseen_notes(rec, unseen, c, esc)
     elif state == "unverified":
         body = (f'<div style="font-size:0.74rem;color:{c["text_muted"]};">The record could not be checked against '
                 f'the recipe just now — the app may be updating. Reload the page in a minute.</div>')
@@ -1549,29 +1425,25 @@ def _running_tail(ws) -> str:
     return " · still running, so far" if k == len(ws) else f" · {k} of them still running"
 
 
-# Every summary card is this tall, so the three "Show list" buttons line up: the tallest summary any
-# record can produce, at 345px wide. Measured 2026-10-09 in the app at 1536px: today 192 / 192 / 210;
-# with the out-of-sample line against the index fund, Playbook and Leading-Sector 207 and 🌱 224 (its
-# long fund name takes a second line from Oct 2027). 224 keeps them aligned in every state.
+# Every summary card is this tall, so the three "Show list" buttons line up in every state. Set 2026-10-09 for the tallest
+# summary of that day, at 345px wide. The old record's lines went on 2026-11-05: measured that day in the app at 1536px the cards
+# need 155–171 with windows against the index fund, so 224 leaves room for a longer line.
 SUMMARY_MIN_HEIGHT = 224
 
 
 def card_summary_html(scan: dict, n_now: int, state: str, rec, selected: bool) -> str:
-    """The card the user CHOOSES from (2026-10-08): name, count, recipe, and one honest headline —
-    in-sample named, before and after costs, how many windows or years it was ahead in, and when the
-    first out-of-sample test is due. Every number here is computed from the same record card_html
-    shows in full under the cards, so the two cannot disagree. Three full cards side by side were
-    406 / 408 / 596px tall and pushed the list ~240px below a laptop's first screen."""
+    """The card the user CHOOSES from (2026-10-08): name, count, recipe, and one honest headline — how many unseen windows
+    it was ahead in, before and after costs, or that it has no record yet and when its first window starts. Every number
+    here is computed from the same record card_html shows in full under the cards, so the two cannot disagree. Three full
+    cards side by side were 406 / 408 / 596px tall and pushed the list ~240px below a laptop's first screen."""
     c = COLORS
     esc = html.escape
     border = c["gold"] if selected else c["border"]
-    label = f'font-size:0.66rem;font-weight:700;color:{c["text_muted"]};letter-spacing:.3px;'
     main = f'font-size:0.74rem;color:{c["text_secondary"]};margin-top:3px;line-height:1.35;'
-    muted = f'font-size:0.66rem;color:{c["text_muted"]};margin-top:3px;line-height:1.35;'
     unseen = (rec or {}).get("out_of_sample") or []
     if unseen:
-        # Worded like the design-period line (2026-10-15): before costs, and after costs whenever the windows
-        # carry the net reading — the audit's rehearsal read "ahead (+0.5 pts)" while after costs it was -0.5.
+        # Before costs, and after costs whenever the windows carry the net reading (2026-10-15) — the audit's rehearsal
+        # read "ahead (+0.5 pts)" while after costs it was -0.5.
         gross = [float(w["median_excess_pp"]) for w in unseen]
         nets = [float(w["net"]["median_excess_pp"]) for w in unseen
                 if (w.get("net") or {}).get("median_excess_pp") is not None]
@@ -1583,7 +1455,7 @@ def card_summary_html(scan: dict, n_now: int, state: str, rec, selected: bool) -
                f'{"s" if len(unseen) != 1 else ""}: {_pts(gross)} pts before costs{after}'
                f'{_overlap_note(unseen, " · ")}{_running_tail(unseen)}')
     else:
-        oos = f"Out-of-sample: pending · first test due about {_first_unseen_due(scan)}"
+        oos = no_record_words(scan)
     # Once the unseen windows carry the index comparison (December plan rule 23), it IS the out-of-sample
     # line: after costs, against the fund the user could hold instead — the strictest reading, in the
     # same space, so the three cards stay one height (the full record below keeps both readings).
@@ -1593,29 +1465,8 @@ def card_summary_html(scan: dict, n_now: int, state: str, rec, selected: bool) -
         oos = (f"Out-of-sample, after costs: ahead of the {BENCHMARK_INDICES.get(scan['benchmark'], scan['benchmark'])}"
                f" index fund in {sum(e > 0 for e in edges)} of {len(edges)} window{'s' if len(edges) != 1 else ''}"
                f" ({_pts(edges)} pts){_overlap_note([w for w, _ in read], ' · ')}{_running_tail([w for w, _ in read])}")
-    if state == "measured" and rec and rec.get("study"):
-        st_ = rec["study"]
-        years = st_.get("years") or []
-        ahead, total, _ = year_claims(years) if years else (0, 0, [])
-        body = (f'<div style="{label}">IN-SAMPLE · {esc(st_["title"].upper())} · BEFORE COSTS</div>'
-                f'<div style="{main}"><b>{st_["match_cagr_pct"]:+.1f}%/yr</b> vs '
-                f'{st_["rest_cagr_pct"]:+.1f}%/yr for the rest</div>'
-                f'<div style="{muted}">' + (f'Ahead in {ahead} of {total} years · ' if total else "")
-                + f'{100 - st_["match_doubled_pct"]:.0f}% of matches did not double</div>'
-                f'<div style="{muted}">{esc(oos)}</div>')
-    elif state == "measured" and rec and rec.get("windows"):
-        ws = rec["windows"]
-        gross = [float(w["median_excess_pp"]) for w in ws]
-        nets = [float(w["net"]["median_excess_pp"]) for w in ws
-                if (w.get("net") or {}).get("median_excess_pp") is not None]
-        after = ""
-        if nets:
-            after = f", {_pts(nets)} after costs" + ("" if len(nets) == len(ws) else
-                                                    f" ({len(nets)} of {len(ws)} windows)")
-        body = (f'<div style="{label}">IN-SAMPLE · DESIGN-PERIOD RECORD</div>'
-                f'<div style="{main}">Ahead of the market in <b>{sum(v > 0 for v in gross)} of {len(ws)}</b> '
-                f'windows{_overlap_note(ws, " (", ")")}: {_pts(gross)} pts before costs{after}</div>'
-                f'<div style="{muted}">{esc(oos)}</div>')
+    if state == "measured" and rec:
+        body = f'<div style="{main}">{esc(oos)}</div>'
     elif state == "unverified":
         body = (f'<div style="font-size:0.74rem;color:{c["text_muted"]};">The record could not be checked against '
                 f'the recipe just now — the app may be updating. Reload the page in a minute.</div>')
@@ -1631,15 +1482,6 @@ def card_summary_html(scan: dict, n_now: int, state: str, rec, selected: bool) -
 def members_label(records: dict) -> str:
     """'30 Sep' — the archived month-end copy the 🆕 marks compare against; '' without one."""
     d = records.get("members_date") if records else None
-    try:
-        return f"{date.fromisoformat(d):%d %b}"
-    except (TypeError, ValueError):
-        return ""
-
-
-def latest_label(records: dict) -> str:
-    """'03 Oct' for the last snapshot a record was measured on; '' with no records."""
-    d = records.get("latest_snapshot") if records else None
     try:
         return f"{date.fromisoformat(d):%d %b}"
     except (TypeError, ValueError):

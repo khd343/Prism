@@ -15,9 +15,6 @@ kinds of text:
   guide_stamp() = its recipe fingerprint (the recipe and every score it reads) plus each setting the guide
   explains. tests/test_scan_guide.py fails while a stamp is stale, a scan has no guide, or a guide has no
   scan: an explanation never outlives its scan, the rule the scan record already follows.
-- A scan whose record is a STUDY (🌱) also says how that backtest was run — the data, the StockScans
-  columns, the formulas, the traps and how to run it again (GUIDES "backtest"), stamped with
-  study_stamp(): a re-run or any edit of the study block makes it be re-read.
 
 Numbers quoted in GUIDES are dated measurements; re-measure them, by the method noted beside them, before
 re-stamping. Pure: no Streamlit calls and no I/O (the records are passed in).
@@ -48,16 +45,10 @@ def guide_stamp(scan: dict) -> str:
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
 
 
-def study_stamp(study: dict) -> str:
-    """The study a backtest method was written for: every number and note of its record's study block, so a
-    re-run (or any edit) makes the method be re-read — 16 hex characters."""
-    return hashlib.sha256(json.dumps(study, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()[:16]
-
-
 # ── The explanations, one per scan ─────────────────────────────────────────────────────────────────────
 # Item grammar (every section): a string is a paragraph, "- " starts a bullet, **words** are bold.
-# "Still in the list" figures: membership = scan["mask"] on the saved snapshots, prepared exactly as
-# tools/scan_records.py prepares them (re-scored with J.rescore_snapshot), pairs on the same universe only (the
+# "Still in the list" figures: membership = scan["mask"] on the saved snapshots, each
+# re-scored with J.rescore_snapshot, pairs on the same universe only (the
 # vendor grew it from ~2,110 to ~2,715 stocks between 22 Aug and 19 Sep 2026, which moves every rank).
 GUIDES = {
     "playbook": dict(
@@ -152,11 +143,11 @@ GUIDES = {
             "Its recipe changes only through a new, measured test written down before the data. The December "
             "2026 review re-tests the measured red flags, may add the \"Cycle ↓\" reading aid to this table — "
             "only if stocks with it beat stocks without it by at least 1 point in every window — and decides "
-            "PRISM's default scoring mode, which changes what Rank means, not this list. The order check keeps "
-            "reading until it decides.",
+            "PRISM's default scoring mode, which changes what Rank means, not this list. The order check decides "
+            "nothing before Kite's one sealed run.",
             "On 15 Oct 2026 two of its inputs were corrected to mean what they say — the breakout window and "
-            "the fresh-stop flag had read the data vendor's columns wrongly — and its record and the figures "
-            "above were re-measured.",
+            "the fresh-stop flag had read the data vendor's columns wrongly — and the figures above were "
+            "re-measured.",
             "On 16 Oct 2026 a blank 52-week-high age was made to count as unknown — the middle of its 20% — "
             "instead of as a high more than a year old. No saved snapshot's list changes, so the figures above "
             "stand.",
@@ -164,9 +155,8 @@ GUIDES = {
             # pins this paragraph to their labels, beside the tests that pin what each layer is.
             "On 30 Oct 2026 the tab's List control added two wider lists of this recipe, shown as plain lists: "
             "**B · without 🔥**, every condition but the 🔥 Strong Quarter, and **C · price only**, Momentum and "
-            "Breakout in the top third and the price above its stop. Neither has a record: they are the lists of "
-            "Kite's ladder test (36), which a record would score before it is read in May 2027 — so the card, its "
-            "record and this guide are the 🚀 list's alone.",
+            "Breakout in the top third and the price above its stop. Neither has a record of its own: the card, its "
+            "record and this guide are the 🚀 list's, and only the order check reads C, the list Kite trades from.",
         ],
     ),
     "leaders": dict(
@@ -208,11 +198,11 @@ GUIDES = {
         changes=[
             "Its recipe changes only through a new, measured test written down before the data. The December "
             "2026 review may add the \"Cycle ↓\" reading aid to this table on the same bar as the Playbook's, "
-            "re-tests the measured red flags, and the order check keeps reading until it decides.",
+            "re-tests the measured red flags. The order check decides nothing before Kite's one sealed run.",
         ],
     ),
     "compounder": dict(
-        written_for="63ba93225ce77da7",
+        written_for="258e4becfe15cef0",
         short="profitable growth earned by selling more, read a year at a time",
         idea=[
             "Companies whose last full year shows growth the business earned: sales up more than 10%, profit "
@@ -226,8 +216,8 @@ GUIDES = {
             "- **Operating margin widening in the top 40%.** The change in operating margin over the last full "
             "year, ranked across the market the same way.",
             "- **Revenue-led.** Sales up more than 10% AND profit growing faster than sales — margins widened "
-            "by selling more, not by cutting costs in a shrinking business. In the backtest the edge all but "
-            "vanished without this condition, so it is part of the recipe, not an option.",
+            "by selling more, not by cutting costs in a shrinking business. It is part of the recipe, not an "
+            "option.",
             "Full-year figures only. Both top-40% ranks are taken across the whole market before the "
             "revenue-led condition narrows the list.",
         ],
@@ -245,78 +235,13 @@ GUIDES = {
         limits=[
             "- **A year is the unit.** A month of price moves says almost nothing about this list; judge it on "
             "its 12-month windows.",
-            "- **The backtest is in-sample.** The recipe was found and tested on the same three years, on "
-            "companies that are still listed today.",
             "- **\"Cycle ↓\"**, in 🏆 Core, marks stocks whose cash conversion cycle shortened by 15+ days while sales grew "
-            "more than 15% in the same year. It did well inside this list in the backtest, but it is a reading "
-            "aid — not part of the recipe or the record.",
+            "more than 15% in the same year. It is a reading aid — not part of the recipe or the record.",
         ],
         changes=[
             "The December 2026 plan fixes this recipe until its first 12-month unseen window has finished. The "
             "candidates being measured beside it can join only through their own measured test.",
         ],
-        # How the backtest behind the record was run (2026-10-14, the user's ask: "so in future we can check
-        # and do it again"). Verified against the 🌱 commit of 2026-10-07 (e4193c5), the record's own notes,
-        # tools/compounder_years.py and the 2026-10-03 code whose study it reproduced to the stock (median
-        # 3Y CAGR; doubled = 26%+ a year). Stamped with the study it describes (study_stamp): a re-run that
-        # changes the record makes this be re-read (tests/test_scan_guide.py).
-        backtest=dict(
-            written_for="b49a4a17fde1607a",
-            items=[
-                "**The data.** Two downloads joined on each company's StockScans id: PRISM's scored export of 6 "
-                "Oct 2026 — 2,712 stocks, whose yearly profit, sales and margin history are PRISM's own StockScans "
-                "columns — and a StockScans export of 7 Oct 2026 with every stock's returns.",
-                "**The StockScans columns.** On that data the profit-and-loss had rolled to FY26, so:",
-                "- **PAT**, **PAT 1 Year Back** … **PAT 5 Years Back** — yearly profit, FY26 back to FY21.",
-                "- **Revenue**, **Revenue 1 Year Back** … **Revenue 5 Years Back** — yearly sales, FY26 back to "
-                "FY21.",
-                "- **OPM 3 Years Back** and **OPM 5 Years Back** — operating margin in FY23 and FY21. PRISM's data "
-                "has no OPM 2 or 4 Years Back, so the FY22 and FY24 margins are missing.",
-                "- **Returns 1Y**, **Returns 2Y** and **Returns 3Y** — each a per-year rate over the last 1, 2 and 3 "
-                "years, not a total, adjusted for splits and bonuses (checked on 3 Oct 2026: HUL, Infosys, TCS and "
-                "Reliance reproduce their October 2023 prices).",
-                "- **Listed Days** — how long the stock has traded, so it counts only in windows it was listed for.",
-                "**The 3-year test, Oct 2023 → Oct 2026.** Each stock is judged on its numbers as they stood in FY23, "
-                "public by mid-2023:",
-                "- Profit growth FY22 → FY23 = PAT 3 Years Back ÷ PAT 4 Years Back − 1, and sales growth FY22 → FY23 "
-                "= Revenue 3 Years Back ÷ Revenue 4 Years Back − 1 — each only where both years were positive.",
-                "- Margin change FY21 → FY23 = OPM 3 Years Back − OPM 5 Years Back: two years, because the FY22 "
-                "margins are missing — the one way the backtest differs from the live one-year recipe.",
-                "- The recipe's own rules on those numbers: profit growth and margin change each in the top 40% of "
-                "the stocks that can be judged, ranked across the whole market, AND sales up more than 10% with "
-                "profit growing faster.",
-                "- The return is Returns 3Y. A group's yearly figure is its median stock's; \"doubled\" means a "
-                "per-year return of at least 26% (1.26³ ≈ 2). A stock counts if it has a 3-year return — listed "
-                "for 3+ years — and the numbers the recipe reads; the rest are the stocks that count and did not "
-                "match.",
-                "**The year-by-year test — three one-year windows**, each judged only on the annual results public "
-                "at its start:",
-                "- Oct 2023 → Oct 2024 on FY23 (PAT and Revenue 3 and 4 Years Back), Oct 2024 → Oct 2025 on FY24 "
-                "(2 and 3 Years Back), Oct 2025 → Oct 2026 on FY25 (1 and 2 Years Back).",
-                "- One year's return from the per-year rates, with R1, R2 and R3 = Returns 1Y, 2Y and 3Y as "
-                "fractions (12.5% = 0.125): 23→24 = (1 + R3)³ ÷ (1 + R2)² − 1; 24→25 = (1 + R2)² ÷ (1 + R1) − 1; "
-                "25→26 = R1. A stock counts only if its Listed Days cover the window's start: 3, 2 and 1 years.",
-                "- Margin change is net margin (PAT ÷ Revenue) against the year before, because the data has no "
-                "yearly operating-margin history.",
-                "- Points above the market are measured against the median of every stock with a return in that "
-                "window; the record also reads each stock against its own industry's median (industries of 5+ "
-                "stocks), within terciles of the previous year's return, and within terciles of start-year sales.",
-                "**Checked before use:** Returns 1Y, 2Y and 3Y are per-year rates. Never use Returns Vs Nifty 500 "
-                "3Y: it subtracts a 3-year total (Nifty 500 Returns 3Y) from a per-year rate.",
-                "**To run it again:**",
-                "- On one day, download PRISM's scored export and a StockScans export with Returns 1Y, 2Y and 3Y and "
-                "Listed Days for every stock — and keep both. The 7 Oct 2026 StockScans download was not kept, so "
-                "these exact numbers can be re-run but not re-checked.",
-                "- Map every Years Back column to its fiscal year on that day's data: a year later, each one has "
-                "moved by a year.",
-                "- The year-by-year windows are the local script tools/compounder_years.py (a PRISM export and a "
-                "folder of StockScans exports in, the year rows out as JSON); its year map is fixed to the 6 Oct "
-                "2026 data, so move it a year for each later download. The 3-year test's script was not kept; the "
-                "steps above rebuild it.",
-                "- The scan's own unseen record, above, is the real test: it is measured automatically from the "
-                "daily archive, with no backtest needed.",
-            ],
-        ),
     ),
 }
 
@@ -355,16 +280,9 @@ def _count_words(n: int) -> str:
     return {1: "One", 2: "Two", 3: "Three", 4: "Four", 5: "Five", 6: "Six"}.get(n, str(n))
 
 
-def _first_due(scan: dict) -> str:
-    """When the first unseen window can finish — the card's own date (ui_scans), with its year always shown."""
-    due = S._first_unseen_due(scan)
-    return due if re.search(r"\d{4}$", due) else f"{due} {date.fromisoformat(S.scan_designed_on(scan)).year}"
-
-
-def _span(lo, hi, fmt: str, sep: str = "–") -> str:
-    """'a–b' in one format, or one value when the two are equal. Signed numbers read better joined by
-    ' to ' ('+2.9 to +10.3', not '+2.9–+10.3')."""
-    return fmt.format(lo) if lo == hi else f"{fmt.format(lo)}{sep}{fmt.format(hi)}"
+def _first_start(scan: dict) -> str:
+    """The month-end the first unseen window starts on — the card's own date (ui_scans), with its year always shown."""
+    return _day(S._first_unseen_start(scan).isoformat())
 
 
 def _index(scan: dict) -> str:
@@ -399,7 +317,7 @@ def _glance(scan: dict) -> list:
         f"- **Measured over:** {_read_over(scan)} — {_windows_words(scan)}.",
         f"- **Listed by:** {_order_words(scan)}.",
         f"- **Compared with:** {_index(scan)}.",
-        f"- **Recipe fixed on:** {_day(S.scan_designed_on(scan))} — every window that starts later is unseen.",
+        f"- **Record starts:** {_day(S.scan_designed_on(scan))} — its first window starts on the {_first_start(scan)} copy.",
     ]
 
 
@@ -412,8 +330,8 @@ def _order(scan: dict) -> list:
     out = [opens, "By Momentum, high to low — the strongest price trends first.",
            "Rank stays a column: click its header, then Sort ascending, to list by it.", reading]
     if scan["key"] in S.ORDER_RULE["scans"]:
-        out.append(f"The order check (see Its record, below) records whether the top {S.HOLD_K} by momentum "
-                   f"keeps beating random picks.")
+        out.append(f"The order check (see Its record, below) reads RAM Rank, whichever way the table lists: whether the "
+                   f"top {S.HOLD_K} by RAM Rank, among what Kite can trade, keeps beating random picks.")
     return out
 
 
@@ -423,54 +341,9 @@ def _exit_reasons(scan: dict) -> list:
     return [f"- {mark} **{label}** — {why}" for mark, label, why in S.EXIT_REASONS.values()]
 
 
-def _design_windows(ws: list) -> list:
-    if not ws:
-        return ["No design-period windows are recorded."]
-    n = len(ws)
-    ex, bt = [w["median_excess_pp"] for w in ws], [w["beat_pct"] for w in ws]
-    out = [f"**Design period (in-sample):** {n} windows between saved snapshots, "
-           f"{_day(min(w['start'] for w in ws))} → {_day(max(w['end'] for w in ws))}, studied while the recipe "
-           f"was chosen."]
-    points = _span(min(ex), max(ex), "{:+.1f}", " to ") + " points"
-    beat = _span(min(bt), max(bt), "{:d}") + "%"
-    out.append(f"In every window the list's median stock returned more than the market's median stock — by "
-               f"{points} — and {beat} of its stocks beat the market's median stock." if min(ex) > 0 else
-               f"The list's median stock against the market's median stock: {points} across the windows; "
-               f"{beat} of its stocks beat it.")
-    net = [w["net"] for w in ws if (w.get("net") or {}).get("median_excess_pp") is not None]
-    if net:
-        nx, nb = [x["median_excess_pp"] for x in net], [x["beat_pct"] for x in net]
-        out.append(f"After costs — only stocks trading ₹{net[0]['min_cr']:g} Cr+ a day, less a "
-                   f"{net[0]['cost_pp']:g}-point round trip: {_span(min(nx), max(nx), '{:+.1f}', ' to ')} points, "
-                   f"{_span(min(nb), max(nb), '{:d}')}% beating.")
-    k = S.non_overlapping(ws)
-    if k < n:
-        out.append(f"The {n} windows share days: they are {k} separate stretches of the market, not {n} "
-                   f"independent results.")
-    return out
-
-
-def _study(st_: dict) -> list:
-    out = [f"**{st_['title']} (in-sample), {st_['from']} → {st_['to']}:** stocks matching the recipe compounded "
-           f"{st_['match_cagr_pct']:+.1f}% a year against {st_['rest_cagr_pct']:+.1f}% for the rest "
-           f"({st_['n_match']:,} against {st_['n_rest']:,} stocks), and {st_['match_doubled_pct']:.1f}% of them "
-           f"doubled against {st_['rest_doubled_pct']:.1f}%."]
-    if st_.get("years"):
-        out.append("Year by year, points above the market's median stock: " + "; ".join(
-            f"{y['label']} {y['match_excess_pp']:+.1f} (the rest {y['rest_excess_pp']:+.1f})"
-            for y in st_["years"]) + ".")
-    if st_.get("cleanest"):
-        out.append(f"The cleanest year is {st_['cleanest']['label']}: {st_['cleanest']['why']}.")
-    notes = " ".join(x for x in (st_.get("caveats"), st_.get("definition_note"), st_.get("years_note")) if x)
-    if notes:
-        out.append(f"Caveats: {notes}")
-    return out
-
-
-def _record(scan: dict, rec, state: str) -> list:
-    if state != "measured" or not rec:
-        return [_NO_NUMBERS.get(state, _NO_NUMBERS["unmeasured"])]
-    return _study(rec["study"]) if "study" in rec else _design_windows(rec.get("windows") or [])
+def _record(rec, state: str) -> list:
+    """Why there are no numbers, when there is no record to read."""
+    return [] if state == "measured" and rec else [_NO_NUMBERS.get(state, _NO_NUMBERS["unmeasured"])]
 
 
 def _unseen(scan: dict, rec, state: str) -> list:
@@ -480,23 +353,30 @@ def _unseen(scan: dict, rec, state: str) -> list:
         return [lead]
     final = [w for w in (rec or {}).get("out_of_sample") or [] if w.get("final")]
     if not final:
-        return [f"{lead} None has finished yet; the first is due around {_first_due(scan)}."]
+        return [f"{lead} None has finished yet; the first starts on the {_first_start(scan)} copy and runs {_read_over(scan)}."]
     return [f"{lead} {len(final)} finished so far — each one is on the scan's card (📊 Full record on the "
             f"Scans tab), written once and never re-measured."]
+
+
+def _order_check_words() -> str:
+    """What the order check asks, written from its settings: one text for each checked scan's guide and the general section."""
+    rule = S.ORDER_RULE
+    return (f"among what Kite can trade ({S.order_pool_words()}), over the first {rule['windows']} separate unseen "
+            f"windows with RAM and at least {rule['min_n']} such stocks, does the top {S.HOLD_K} by RAM Rank beat at "
+            f"least {rule['min_avg_pct']:.0f}% of random picks of them on average, and beat the top {S.HOLD_K} by "
+            f"Rank? \"Held\" or \"did not hold\" — evidence about the order, never an automatic switch. "
+            f"{S.ORDER_NOT_IN_DATA} {S.ORDER_ON_C} {S.ORDER_FROM_RAM}." + (f" {S.ORDER_SEALED_WORDS}" if S.ORDER_SEALED else ""))
 
 
 def _order_check(scan: dict, rec, state: str) -> list:
     if scan["key"] not in S.ORDER_RULE["scans"]:
         return []
     rule = S.ORDER_RULE
-    text = (f"**Order check:** over the first {rule['windows']} separate unseen windows, does the top "
-            f"{S.HOLD_K} by momentum beat at least {rule['min_avg_pct']:.0f}% of random picks on average, and "
-            f"beat the top {S.HOLD_K} by Rank? \"Held\" or \"did not hold\" — evidence about the order, never "
-            f"an automatic switch.")
-    if state == "measured":
+    text = f"**Order check:** {_order_check_words()}"
+    if state == "measured" and not S.ORDER_SEALED:
         v = S.order_rule((rec or {}).get("out_of_sample") or [])
         text += (f" So far {v['counted']} of {rule['windows']} windows are in." if v["state"] == "pending" else
-                 f" Decided: momentum order {v['state']} (its top {S.HOLD_K} beat {v['mom_avg']:.0f}% of random "
+                 f" Decided: RAM Rank's order {v['state']} (its top {S.HOLD_K} beat {v['ram_avg']:.0f}% of random "
                  f"picks on average, Rank's {v['rank_avg']:.0f}%).")
     return [text]
 
@@ -522,18 +402,15 @@ def scan_sections(scan: dict, rec=None, state: str = "unmeasured") -> list:
     """One scan's guide as (title, items) sections: its explanation (GUIDES) between the facts read from the
     code and from its record. `rec` / `state` are what ui_scans.record_state returns for it."""
     g = GUIDES[scan["key"]]
-    # A scan whose record is a study says, right under it, how that backtest was run (GUIDES "backtest").
-    method = [("How the backtest was run", list(g["backtest"]["items"]))] if g.get("backtest") else []
     return [
         ("At a glance", _glance(scan)),
         ("The idea", list(g["idea"])),
         ("The recipe, condition by condition", list(g["recipe"])),
         ("When a stock enters and leaves", list(g["enter_leave"]) + _exit_reasons(scan)),
         ("How the table is ordered", _order(scan)),
-        ("Its record", _record(scan, rec, state) + _unseen(scan, rec, state)
+        ("Its record", _record(rec, state) + _unseen(scan, rec, state)
          + [f"**Compared with {_index(scan)}** — {g['benchmark_why']}"] + _order_check(scan, rec, state)
          + _revenue_led_check(scan, rec, state)),
-        *method,
         ("What it cannot see", list(g["limits"])
          + [f"The limits every scan shares — SME lots, surveillance, forecasts, data timing — are under "
             f"{GENERAL_TITLE} in 📖 Reference → 🎯 Scans."]),
@@ -563,15 +440,13 @@ def general_sections(scans=None) -> list:
         ]),
         ("How every scan is measured", [
             "- **Snapshots and month-end copies:** snapshots are PRISM's saved copies of the whole market on "
-            "chosen days — the design-period records and the \"still in the list\" figures were measured on "
-            "them. Month-end copies are the daily archive's copy from each month's last trading day; unseen "
-            "windows and the 🆕 marks start from them.",
+            "chosen days — the \"still in the list\" figures were measured on them. Month-end copies are the "
+            "daily archive's copy from each month's last trading day; unseen windows and the 🆕 marks start "
+            "from them.",
             "- **Excess:** a stock's return over a window minus the return of the market's median stock over the "
             "same window. A record gives the median excess of the scan's stocks and the share of them that beat "
             "the market's median stock.",
-            "- **In-sample:** the months studied while a recipe was chosen. A good record there shows that the "
-            "recipe fitted that period — not that it will work next.",
-            "- **Unseen record:** every window that starts on a month-end copy after a scan's design date is out "
+            f"- **Unseen record:** every window that starts on a month-end copy after {_day(S.DESIGNED_ON)} is out "
             "of sample — data nobody saw while choosing the recipe. A finished window is written once and never "
             "re-measured, so a record cannot be tuned after the fact.",
             f"- **Checked by hand:** each unseen window names its matches that fell {S.FALL_CHECK_PCT:g}% or more "
@@ -590,20 +465,14 @@ def general_sections(scans=None) -> list:
             f"- **Holding {S.HOLD_K}:** for each unseen window, {S.HOLD_DRAWS:,} random picks of {S.HOLD_K} "
             f"stocks from the {_caps_words()} cap matches with one share at most ₹{S.HOLD_MAX_PRICE:,.0f} — what "
             f"₹1 lakh spread across {S.HOLD_K} stocks can hold — after the round trip: the typical result, its "
-            f"10th–90th percentile range, how often a pick lost money, and where the top {S.HOLD_K} by momentum "
-            f"and by Rank land among the random picks.",
-            "On June–October 2026 data, random picks of 10 Playbook stocks ranged from 0 to +29% (10th–90th "
-            "percentile) and picks of 20 from +4.7 to +24%: how many stocks you hold changed the result far "
-            "more than which order you picked them in.",
-            f"- **Order check** ({checked}): over the first {rule['windows']} separate unseen windows with at "
-            f"least {rule['min_n']} holdable matches, does the top {S.HOLD_K} by momentum beat at least "
-            f"{rule['min_avg_pct']:.0f}% of random picks on average, and beat the top {S.HOLD_K} by Rank? "
-            f"\"Held\" or \"did not hold\" — evidence about the order, never an automatic switch.",
+            f"10th–90th percentile range, how often a pick lost money, and where the top {S.HOLD_K} by Rank lands "
+            f"among the random picks.",
+            f"- **Order check** ({checked}): {_order_check_words()}",
         ]),
         ("How to read the table", [
             *(f"- **{view}** — {VIEW_WHAT[view]}" for view in S.SCAN_VIEWS),
             f"- **{S.RAM_VIEW}** — every list opens on this view, sorted by RAM Rank, strongest first, no RAM last; 🏆 Core and "
-            f"📈 Technical read as before, and where a list has an order check, it still measures Momentum's top picks.",
+            f"📈 Technical read as before. Where a list has an order check, it reads RAM Rank too, on what Kite can trade, whichever view is open.",
             "- **Filters** only hide rows of the finished list. The recipe always ranks the whole market, so a "
             "filter can never put a stock into a scan.",
             "- **🆕**, in 🏆 Core and 📈 Technical — not in the scan on the last archived month-end copy. **📄** — its quarterly result was "

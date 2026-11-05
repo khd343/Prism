@@ -2099,7 +2099,7 @@ def ram_line(stock: pd.Series) -> str:
     """The RAM RANK row's pill, in words (2026-11-05): '#4 · 99.8% · 4 Nov'; '— · not ranked on 4 Nov' when RAM ran for
     that session and did not rank this stock; '—' when the sheet holds no RAM for it (blank columns, an old copy).
     No 'of N': the sheet holds only this app's stocks, so N cannot be read from it. RAM comes from the sheet, and no
-    score, list or record reads it."""
+    score or list reads it; of the records, only the order check does."""
     rank, pct = _finite(stock.get("ram_rank")), _finite(stock.get("ram_pct"))
     day = ram_day(stock.get("ram_date"))
     if np.isnan(rank):

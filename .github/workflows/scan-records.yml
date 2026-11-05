@@ -1,7 +1,7 @@
 # 🎯 Scans — refresh the records from the PRISM Archive (ui/scan_records_job.py).
 # Weekly, plus a manual "Run workflow" button. Commits ui/scan_records.json ONLY when a measured value
-# changed; a failed run (missing secret, unreadable archive, a recipe changed since its design-period
-# record, an archive whose newest copy is over 10 days old, a recipe changed after unseen windows were
+# changed; a failed run (missing secret, unreadable archive, a recipe changed since its fingerprint in
+# that file, an archive whose newest copy is over 10 days old, a recipe changed after unseen windows were
 # recorded without moving its design date past them, and since 2026-10-18 a copy whose inputs fail the feed's
 # floors, a window where most of the market's share counts moved or most of a scan's matches lost a price, a
 # missing or unreadable ui/scan_record_checks.json, and a month about to be written final with a named fall not

@@ -171,7 +171,7 @@ from ui.ui_scans import (SCANS, CANDIDATES as SCAN_CANDIDATES, LIQUIDITY_STEPS a
                          left_summary as scan_left_summary, left_legend as scan_left_legend,
                          table_columns as scan_table_columns, card_html as scan_card_html,
                          card_summary_html as scan_card_summary_html,
-                         latest_label as scan_latest_label, load_records as load_scan_records,
+                         load_records as load_scan_records,
                          members_label as scan_members_label,
                          record_state as scan_record_state, scan_table, table_config as scan_table_config,
                          SCAN_VIEWS, TREND_SHORT as SCAN_TREND_SHORT, momentum_ordered as scan_momentum_ordered,
@@ -944,7 +944,7 @@ def _scan_filter_row(frame, slots, shariah_slot, exchange_slot):
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # ── 🎯 Scans (2026-10-06) ─────────────────────────────────────────────────────────────────────────
 # Measured stock lists, one definition each (ui/ui_scans.py): each card shows its own record from the
-# saved snapshots (ui/scan_records.json, written by tools/scan_records.py), and the list reads the
+# PRISM Archive's month-end copies (ui/scan_records.json, written by the weekly ui/scan_records_job.py), and the list reads the
 # WHOLE market — never the sidebar's `filt` — so it is exactly what that record measured. Display and
 # recipes live in the module; app.py owns the scan choice, the liquidity floor and the row click
 # (tests/test_scans.py).
@@ -958,12 +958,11 @@ with tabs[1]:
     if st.session_state.get("scan_sel") not in _sc_keys:
         st.session_state["scan_sel"] = _sc_keys[0]
     _sc_sel = next(s for s in SCANS if s["key"] == st.session_state["scan_sel"])
-    _sc_latest = scan_latest_label(_sc_recs)       # the design-period record's last snapshot
     _sc_new_label = scan_members_label(_sc_recs)   # the month-end copy 🆕 compares against
     _sc_counts = {s["key"]: int(s["mask"](df).sum()) for s in SCANS}
     st.markdown(
-        "<div class='sec-cap'>Stock lists PRISM has measured, each with its record — in-sample means "
-        "studied while choosing the recipe. A list narrows the market; the decision stays yours.</div>",
+        "<div class='sec-cap'>Stock lists PRISM measures, each with its record of windows nobody saw while "
+        "choosing the recipe. A list narrows the market; the decision stays yours.</div>",
         unsafe_allow_html=True)
     for _sc_col, _sc in zip(st.columns(len(SCANS)), SCANS):
         with _sc_col:
@@ -977,20 +976,20 @@ with tabs[1]:
     # THE FULL RECORD, ONE CLICK AWAY (2026-10-08). Three full cards side by side were 406 / 408 / 596px
     # tall and pushed the list ~240px below a laptop's first screen, so the cards above carry one honest
     # headline each and the SELECTED scan's whole record — every window, after costs, what was left
-    # out, the caveats — sits here at full width, where each line fits on one line.
+    # out — sits here at full width, where each line fits on one line.
     _sc_state_sel, _sc_rec_sel = scan_record_state(_sc_recs, _sc_sel)
-    with st.expander(f"📊 Full record — {_sc_sel['emoji']} {_sc_sel['name']}: every window or year, after "
-                     f"costs, what was left out and the caveats", expanded=False):
+    with st.expander(f"📊 Full record — {_sc_sel['emoji']} {_sc_sel['name']}: every window, after costs, and "
+                     f"what was left out", expanded=False):
         st.markdown(scan_card_html(_sc_sel, _sc_counts[_sc_sel["key"]], _sc_state_sel, _sc_rec_sel, True,
-                                   _sc_latest, with_head=False), unsafe_allow_html=True)
+                                   with_head=False), unsafe_allow_html=True)
     # HOW IT WORKS, BESIDE ITS RECORD (2026-10-14): the selected scan's guide — the same ui/scan_guide.py text
     # the Reference tab's 🎯 Scans section shows, read with the record state its card uses.
     with st.expander(f"📖 How it works — {_sc_sel['emoji']} {_sc_sel['name']}: each condition in plain words, "
                      f"when a stock enters and leaves, what it cannot see", expanded=False):
         st.markdown(scan_guide_html(_sc_sel, _sc_rec_sel, _sc_state_sel), unsafe_allow_html=True)
     # THE 🚀 LADDER (2026-10-30, the operator's call): two wider lists of 🚀's own recipe, B without the 🔥 Strong
-    # Quarter and C on price alone, each with its whole-market count. They are the lists of Kite's frozen ladder test
-    # (36), so they carry NO record (ui_scans.PLAYBOOK_LAYERS): the cards, 📊 record and 📖 guide above stay 🚀's, and
+    # Quarter and C on price alone, each with its whole-market count. They carry NO record of their own
+    # (ui_scans.PLAYBOOK_LAYERS): the cards, 📊 record and 📖 guide above stay 🚀's, only the sealed order check reads C, and
     # B or C marks no 🆕 and shows no Left. Drawn on 🚀 only, between the scan and its filters (scan → list → filters →
     # columns → table). The 🧹 Clear never resets it, but leaving 🚀 does: Streamlit drops the state of a control it does
     # not draw, so 🚀 reopens on its own recorded list (tests/test_scan_ladder.py, tests/test_scans_tab_runs.py).
@@ -1126,7 +1125,7 @@ with tabs[1]:
               set — <strong style="color:{COLORS['blue']};">click The Tear-Sheet tab</strong> for full analysis.
             </div>
             """, unsafe_allow_html=True)
-    # "Left 🌱" (2026-10-07): the exit side. Only a scan with measured exit reasons shows it, on the same
+    # "Left 🌱" (2026-10-07): the exit side. Only a scan with exit reasons shows it, on the same
     # baseline and the same rule as 🆕 (members only while the record is current). The 🎯 sidebar scope
     # narrows it; the liquidity floor and the lens row do not (a stock does not leave by trading less). The 🚀
     # ladder's B and C carry no exit reasons (2026-10-30): they have no record, so nothing "left" them.

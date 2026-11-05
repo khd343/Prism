@@ -2,7 +2,7 @@
 test_ram_display.py — RAM on PRISM's screens (2026-11-05).
 
 The Technicals tab now carries four columns another job fills each night: RAM, RAM Rank, RAM Pct and RAM Date. PRISM
-shows them and computes nothing from them. Pinned here, each against the break it exists to catch:
+shows them, and only the records job's order check reads one, RAM Rank. Pinned here, each against the break it exists to catch:
 
   1. The loader: each header lands on its own column, a blank stays blank (never 0), and RAM Date survives whatever the
      XLSX hands it (text, a real date cell, a blank) where the numeric coercion would have blanked it. An old copy
@@ -13,8 +13,9 @@ shows them and computes nothing from them. Pinned here, each against the break i
      by RAM Rank with blanks last. 🏆 Core and 📈 Technical, on every list, are exactly main's.
   5. The Deep Scanner: main's views, and RAM Rank in its sort dropdown, low numbers first, blanks last, on screen when sorted.
   6. The Tear-Sheet: its own RAM RANK row under the ⏱️ strip, in the strip's look, never a chip on it, and no nan.
-  7. Nothing reads them: every score, tier, rank, verdict and flag identical with and without RAM values; every recipe's
-     fingerprint unmoved; only the loader, the Data check and the three screens name the columns at all.
+  7. Nothing scores on them: every score, tier, rank, verdict and flag identical with and without RAM values; every recipe's
+     fingerprint unmoved; only the loader, the Data check, the three screens and the records job's order check, which reads
+     RAM Rank and decides nothing (tests/test_scan_order_reading.py), name the columns at all.
   8. No word of action, no rule and no person in their labels and tips.
 
 tests/test_scans_tab_runs.py runs the view in the real tab.
@@ -279,7 +280,7 @@ def test_ram_is_no_key_column_so_its_blanks_fail_no_coverage_check(blank):
 # ── 3. The tips: one source, plain words ─────────────────────────────────────────────────────────────────────────────
 TIP_RANK = ("RAM's rank among about 1,400 liquid NSE main-board stocks: 1 is the strongest. Momentum over 1 to 12 "
             "months, risk-adjusted, from NSE's own closes. Blank: not ranked (BSE, thin, under a year of prices, or a "
-            "check doubted it). Display only: it changes no score, list or record.")
+            "check doubted it). Display only: it changes no score or list; the order check on the 🎯 Scans cards is built on it.")
 TIP_PCT = "RAM's score as a percentile, 100 the strongest. Display only: it changes no score, list or record."
 CORE, TECH = S.SCAN_VIEWS
 RAM = "🔢 RAM"
@@ -760,7 +761,7 @@ def test_the_row_carries_the_one_tip_on_its_question_mark():
     assert html.escape(TIP_RANK) in block, "the same words as the table"
 
 
-# ── 7. Nothing reads them ────────────────────────────────────────────────────────────────────────────────────────────
+# ── 7. Nothing scores on them ────────────────────────────────────────────────────────────────────────────────────────────
 # The columns the comparison below must never be vacuous about: a score, a tier, a rank, a verdict and a flag of each kind.
 _MUST_COMPARE = {"composite_score", "quality_score", "momentum_score", "breakout_score", "improvement_score", "rank",
                  "conviction_tier", "tier_label", "verdict_direction", "verdict_strength", "wealth_tier", "gate_pass",
@@ -853,10 +854,23 @@ def test_every_list_holds_the_same_stocks_in_the_same_order_on_the_real_market(r
     assert len(a) > 0 and a["company_id"].tolist() == b["company_id"].tolist()
 
 
+def test_the_order_reading_runs_on_the_real_market_with_ram_and_without(real):
+    """Real labels through the real pipeline: the filters leave some of 🚀's matches, RAM or no RAM. The return is a fixture."""
+    from ui import scan_records_job as J
+    _, with_ram = real
+    match = _PLAY["mask"](with_ram)
+    ret = pd.Series(np.arange(len(with_ram), dtype=float), index=with_ram.index)
+    a, b = J.order_reading(with_ram, ret, match), J.order_reading(with_ram.drop(columns="ram_rank"), ret, match)
+    assert 0 < a["n"] == b["n"] < int(match.sum()), "the filters are alive: not none of 🚀's matches, and not all of them"
+    assert b.get("ram_pct") is None
+
+
 # The fingerprints every record and the ladder were measured with, read on origin/main (9284e96) before RAM. 🚀, 🌬️ and 🌱
 # are also pinned to their records (tests/test_scans.py); B and C have none. A recipe's real change re-pins these on purpose.
+# B's and C's moved once, 2026-11-05, on words alone: PLAYBOOK_LAYERS holds each list's note, and the note stopped naming the
+# ladder test that (37) no longer runs. Their masks and the three scans' fingerprints did not move.
 _BEFORE_RAM = {"playbook": "80251b8b4da6d635", "leaders": "a5fa9c66bfd431e0", "compounder": "0e2a24062b1f2ea8",
-               "no_quarter": "1f17120242b5640f", "price_only": "1f17120242b5640f"}
+               "no_quarter": "1b4b403e1936ecb8", "price_only": "1b4b403e1936ecb8"}
 
 
 @pytest.mark.parametrize("scan", LISTS, ids=lambda s: s["key"])
@@ -875,13 +889,14 @@ def test_nothing_a_recipe_reaches_names_a_ram_column(scan):
     assert not named, named
 
 
-# Who may name a RAM column at all: the loader, the Data check's text list and the three screens. Not the scoring engines,
-# the verdict, the Shariah screen, the feed, the v2 lists, the scan records or the archive.
-_MAY_NAME_RAM = {"app.py", "core/data_engine.py", "ui/data_check_job.py", "ui/ui_scanner.py", "ui/ui_scans.py",
-                 "ui/ui_tearsheet.py"}
+# Who may name a RAM column at all: the loader, the Data check's text list, the three screens and, since the order check
+# moved to RAM Rank, the records job (2026-11-05). Not the scoring engines, the verdict, the Shariah screen, the feed, the
+# v2 lists or the archive.
+_MAY_NAME_RAM = {"app.py", "core/data_engine.py", "ui/data_check_job.py", "ui/scan_records_job.py", "ui/ui_scanner.py",
+                 "ui/ui_scans.py", "ui/ui_tearsheet.py"}
 
 
-def test_only_the_loader_the_data_check_and_the_screens_name_a_ram_column():
+def test_only_the_loader_the_data_check_the_screens_and_the_order_check_name_a_ram_column():
     files = [ROOT / "app.py", ROOT / "config.py", *sorted((ROOT / "core").glob("*.py")), *sorted((ROOT / "ui").glob("*.py"))]
     naming = {p.relative_to(ROOT).as_posix() for p in files if _RAM_NAME.search(p.read_text(encoding="utf-8"))}
     assert naming == _MAY_NAME_RAM, f"unexpected: {sorted(naming - _MAY_NAME_RAM)}; gone: {sorted(_MAY_NAME_RAM - naming)}"
@@ -905,18 +920,19 @@ def test_no_word_of_action_and_no_rule_or_person_anywhere_on_screen():
 
 
 def test_the_guides_stamps_are_mains():
-    """A view explains nothing in a guide's stamp, and no scan setting moved, so no prose went stale."""
+    """A view explains nothing in a guide's stamp, and RAM moved no scan setting, so no prose went stale. 🌱's stamp moved once
+    since, on purpose: its record date and its recipe's words, re-read and re-stamped on 2026-11-05."""
     from ui import scan_guide as G
     assert {s["key"]: G.guide_stamp(s) for s in S.SCANS} == {
-        "playbook": "135cfc40d93df721", "leaders": "c5b0c3512a06fdd2", "compounder": "63ba93225ce77da7"}
+        "playbook": "135cfc40d93df721", "leaders": "c5b0c3512a06fdd2", "compounder": "258e4becfe15cef0"}
 
 
-def test_the_guide_says_how_every_list_opens_and_what_the_order_check_still_measures():
+def test_the_guide_says_how_every_list_opens_and_what_the_order_check_reads():
     from ui import scan_guide as G
     t = " ".join(map(str, dict(G.general_sections())["How to read the table"]))
-    for words in ("every list opens", "🔢 RAM", "RAM Rank", "🏆 Core and 📈 Technical", "as before", "order check", "Momentum's top"):
+    for words in ("every list opens", "🔢 RAM", "RAM Rank", "🏆 Core and 📈 Technical", "as before", "order check", "what Kite can trade"):
         assert words in t, words
-    assert "🚀 lists" not in t
+    assert "🚀 lists" not in t and "Momentum's top" not in t, "the order check moved to RAM Rank (2026-11-05)"
     for scan in S.SCANS:                # 🌱 too, whose order section reads PRISM Rank, not Momentum
         assert "The table opens on the 🔢 RAM view" in " ".join(G._order(scan)), scan["key"]
 
@@ -927,7 +943,7 @@ def _source_files() -> list:
 
 def test_nothing_else_reads_the_display_order():
     """The view's order is made by one function the tab alone calls: the records job, the feed, the v2 lists and the order
-    check read their own frames (scan_records_job.hold_reading sorts momentum and Rank itself), and no job calls scan_table."""
+    check read their own frames (scan_records_job.order_reading sorts RAM Rank and Rank itself), and no job calls scan_table."""
     readers = {name: {p.relative_to(ROOT).as_posix() for p in _source_files() if re.search(rf"\b{name}\b", p.read_text(encoding="utf-8"))}
                for name in ("ram_view_table", "scan_table", "TABLE_VIEWS")}
     assert readers == {"ram_view_table": {"app.py", "ui/ui_scans.py"}, "scan_table": {"app.py", "ui/ui_scans.py"},

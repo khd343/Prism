@@ -4,8 +4,8 @@ test_scan_records_job.py — the weekly job that keeps the 🎯 Scans records cu
 The job (ui/scan_records_job.py, run by .github/workflows/scan-records.yml) re-scores the PRISM
 Archive's month-end copies with today's engine and records two things per scan: the UNSEEN windows
 (starting after the recipes were chosen — the most trustworthy evidence a card can show) and the 🆕
-baseline. These tests pin which windows count as unseen, that the job never rewrites the design-period
-record or commits when nothing measured changed, that it refuses to mix records of two recipes, and
+baseline. These tests pin which windows count as unseen, that the job never rewrites a field it does not
+own or commits when nothing measured changed, that it refuses to mix records of two recipes, and
 that the workflow is wired to do exactly this and nothing more.
 """
 import json
@@ -23,6 +23,12 @@ sys.path.insert(0, str(ROOT))
 
 from ui import scan_records_job as J  # noqa: E402
 from ui import ui_scans as S  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _after_the_seal(monkeypatch):
+    """These tests read what the order check does once the seal is lifted. The seal itself: tests/test_scan_order_reading.py."""
+    monkeypatch.setattr(S, "ORDER_SEALED", False)
 
 ARCHIVE = ["2026-06-29", "2026-09-30", "2026-10-31", "2026-11-28", "2026-12-04"]
 
@@ -45,9 +51,11 @@ def test_a_window_shorter_than_the_minimum_is_not_evidence():
 
 
 def test_today_there_is_no_unseen_window_yet():
-    today = ["2026-06-29", "2026-09-30", "2026-10-05"]
+    today = ["2026-06-29", "2026-09-30", "2026-10-30", "2026-11-05"]        # 5 Nov 2026, when the record started fresh
     assert J.unseen_windows(today) == []
-    assert J.baseline_date(today) == "2026-09-30", "🆕 compares against the latest finished month"
+    assert J.baseline_date(today) == "2026-10-30", "🆕 compares against the latest finished month"
+    assert J.unseen_windows([*today[:3], "2026-11-30", "2026-12-31", "2027-01-04"]) == [
+        ("2026-11-30", "2026-12-31"), ("2026-11-30", "2027-01-04")], "30 Nov is the first copy that can start one"
 
 
 # ── 2. One measurement ────────────────────────────────────────────────────────────────────────────
@@ -316,22 +324,23 @@ def test_too_few_liquid_matches_give_a_net_count_and_no_reading():
 # ── 3. Merging never loses the other half, and a quiet week writes nothing ─────────────────────────
 def _existing():
     return {"version": S.RECORD_VERSION, "designed_on": S.DESIGNED_ON, "generated": "2026-10-06",
-            "engine_version": "abc", "latest_snapshot": "2026-10-03",
-            "scans": {"playbook": {"fingerprint": "f", "windows": [{"start": "2026-06-17"}],
+            "engine_version": "abc",
+            "scans": {"playbook": {"fingerprint": "f", "windows": [],
                                    "out_of_sample": [], "members_at_latest": ["A"]}}}
 
 
-def test_the_job_update_keeps_the_design_period_record():
-    new, changed = J.merge(_existing(), {"playbook": {"out_of_sample": [{"start": "2026-10-31"}]}}, {})
-    assert changed and new["scans"]["playbook"]["windows"] == [{"start": "2026-06-17"}]
+def test_the_job_update_keeps_the_fields_it_does_not_write():
+    new, changed = J.merge(_existing(), {"playbook": {"out_of_sample": [{"start": "2026-11-30"}]}}, {})
+    assert changed and new["scans"]["playbook"]["windows"] == [] and new["scans"]["playbook"]["members_at_latest"] == ["A"]
     assert new["scans"]["playbook"]["fingerprint"] == "f"
 
 
-def test_the_local_update_keeps_the_unseen_record():
+def test_a_new_fingerprint_keeps_the_unseen_record():
     ex = _existing()
-    ex["scans"]["playbook"]["out_of_sample"] = [{"start": "2026-10-31"}]
-    new, _ = J.merge(ex, {"playbook": {"windows": [{"start": "2026-08-22"}], "fingerprint": "g"}}, {})
-    assert new["scans"]["playbook"]["out_of_sample"] == [{"start": "2026-10-31"}]
+    ex["scans"]["playbook"]["out_of_sample"] = [{"start": "2026-11-30"}]
+    new, _ = J.merge(ex, {"playbook": {"fingerprint": "g"}}, {})
+    assert new["scans"]["playbook"]["out_of_sample"] == [{"start": "2026-11-30"}]
+    assert new["scans"]["playbook"]["fingerprint"] == "g"
 
 
 def test_only_timestamps_changing_is_not_a_change():
@@ -340,7 +349,7 @@ def test_only_timestamps_changing_is_not_a_change():
     assert not changed, "a quiet week must not commit"
 
 
-def test_the_job_refuses_a_stale_design_record():
+def test_the_job_refuses_a_stale_fingerprint():
     stale = {"scans": {s["key"]: {"fingerprint": "0" * 16} for s in S.SCANS}}
     with pytest.raises(SystemExit):
         J.check_fresh(stale)
@@ -351,7 +360,7 @@ def test_the_job_refuses_a_stale_design_record():
 def test_the_committed_records_carry_the_baseline_and_the_unseen_section():
     rec = json.loads(S.RECORDS_PATH.read_text(encoding="utf-8"))
     assert rec["version"] == S.RECORD_VERSION and rec["designed_on"] == S.DESIGNED_ON
-    assert rec["members_date"] <= max(rec["latest_snapshot"], rec["members_date"])
+    assert isinstance(rec["members_date"], str)
     for scan in S.SCANS:
         r = rec["scans"][scan["key"]]
         assert isinstance(r["out_of_sample"], list)
@@ -360,10 +369,9 @@ def test_the_committed_records_carry_the_baseline_and_the_unseen_section():
             assert w["n"] >= J.MIN_N
             assert {"net", "dropped_no_return", "dropped_corp_action", "falls", "falls_pct"} <= set(w), (
                 "the job records what each unseen window leaves out, and the falls it names with their bar")
-        if "study" not in r:                   # 🌱's baseline arrives with the job's first run
-            # A list, possibly empty since 2026-10-18: a recipe can match nothing on a good copy (a crash empties 🚀,
-            # whose stop is absolute); a broken copy is stopped by its inputs (scan_records_job.copy_problem).
-            assert isinstance(r.get("members_at_latest"), list), f"{scan['key']}: no 🆕 baseline"
+        # A list, possibly empty since 2026-10-18: a recipe can match nothing on a good copy (a crash empties 🚀,
+        # whose stop is absolute); a broken copy is stopped by its inputs (scan_records_job.copy_problem).
+        assert isinstance(r.get("members_at_latest"), list), f"{scan['key']}: no 🆕 baseline"
 
 
 # ── 4b. The secret is read however it was pasted ───────────────────────────────────────────────────
@@ -514,36 +522,37 @@ def test_the_workflows_run_on_a_pinned_runner_and_current_actions(name, text):
 def test_the_compounder_is_only_ever_recorded_on_a_year_or_more():
     comp = next(s for s in S.SCANS if s["key"] == "compounder")
     play = next(s for s in S.SCANS if s["key"] == "playbook")
-    dates = ["2026-09-30", "2026-10-31", "2026-11-30", "2027-04-30", "2027-10-29", "2027-10-31", "2027-11-05"]
-    # 2026-09-30 is before the design date; only October starts a 🌱 window, and it runs to the first
-    # copy a year later only — not also to the latest copy, which would overlap it.
-    assert J.scan_windows(dates, comp) == [("2026-10-31", "2027-10-31")], (
-        "one window a year: starts in October after its design date, ends at the first copy 365+ days on")
+    dates = ["2026-09-30", "2026-10-31", "2026-11-30", "2026-12-31", "2027-11-30", "2028-04-28", "2028-11-27", "2028-11-30",
+             "2028-12-04"]
+    # 2026's October copy is before the record date; only November starts a 🌱 window (the operator, 5 Nov), and it runs to the
+    # first copy a year later only — not also to the latest copy, which would overlap it.
+    assert J.scan_windows(dates, comp) == [("2026-11-30", "2027-11-30"), ("2027-11-30", "2028-11-30")], (
+        "one window a year: starts in November after the record date, ends at the first copy 365+ days on")
     assert all(J._days(a, b) >= 365 for a, b in J.scan_windows(dates, comp))
-    assert ("2026-10-31", "2026-11-30") in J.scan_windows(dates, play), "the short lists keep their 25 days"
+    assert ("2026-11-30", "2026-12-31") in J.scan_windows(dates, play), "the short lists keep their 25 days"
     assert J.scan_windows(dates[:4], comp) == [], "no year has passed yet: nothing to record"
 
 
 def test_the_compounder_gets_one_window_a_year_never_overlapping():
     """2026-10-07: a window from every month-end copy would show ~12 bars by 2028 that overlap by 11
-    months — one year of evidence that looks like twelve. 🌱 starts one window each October."""
+    months — one year of evidence that looks like twelve. 🌱 starts one window each November."""
     import pandas as _pd
     comp = next(s for s in S.SCANS if s["key"] == "compounder")
-    months = [d.strftime("%Y-%m-%d") for d in _pd.date_range("2026-09-30", "2029-01-31", freq="ME")] + ["2029-02-04"]
+    months = [d.strftime("%Y-%m-%d") for d in _pd.date_range("2026-09-30", "2030-01-31", freq="ME")] + ["2030-02-04"]
     w = J.scan_windows(months, comp)
-    assert w == [("2026-10-31", "2027-10-31"), ("2027-10-31", "2028-10-31")], w
+    assert w == [("2026-11-30", "2027-11-30"), ("2027-11-30", "2028-11-30"), ("2028-11-30", "2029-11-30")], w
     for (a, b), (c, _) in zip(w, w[1:]):
         assert b <= c, "a window ends before the next one starts"
-    assert all(a[5:7] == "10" for a, _ in w), "every start is an October month-end"
+    assert all(a[5:7] == "11" for a, _ in w), "every start is a November month-end"
     play = next(s for s in S.SCANS if s["key"] == "playbook")
     assert len(J.scan_windows(months, play)) > 20, "the short lists keep a window from every month-end"
 
 
-def test_a_missing_october_copy_costs_that_year_not_a_wrong_window():
+def test_a_missing_november_copy_costs_that_year_not_a_wrong_window():
     comp = next(s for s in S.SCANS if s["key"] == "compounder")
-    dates = ["2026-10-31", "2026-11-30", "2027-09-30", "2027-11-30", "2027-12-31", "2028-11-30", "2028-12-05"]
-    assert J.scan_windows(dates, comp) == [("2026-10-31", "2027-11-30")], (
-        "no October 2027 copy: no 2027 window, and no window starting in another month instead")
+    dates = ["2027-11-30", "2027-12-31", "2028-10-31", "2028-12-29", "2029-01-31", "2029-12-31", "2030-01-03"]
+    assert J.scan_windows(dates, comp) == [("2027-11-30", "2028-12-29")], (
+        "no November 2028 copy: no 2028 window, and no window starting in another month instead")
 
 
 # ── 8. The out-of-sample record cannot see the future, and its arithmetic is checked twice (2026-10-07)
@@ -851,7 +860,8 @@ def test_the_job_never_remeasures_a_final_window(monkeypatch, on_file):
     monkeypatch.setattr(J, "engine_version", lambda: "new-engine")
     monkeypatch.setattr(M, "load_index", lambda _id: pd.DataFrame(
         {"vintage_date": DATES, "spreadsheet_id": [f"id-{d}" for d in DATES]}))
-    toy = {"key": "toy", "emoji": "T", "name": "Toy", "mask": lambda d: d["flag"] == 1, "benchmark": "NSE:NIF500MO50"}
+    toy = {"key": "toy", "emoji": "T", "name": "Toy", "mask": lambda d: d["flag"] == 1, "benchmark": "NSE:NIF500MO50",
+           "designed_on": "2026-10-06"}                                     # its own date, so October's copy can start one
     monkeypatch.setattr(S, "SCANS", (toy,))
     monkeypatch.setattr(S, "recipe_fingerprint", lambda scan: "fp")
     monkeypatch.setattr(J, "_today", lambda: date(2026, 12, 7))           # the archive is current on that day
@@ -896,7 +906,7 @@ def test_the_job_reads_the_indices_beside_each_copy_and_records_the_comparison(m
     monkeypatch.setattr(M, "load_index", lambda _id: pd.DataFrame(
         {"vintage_date": dates, "spreadsheet_id": [f"id-{d}" for d in dates]}))
     toy = {"key": "toy", "emoji": "T", "name": "Toy", "mask": lambda d: d["flag"] == 1,
-           "benchmark": "NSE:NIF500MO50"}
+           "benchmark": "NSE:NIF500MO50", "designed_on": "2026-10-06"}      # its own date, so October's copy can start one
     monkeypatch.setattr(S, "SCANS", (toy,))
     monkeypatch.setattr(S, "recipe_fingerprint", lambda scan: "fp")
     monkeypatch.setattr(J, "_today", lambda: date(2026, 12, 7))           # the archive is current on that day
@@ -984,7 +994,7 @@ def test_a_final_window_is_final_for_its_own_recipe_only():
 def test_a_changed_recipe_must_be_dated_after_the_windows_it_replaces(monkeypatch):
     """Its designer has seen those windows: a design date before their end would let the new recipe call
     data it was fitted on 'unseen'. The job stops (GitHub emails the owner) until the date moves."""
-    # The design record was already re-measured for the new recipe (fp "new"); the old unseen window remains.
+    # The file's fingerprint was already moved to the new recipe (fp "new"); the old unseen window remains.
     with pytest.raises(SystemExit, match="design date"):
         _job_on_fake_archive(monkeypatch, _records([_OLD_FINAL], fp="new"), fp="new")
 
@@ -1195,10 +1205,10 @@ def test_a_design_date_on_the_last_old_windows_end_is_enough(monkeypatch):
     assert measured == [] and written["scans"]["toy"]["out_of_sample"] == [_OLD_FINAL]
 
 
-# ── 7. The design-period record re-scores snapshots with today's engine (2026-10-15) ─────────────────
+# ── 7. A saved snapshot is re-scored with today's engine (2026-10-15) ────────────────────────────────
 def test_a_snapshot_is_rescored_with_the_current_engine():
-    """A stored score is whichever definition was live that day; the design-period record must use today's
-    engine on the snapshot's raw columns, or a fixed engine is stamped with its fingerprint but measured old."""
+    """A stored score is whichever definition was live that day; a measurement on a snapshot must use today's
+    engine on its raw columns, or a fixed engine is stamped with its fingerprint but measured old."""
     from core.data_engine import price_trend_inputs
     from core.scoring_engine import compute_momentum_score
     raw = pd.DataFrame({"close_price": [110.0], "vstop_value": [100.0], "last_vstop_change": [1.0],
@@ -1329,4 +1339,61 @@ def test_the_slice_agrees_with_an_independent_recalculation(seed):
     assert (cut["n"], cut["pool"]) == (int(sub.sum()), int(pool.sum()))
     assert cut["median_excess_pp"] == pytest.approx(round(float(ex[sub].median()), 1))
     assert cut["beat_pct"] == int(round(float((ex[sub] > 0).mean() * 100)))
+
+
+# ── 10. The order check's reading can never stop the run (2026-11-05) ─────────────────────────────────────────────────
+# order_reading runs on every window of every copy, the old ones with no RAM among them, in the same run that carries the
+# Archive alarm. A crash in it would turn a green Monday red, or read as something other than what it is. The reading
+# itself: tests/test_scan_order_reading.py.
+def _tradable_frames():
+    """_liquid_frames as copies Kite can trade: its 30 priced matches each pass every filter, and carry RAM Rank and Rank."""
+    early, late = _liquid_frames()
+    early = early.assign(company_id="NSE:" + early["company_id"], shariah_status="Shariah", market_category="Small Cap",
+                         dist_to_vstop=10.0, weinstein_stage="📈 Stage 2 Advancing", ram_rank=np.arange(1.0, len(early) + 1),
+                         rank=np.arange(float(len(early)), 0.0, -1.0))
+    return early, late.assign(company_id="NSE:" + late["company_id"])
+
+
+def _written_windows(monkeypatch, early, late):
+    written, measured = _job_on_fake_archive(monkeypatch, _records([]), frames=(early, late))
+    windows = written["scans"]["toy"]["out_of_sample"]
+    assert measured and len(windows) == 2, "the run reached the end and wrote both windows"
+    return windows
+
+
+def test_the_job_writes_the_order_reading_on_a_copy_with_ram(monkeypatch):
+    for w in _written_windows(monkeypatch, *_tradable_frames()):
+        assert w["order"]["n"] == 30 and w["order"]["ram_pct"] is not None and w["order"]["rank_pct"] is not None
+        assert "momentum_pct" not in w["hold"]
+
+
+def test_a_copy_with_no_ram_never_stops_the_run(monkeypatch):
+    early, late = _tradable_frames()
+    windows = _written_windows(monkeypatch, early.drop(columns="ram_rank"), late)
+    for w in windows:
+        assert w["order"]["n"] == 30 and w["order"]["ram_pct"] is None and w["order"]["rank_pct"] is not None
+    assert S.order_rule(windows)["counted"] == 0, "a window with no RAM does not count, and the next one can"
+
+
+@pytest.mark.parametrize("column", ["shariah_status", "market_category", "vol_sma_20d", "dist_to_vstop", "weinstein_stage"])
+def test_a_copy_missing_a_filter_column_never_stops_the_run(monkeypatch, column):
+    """The two filter columns left out here, company_id and close_price, are what a window itself is measured on: without
+    them the copy cannot get this far (copy_problem, forward_returns), and the reading alone reads n = 0 (its own test)."""
+    early, late = _tradable_frames()
+    for w in _written_windows(monkeypatch, early.drop(columns=column), late):
+        assert w["order"]["n"] == 0 and not {"ram_pct", "rank_pct"} & set(w["order"])
+        assert w["n"] == 30, "and the window itself is read as ever"
+
+
+@pytest.mark.parametrize("copy", ["with RAM", "no RAM", "no filter column"])
+def test_the_archive_alarm_still_fires_first_on_every_copy(monkeypatch, copy):
+    early, late = _tradable_frames()
+    if copy != "with RAM":
+        early = early.drop(columns="ram_rank" if copy == "no RAM" else ["shariah_status", "weinstein_stage"])
+    written, measured = {}, []
+    with pytest.raises(SystemExit, match="stopped taking copies"):
+        _job_on_fake_archive(monkeypatch, _records([]), today=date(2026, 12, 20), frames=(early, late), written=written,
+                             measured=measured)
+    assert (written, measured) == ({}, []), "nothing measured, nothing written"
+    assert J.MAX_ARCHIVE_AGE_DAYS == 10
 

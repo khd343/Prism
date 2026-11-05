@@ -24,6 +24,9 @@ momentum must beat on average at least 70% of random picks AND average higher th
 half" rule would pass 31% of the time. Each scan is checked on its own windows; only the Playbook and
 Leading-Sector are checked.
 
+Since 2026-11-05 (the operator's call) the check reads RAM Rank's top 20 on what Kite can trade, its own reading on its
+own pool, and "Holding 20" no longer reads momentum: tests/test_scan_order_reading.py. The rule's numbers did not move.
+
 Run with: pytest tests/test_scan_hold_reading.py -v
 """
 import html as _html
@@ -39,6 +42,12 @@ sys.path.insert(0, str(ROOT))
 
 from ui import scan_records_job as J  # noqa: E402
 from ui import ui_scans as S  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _after_the_seal(monkeypatch):
+    """These tests read what the order check does once the seal is lifted. The seal itself: tests/test_scan_order_reading.py."""
+    monkeypatch.setattr(S, "ORDER_SEALED", False)
 
 
 # ── 1. The reading is fixed before any result ───────────────────────────────────────────────────────
@@ -102,9 +111,9 @@ def test_the_reading_is_after_costs_and_counts_losses():
     assert h["loss_pct"] == 100
 
 
-def test_the_orders_are_placed_among_random_picks():
+def test_ranks_order_is_placed_among_random_picks_and_momentums_no_longer_is():
     h = _hold(*_market())
-    assert h["momentum_pct"] >= 99, "momentum's top 20 holds the 20 best returns here"
+    assert "momentum_pct" not in h, "the order check moved to RAM Rank (2026-11-05), so nothing reads it here"
     assert h["rank_pct"] <= 1, "Rank's top 20 holds the 20 worst here"
 
 
@@ -117,7 +126,7 @@ def test_the_reading_never_moves_once_written():
 
 def test_a_window_with_too_few_holdable_matches_is_noted_and_not_read():
     h = _hold(*_market(n_hold=29))
-    assert h["n"] == 29 and "median_pp" not in h and "momentum_pct" not in h
+    assert h["n"] == 29 and "median_pp" not in h and "rank_pct" not in h
 
 
 # ── 3. The check on the order in use ────────────────────────────────────────────────────────────────
@@ -125,11 +134,11 @@ _CHAIN = [("2026-10-31", "2026-11-30"), ("2026-11-30", "2026-12-31"), ("2026-12-
           ("2027-01-29", "2027-02-26"), ("2027-02-26", "2027-03-31")]
 
 
-def _w(span, mom, rank, n=60, final=True):
-    hold = dict(k=20, n=n)
+def _w(span, ram, rank, n=60, final=True):
+    order = dict(k=20, n=n)
     if n >= 30:
-        hold.update(momentum_pct=mom, rank_pct=rank)
-    return dict(start=span[0], end=span[1], final=final, hold=hold)
+        order.update(ram_pct=ram, rank_pct=rank)
+    return dict(start=span[0], end=span[1], final=final, order=order)
 
 
 def test_the_order_rule_waits_for_four_separate_finished_windows():
@@ -141,16 +150,16 @@ def test_the_order_rule_waits_for_four_separate_finished_windows():
     v = S.order_rule(ws + [_w(("2026-11-30", "2027-01-29"), 90, 40)])
     assert v["state"] == "pending" and v["counted"] == 3, "an overlapping window does not count"
     v = S.order_rule(ws + [_w(_CHAIN[3], None, None, n=25)])
-    assert v["state"] == "pending" and v["counted"] == 3, "fewer than 30 holdable matches: the next one counts"
+    assert v["state"] == "pending" and v["counted"] == 3, "fewer than 30 stocks Kite can trade: the next one counts"
 
 
-def test_the_momentum_order_holds_only_at_the_declared_bar():
+def test_ram_ranks_order_holds_only_at_the_declared_bar():
     held = S.order_rule([_w(s, m, 50) for s, m in zip(_CHAIN, (80, 75, 66, 72))])
-    assert held["state"] == "held" and held["mom_avg"] == pytest.approx(73.25)
+    assert held["state"] == "held" and held["ram_avg"] == pytest.approx(73.25)
     short = S.order_rule([_w(s, m, 50) for s, m in zip(_CHAIN, (80, 75, 60, 62))])
     assert short["state"] == "did not hold", "an average under 70 is not enough"
     behind = S.order_rule([_w(s, 80, 85) for s in _CHAIN[:4]])
-    assert behind["state"] == "did not hold", "momentum must also average above Rank's top 20"
+    assert behind["state"] == "did not hold", "RAM Rank must also average above Rank's top 20"
 
 
 def test_only_the_first_four_separate_windows_decide():
@@ -162,31 +171,30 @@ def test_only_the_first_four_separate_windows_decide():
 # ── 4. On the card ──────────────────────────────────────────────────────────────────────────────────
 def _unseen_with_hold():
     hold = dict(k=20, max_price=5000.0, caps=list(S.HOLD_CAPS), cost_pp=S.NET_COST_PP, draws=2000, n=97,
-                median_pp=12.6, p10_pp=3.7, p90_pp=23.1, loss_pct=2, momentum_pct=56, rank_pct=41)
+                median_pp=12.6, p10_pp=3.7, p90_pp=23.1, loss_pct=2, rank_pct=41)
     return [dict(start="2026-10-31", end="2026-11-30", days=30, n=120, median_excess_pp=1.0, beat_pct=55,
-                 final=True, hold=hold)]
+                 final=True, hold=hold, order=dict(k=20, n=49, ram_pct=56, rank_pct=38))]
 
 
 def _playbook_record():
-    return {"windows": [dict(start="2026-06-17", end="2026-08-22", days=66, median_excess_pp=7.1, beat_pct=69,
-                             n=150)], "out_of_sample": _unseen_with_hold()}
+    return {"out_of_sample": _unseen_with_hold()}
 
 
 def test_the_full_record_shows_what_holding_20_gave_and_where_the_rule_stands():
-    h = _html.unescape(S.card_html(S.SCANS[0], 235, "measured", _playbook_record(), selected=False,
-                                   latest="03 Dec"))
-    for s in ("Holding 20 of them", "+12.6%", "+3.7 to +23.1", "lost money in 2%",
-              "momentum's top 20 beat 56%", "Rank's top 20 41%", "Order check: 1 of 4"):
+    h = _html.unescape(S.card_html(S.SCANS[0], 235, "measured", _playbook_record(), selected=False))
+    for s in ("Holding 20 of them", "+12.6%", "+3.7 to +23.1", "lost money in 2%", "Rank's top 20 beat 41%",
+              "RAM Rank's top 20 beat 56%", "Rank's top 20 38%", "Order check: 1 of 4"):
         assert s in h, s
     assert h.index("NEVER SAW") < h.index("Holding 20 of them"), "it reads under the unseen record"
     line = h[h.index("Holding 20 of them"):]
     assert "Mega, Large, Mid and Small cap matches" in line and "one share at most ₹5,000" in line
     assert "Cr+ a day" not in line[:line.index("Order check")], "this reading has no traded-value floor"
-    # Repointed 2026-11-05: the 🚀 lists open on the 🔢 RAM view, so "the table" no longer lists by momentum in every view.
+    # Repointed 2026-11-05: the 🚀 lists open on the 🔢 RAM view, so "the table" no longer lists by momentum in every view,
+    # and the check reads RAM Rank whichever way the table lists (tests/test_scan_order_reading.py).
     assert ("🏆 Core and 📈 Technical list by momentum since 13 Oct" in line and "🔢 RAM by RAM Rank" in line
-            and "whether momentum's order keeps beating" in line and "only if" not in line), (
-        "the order is in use; the check records whether it keeps beating random picks — it gates nothing")
-    other = _html.unescape(S.card_html(S.SCANS[1], 235, "measured", _playbook_record(), selected=False, latest="03 Dec"))
+            and "the order check reads RAM Rank." in line and "only if" not in line), (
+        "the check reads RAM Rank, not the order in the table — it gates nothing")
+    other = _html.unescape(S.card_html(S.SCANS[1], 235, "measured", _playbook_record(), selected=False))
     assert ("🏆 Core and 📈 Technical list by momentum since 13 Oct" in other and "🔢 RAM by RAM Rank" in other
             and "The table lists" not in other), "🌬️ opens on 🔢 RAM too (2026-11-05)"
 
@@ -195,19 +203,19 @@ def test_the_card_states_a_decided_check_in_words():
     base = _unseen_with_hold()[0]
     for moms, word in (((80, 75, 66, 72), "held (its top 20 beat 73%"),
                        ((80, 75, 60, 62), "did not hold (its top 20 beat 69%")):
-        ws = [dict(base, start=s, end=e, hold=dict(base["hold"], momentum_pct=m, rank_pct=50))
+        ws = [dict(base, start=s, end=e, order=dict(base["order"], ram_pct=m, rank_pct=50))
               for (s, e), m in zip(_CHAIN, moms)]
         rec = dict(_playbook_record(), out_of_sample=ws)
-        h = _html.unescape(S.card_html(S.SCANS[0], 235, "measured", rec, selected=False, latest="03 Dec"))
-        assert f"Order check after 4 separate windows: momentum order {word}" in h, word
+        h = _html.unescape(S.card_html(S.SCANS[0], 235, "measured", rec, selected=False))
+        assert f"Order check after 4 separate windows: RAM Rank's order {word}" in h, word
 
 
 def test_the_compounder_shows_the_reading_but_no_order_check():
     comp = next(s for s in S.SCANS if s["key"] == "compounder")
     import json
-    study = json.loads(S.RECORDS_PATH.read_text(encoding="utf-8"))["scans"]["compounder"]
-    rec = dict(study, out_of_sample=_unseen_with_hold())
-    h = _html.unescape(S.card_html(comp, 320, "measured", rec, selected=False, latest="03 Dec"))
+    on_file = json.loads(S.RECORDS_PATH.read_text(encoding="utf-8"))["scans"]["compounder"]
+    rec = dict(on_file, out_of_sample=_unseen_with_hold())
+    h = _html.unescape(S.card_html(comp, 320, "measured", rec, selected=False))
     assert "Holding 20 of them" in h and "Order check" not in h, (
         "🌱 lists by Rank; only the two momentum-ordered scans are checked")
 
@@ -215,5 +223,5 @@ def test_the_compounder_shows_the_reading_but_no_order_check():
 def test_no_hold_line_before_a_window_carries_it():
     rec = _playbook_record()
     rec["out_of_sample"][0].pop("hold")
-    h = S.card_html(S.SCANS[0], 235, "measured", rec, selected=False, latest="03 Dec")
+    h = S.card_html(S.SCANS[0], 235, "measured", rec, selected=False)
     assert "Holding 20" not in h and "Order check" not in h
