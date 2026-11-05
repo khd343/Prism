@@ -210,6 +210,8 @@ def test_the_export_carries_every_sort_column():
 # renders; its column state does not, so measure that.)
 _GRID_PX, _ROW_SELECTOR_PX = 1064, 44
 W = {k: v.value for k, v in _dict("_DS_W").items()}
+# 2026-11-05: 📈 Technical and the Deep Scanner's 🔢 RAM view draw at their own widths, over this table.
+W_VIEWS = {k: {a.value: b.value for a, b in zip(v.keys, v.values)} for k, v in _dict("_DS_W_VIEWS").items()}
 
 
 def test_every_column_a_view_can_show_has_a_set_width():
@@ -220,7 +222,7 @@ def test_every_column_a_view_can_show_has_a_set_width():
 
 def test_every_view_fits_a_laptop_screen():
     for view, cols in VIEWS.items():
-        need = sum(W[c] for c in cols) + _ROW_SELECTOR_PX
+        need = sum({**W, **W_VIEWS.get(view, {})}[c] for c in cols) + _ROW_SELECTOR_PX
         assert need <= _GRID_PX, f"{view} needs {need}px: {need - _GRID_PX}px off a 1536px laptop screen"
 
 
@@ -258,7 +260,8 @@ def test_no_column_has_two_homes_among_the_detail_views():
             if c not in SPINE:
                 homes.setdefault(c, []).append(v)
     two = {c: vs for c, vs in sorted(homes.items()) if len(vs) > 1}
-    assert not two, f"columns shown in two detail views: {two}"
+    # The one exception, the operator's, 2026-11-05: Improvement in 📈 Technical as well as 📊 Quality.
+    assert two == {"improvement_score": ["📊 Quality", "📈 Technical"]}, f"columns shown in two detail views: {two}"
 
 
 def _group_core(name):

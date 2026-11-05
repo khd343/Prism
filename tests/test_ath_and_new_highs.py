@@ -33,18 +33,16 @@ def _dict(name):
     return dict(zip([k.value for k in node.keys], node.values))
 
 
-def test_off_ath_sits_right_after_the_breakout_pair():
+def test_off_ath_left_the_technical_view_for_ram_rank_and_improvement():
+    """The operator, 2026-11-05: it feeds the Breakout score already, and the table had no room."""
     tech = [e.value for e in _dict("_DS_VIEWS")["📈 Technical"].elts]
-    i = tech.index("dist_ath")
-    assert tech[i - 2:i] == ["breakout_score", "d48_breakout_readiness"], (
-        "Off ATH reads after Breakout and its Readiness verdict: a 52-week high can sit far below an older peak")
+    assert "dist_ath" not in tech and "ram_rank" in tech and "improvement_score" in tech
 
 
-def test_off_ath_reads_as_a_percentage_below_the_high():
-    fmt = {k: tuple(e.value for e in v.elts) for k, v in _dict("_num_fmt").items()}
-    assert fmt["dist_ath"] == ("Off ATH", "%.1f%%")
-    width = _dict("_DS_W")["dist_ath"].value
-    assert isinstance(width, int) and width >= 60, "a set width, wide enough for its header"
+def test_off_ath_stays_in_the_csv_download():
+    """The export is built from the views and the sorts, so a column that leaves every view must be named, or it vanishes quietly."""
+    src = io.open(ROOT / "app.py", encoding="utf-8").read()
+    assert '"dist_ath"' in src[src.index("_export_cols = ["):src.index("_safe_mode = ")]
 
 
 def test_the_tooltip_comes_from_the_glossary_and_says_what_it_is():
@@ -54,6 +52,7 @@ def test_the_tooltip_comes_from_the_glossary_and_says_what_it_is():
     assert _SCANNER_HEADER_TIPS["dist_ath"] == tip, "one text, so the header and the Reference cannot drift"
     assert "0%" in tip and "all-time high" in tip and "52-week high" in tip
     assert "Breakout score" in tip, "the reader must learn that it already feeds Breakout (pinned below)"
+    assert "beside Breakout" not in tip, "Off ATH left every view on 5 Nov; it is in the CSV"
 
 
 def test_the_breakout_score_still_reads_the_all_time_high():

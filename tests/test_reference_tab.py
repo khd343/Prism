@@ -135,18 +135,18 @@ def test_reference_two_mode_layout():
     import io as _io, os
     src = _io.open(os.path.join(os.path.dirname(__file__), "..", "app.py"), encoding="utf-8").read()
     helpers = ("_show_concepts", "_show_glossary", "_show_flags", "_show_frameworks", "_show_wcs",
-               "_show_scans")
+               "_show_scans", "_show_ram")
 
-    # SEARCH MODE: between the query conditional and the browse branch, all six filtered by _ref_q.
+    # SEARCH MODE: between the query conditional and the browse branch, all seven filtered by _ref_q.
     search_branch = src[src.index("if _ref_q.strip():"):src.index("_ref_tabs = st.tabs")]
     for h in helpers:
         assert f"{h}(_ref_q)" in search_branch, f"search mode lost {h} — unified search broken"
-    assert "Searching across all six sections" in search_branch
+    assert "Searching across all seven sections" in search_branch
 
-    # BROWSE MODE: six inner tabs with the exact corpus labels, all six rendered unfiltered.
+    # BROWSE MODE: seven inner tabs with the exact corpus labels, all seven rendered unfiltered.
     browse = src[src.index("_ref_tabs = st.tabs"):]
     for label in ("🏷️ Labels & Verdicts", "📖 Glossary", "🚩 Red Flags",
-                  "🏛️ Frameworks", "📚 WCS Studies", "🎯 Scans"):
+                  "🏛️ Frameworks", "📚 WCS Studies", "🎯 Scans", "🔢 RAM"):
         assert label in browse, f"browse mode lost its {label} tab"
     for h in helpers:
         assert f'{h}("")' in browse, f"browse mode lost {h} — a corpus vanished from its tab"

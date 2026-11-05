@@ -845,7 +845,8 @@ def test_flipping_to_core_or_technical_is_mains_table_and_mains_caption(tmp_path
         assert not at.exception, [e.value for e in at.exception]
         grid = at.dataframe[0]
         assert list(grid.proto.column_order) == list(S.table_columns(S.SCANS[0], view)), view
-        assert grid.value["momentum_score"].is_monotonic_decreasing and "ram_rank" not in grid.value.columns, view
+        assert grid.value["momentum_score"].is_monotonic_decreasing, f"{view}: the list's own order"
+        assert ("ram_rank" in grid.value.columns) == (view == "📈 Technical"), "2026-11-05: RAM Rank joins 📈 Technical alone"
         cap = next(c.value for c in at.caption if "sorted by" in c.value)
         assert "sorted by Momentum, high to low · click a row" in cap, cap
 
@@ -902,6 +903,56 @@ def test_a_copy_with_no_ram_reads_leaders_and_compounder_in_their_own_order_and_
     assert list(tab.dataframe[0].value["name"]) == opened, "with no RAM the view keeps the list's order, row for row"
 
 
+@pytest.mark.parametrize("key", ["playbook", "no_quarter", "price_only", "leaders", "compounder"])
+def test_technical_shows_ram_rank_and_improvement_on_every_list_in_the_real_tab(tmp_path, key):
+    """2026-11-05, the operator's ask. It keeps each list's own order, New's legend stays with Core, and B and C keep List."""
+    from ui import ui_scans as S
+    at = _ram_tab(tmp_path)
+    if key in ("leaders", "compounder"):
+        at.button(key=f"scan_open_{key}").click().run()
+    elif key != "playbook":
+        _control(at, "scan_layer").set_value(key).run()
+    _control(at, "scan_view").set_value("📈 Technical").run()
+    assert not at.exception, [e.value for e in at.exception]
+    grid = at.dataframe[0]
+    order = list(grid.proto.column_order)
+    assert "ram_rank" in order and "improvement_score" in order and "_new" not in order, key
+    assert ("_layer" in order) == (key in ("no_quarter", "price_only")), key
+    config = json.loads(grid.proto.columns)
+    assert config["ram_rank"]["label"] == "RAM Rank" and config["improvement_score"]["label"] == "Improvement", key
+    assert config["name"]["width"] == (130 if key in ("no_quarter", "price_only") else 170), key
+    t = grid.value
+    assert t["ram_rank"].notna().any() and t["ram_rank"].isna().any(), f"{key}: a rank here, a dash there"
+    own = t["rank"].is_monotonic_increasing if key == "compounder" else t["momentum_score"].is_monotonic_decreasing
+    assert own, f"{key}: the list's own order, not RAM Rank's"
+    cap = next(c.value for c in at.caption if "sorted by" in c.value)
+    assert "🆕" not in cap and "RAM of" not in cap, cap
+
+
+def test_core_keeps_new_and_its_legend_while_technical_does_not(tmp_path):
+    from streamlit.testing.v1 import AppTest
+    records = _records_without_baselines()
+    records["scans"]["playbook"]["members_at_latest"] = _frame()["company_id"].tolist()[:150]
+    records["members_date"] = "2026-09-30"
+    script = tmp_path / "scans_tab_new.py"
+    script.write_text(_app_source(records), encoding="utf-8")
+    at = AppTest.from_file(str(script), default_timeout=60)
+    at.run()
+    _control(at, "scan_view").set_value("🏆 Core").run()
+    assert "_new" in at.dataframe[0].proto.column_order
+    assert any("🆕 new since 30 Sep" in c.value for c in at.caption), "Core reads the baseline"
+    _control(at, "scan_view").set_value("📈 Technical").run()
+    assert "_new" not in at.dataframe[0].proto.column_order
+    assert not any("🆕" in c.value for c in at.caption), "the legend stays with its column"
+
+
+def test_a_row_click_in_technical_loads_the_row_on_screen(tmp_path):
+    at = _ram_tab(tmp_path, _PICKS_THE_FIRST_ROW)
+    _control(at, "scan_view").set_value("📈 Technical").run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert at.session_state["xray_stock"] == at.dataframe[0].value["name"].iloc[0]
+
+
 def test_a_row_click_after_the_sort_loads_that_stock(tmp_path):
     at = _ram_tab(tmp_path, _PICKS_THE_FIRST_ROW)
     t = at.dataframe[0].value
@@ -933,9 +984,11 @@ def test_the_view_shows_a_dash_for_a_blank_and_every_other_view_keeps_streamlits
     for view in S.SCAN_VIEWS:
         _control(at, "scan_view").set_value(view).run()
         assert not at.exception, [e.value for e in at.exception]
-        assert at.dataframe[0].proto.placeholder == "", view
+        assert at.dataframe[0].proto.placeholder == ("—" if view == "📈 Technical" else ""), view   # it carries RAM Rank (2026-11-05)
     at.button(key="scan_open_leaders").click().run()
-    assert at.dataframe[0].proto.placeholder == "", "📈 Technical stays chosen, and keeps Streamlit's own"
+    assert at.dataframe[0].proto.placeholder == "—", "📈 Technical stays chosen on 🌬️"
+    _control(at, "scan_view").set_value("🏆 Core").run()
+    assert at.dataframe[0].proto.placeholder == "", "Core keeps Streamlit's own"
     _control(at, "scan_view").set_value(S.RAM_VIEW).run()
     assert at.dataframe[0].proto.placeholder == "—", "🌬️ draws the view as 🚀 does"
 

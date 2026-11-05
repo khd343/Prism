@@ -216,7 +216,7 @@ def test_technical_view_pairs_each_verdict_with_its_number():
     d49 after momentum_score, d48 after breakout_score — so 82 and 🎯 IMMINENT land in one glance.
     Order is the UX; a reshuffle that keeps both columns but breaks adjacency fails here."""
     src = _app_src()
-    i = src.index('"📈 Technical"')
+    i = src.index('"📈 Technical": ["rank"')
     import ast
     view = ast.literal_eval(src[src.index("[", i):src.index("]", i) + 1])
     for verdict, number in [("d49_momentum_quality", "momentum_score"),

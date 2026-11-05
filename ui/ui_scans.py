@@ -769,11 +769,19 @@ TABLE_WIDTHS = {"rank": 50, "_new": 55, "name": 175, "market_category": 75, "sec
 # to Core would have pushed it ~450px past a 1536px laptop. A display choice: it changes no list, record
 # or order, and the 🧹 Clear never resets it.
 SCAN_VIEWS = ("🏆 Core", "📈 Technical")
-TECHNICAL_COLUMNS = ("rank", "_new", "name", "close_price", "_liq_cr", "dist_to_vstop", "momentum_score",
-                     "d49_momentum_quality", "rsi_14d", "breakout_score", "crs_52w", "weinstein_stage")
+# 2026-11-05, the operator's ask: RAM Rank and Improvement join 📈 Technical on every list, and New stays in Core. B's and C's List
+# stays (their extra, after Rank). Measured that day on the live sheet in the grid's font, no column is under its header and widest
+# common value, and the view has its own widths so Core's are untouched: Rank 46 (values 44), Price 75 (a ₹10 lakh unit, "1100000.00",
+# needs 74.5, or its leading digit is cut and it reads as a tenth of its price), Stop Δ 57 ("-11.4%" 56), RSI 40 (header 35), Breakout 70
+# (header 69), Improvement 96, Trend 81 ("📈 Stage 2"). That leaves Stock 170, which shows 66-73% of names in full; on B and C, with List 40,
+# Stock 130, 28-30%.
+TECHNICAL_COLUMNS = ("rank", "ram_rank", "name", "close_price", "_liq_cr", "dist_to_vstop", "momentum_score",
+                     "d49_momentum_quality", "rsi_14d", "breakout_score", "improvement_score", "crs_52w", "weinstein_stage")
+TECHNICAL_WIDTHS = {"rank": 46, "ram_rank": 75, "name": 170, "close_price": 75, "dist_to_vstop": 57, "rsi_14d": 40,
+                    "breakout_score": 70, "improvement_score": 96, "weinstein_stage": 81}
 # 🔢 RAM (2026-11-05, the operator's call): a list you act on answers one question, so every list opens on one table of its
 # own, by RAM Rank, strongest first, no RAM last: the 🚀 Playbook, B and C first, 🌬️ and 🌱 the same evening. Core and Technical
-# stay as they are, on every list, and one choice of a view carries from list to list. Price
+# keep the list's own order, on every list, and one choice of a view carries from list to list. Price
 # is there because one share must fit the account. Display only: only the tab reads this view and its order, and no
 # list, record, feed or fingerprint moves (tests/test_ram_display.py); the order check sorts RAM Rank on its own frame
 # (scan_records_job.order_reading). It takes the 1,030px with nothing
@@ -788,6 +796,8 @@ TABLE_VIEWS = (RAM_VIEW, *SCAN_VIEWS)         # what every list offers, the firs
 # The engine's Weinstein labels, shortened so the column fits; the header tip carries the words.
 TREND_SHORT = {"📈 Stage 2 Advancing": "📈 Stage 2", "🔄 Stage 1 Basing": "🔄 Stage 1",
                "⚠️ Stage 3 Top": "⚠️ Stage 3", "📉 Stage 4 Declining": "📉 Stage 4"}
+# 📈 Technical's Trend is 81px: "📈 Stage 2" fits and "❔ Unknown" would lose its last letter, so there it reads as its mark alone.
+TECHNICAL_TREND_SHORT = {**TREND_SHORT, "❔ Unknown": "❔"}
 
 
 # Columns a scan may ADD to the shared table (2026-10-07), each placed after an anchor column. Only a
@@ -799,7 +809,7 @@ EXTRA_COLUMNS = {"_cycle": "_strong_q", "_layer": "rank"}
 def table_columns(scan: dict, view: str = SCAN_VIEWS[0]) -> tuple:
     """The columns this scan shows in `view`. 🏆 Core: every table column except those its recipe fixes,
     plus its own extra columns, each right after its anchor. 📈 Technical: TECHNICAL_COLUMNS except the
-    fixed ones (none is fixed by a recipe; the ladder's B and C hide New), plus an extra only where the view
+    fixed ones (none is fixed by a recipe), plus an extra only where the view
     shows its anchor (2026-10-30): List after Rank, while 🌱's Cycle ↓, anchored on 🔥, stays out. 🔢 RAM: its own columns,
     the same on every list."""
     if view == RAM_VIEW:
@@ -818,6 +828,20 @@ def table_columns(scan: dict, view: str = SCAN_VIEWS[0]) -> tuple:
 def table_widths(scan: dict) -> dict:
     """Column widths for this scan: the shared widths, with the scan's own overrides."""
     return {**TABLE_WIDTHS, **scan.get("widths", {})}
+
+
+def technical_view_scan(scan: dict) -> dict:
+    """The scan as 📈 Technical draws it: the view's widths on every list. B's and C's List takes its 40 from Stock."""
+    if "_layer" in scan.get("extra", ()):
+        return dict(scan, widths={**TECHNICAL_WIDTHS, "name": 130, "_layer": 40})
+    return dict(scan, widths=TECHNICAL_WIDTHS)
+
+
+def technical_view_table(table: pd.DataFrame, df: pd.DataFrame) -> pd.DataFrame:
+    """A finished list with RAM Rank from the market frame beside it. It keeps the list's own order: the view shows the rank and
+    does not sort by it, so a click on its header does that. A copy with no RAM reads blank. Trend takes the view's short words."""
+    out = table.merge(df.reindex(columns=["company_id", "ram_rank"]), on="company_id", how="left")
+    return out.assign(weinstein_stage=out["weinstein_stage"].replace(TECHNICAL_TREND_SHORT)) if "weinstein_stage" in out.columns else out
 
 
 def ram_view_scan(scan: dict) -> dict:
@@ -891,7 +915,8 @@ def scan_table(df: pd.DataFrame, scan: dict, members_at_latest=None, min_cr=None
     out["_cycle"] = np.where(cycle_shortened(out), "✓", "")
     if "weinstein_stage" in out.columns:
         out["weinstein_stage"] = out["weinstein_stage"].replace(TREND_SHORT)
-    shown = [*TABLE_COLUMNS, *(c for c in TECHNICAL_COLUMNS if c not in TABLE_COLUMNS),
+    # RAM Rank never rides in the list's own frame: only the two views that show it join it (technical_view_table, ram_view_table).
+    shown = [*TABLE_COLUMNS, *(c for c in TECHNICAL_COLUMNS if c not in TABLE_COLUMNS and c != "ram_rank"),
              *(c for c in EXTRA_COLUMNS if c in out.columns)]
     for c in shown:
         if c not in out.columns:
