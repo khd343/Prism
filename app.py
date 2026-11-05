@@ -171,7 +171,7 @@ from ui.ui_scans import (SCANS, CANDIDATES as SCAN_CANDIDATES, LIQUIDITY_STEPS a
                          left_summary as scan_left_summary, left_legend as scan_left_legend,
                          table_columns as scan_table_columns, card_html as scan_card_html,
                          card_summary_html as scan_card_summary_html,
-                         load_records as load_scan_records,
+                         load_records as load_scan_records, STUDY_SCANS as SCAN_STUDY_SCANS,
                          members_label as scan_members_label,
                          record_state as scan_record_state, scan_table, table_config as scan_table_config,
                          SCAN_VIEWS, TREND_SHORT as SCAN_TREND_SHORT, momentum_ordered as scan_momentum_ordered,
@@ -944,7 +944,8 @@ def _scan_filter_row(frame, slots, shariah_slot, exchange_slot):
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # ── 🎯 Scans (2026-10-06) ─────────────────────────────────────────────────────────────────────────
 # Measured stock lists, one definition each (ui/ui_scans.py): each card shows its own record from the
-# PRISM Archive's month-end copies (ui/scan_records.json, written by the weekly ui/scan_records_job.py), and the list reads the
+# PRISM Archive's month-end copies (ui/scan_records.json, written by the weekly ui/scan_records_job.py; 🌱's also keeps its 3-year
+# study), and the list reads the
 # WHOLE market — never the sidebar's `filt` — so it is exactly what that record measured. Display and
 # recipes live in the module; app.py owns the scan choice, the liquidity floor and the row click
 # (tests/test_scans.py).
@@ -961,8 +962,8 @@ with tabs[1]:
     _sc_new_label = scan_members_label(_sc_recs)   # the month-end copy 🆕 compares against
     _sc_counts = {s["key"]: int(s["mask"](df).sum()) for s in SCANS}
     st.markdown(
-        "<div class='sec-cap'>Stock lists PRISM measures, each with its record of windows nobody saw while "
-        "choosing the recipe. A list narrows the market; the decision stays yours.</div>",
+        "<div class='sec-cap'>Stock lists PRISM measures, each with its record — in-sample means "
+        "studied while choosing the recipe. A list narrows the market; the decision stays yours.</div>",
         unsafe_allow_html=True)
     for _sc_col, _sc in zip(st.columns(len(SCANS)), SCANS):
         with _sc_col:
@@ -976,10 +977,11 @@ with tabs[1]:
     # THE FULL RECORD, ONE CLICK AWAY (2026-10-08). Three full cards side by side were 406 / 408 / 596px
     # tall and pushed the list ~240px below a laptop's first screen, so the cards above carry one honest
     # headline each and the SELECTED scan's whole record — every window, after costs, what was left
-    # out — sits here at full width, where each line fits on one line.
+    # out, the caveats — sits here at full width, where each line fits on one line.
     _sc_state_sel, _sc_rec_sel = scan_record_state(_sc_recs, _sc_sel)
-    with st.expander(f"📊 Full record — {_sc_sel['emoji']} {_sc_sel['name']}: every window, after costs, and "
-                     f"what was left out", expanded=False):
+    with st.expander(f"📊 Full record — {_sc_sel['emoji']} {_sc_sel['name']}: " + (
+            "every window or year, after costs, what was left out and the caveats" if _sc_sel["key"] in SCAN_STUDY_SCANS
+            else "every window, after costs, and what was left out"), expanded=False):
         st.markdown(scan_card_html(_sc_sel, _sc_counts[_sc_sel["key"]], _sc_state_sel, _sc_rec_sel, True,
                                    with_head=False), unsafe_allow_html=True)
     # HOW IT WORKS, BESIDE ITS RECORD (2026-10-14): the selected scan's guide — the same ui/scan_guide.py text
@@ -1125,7 +1127,7 @@ with tabs[1]:
               set — <strong style="color:{COLORS['blue']};">click The Tear-Sheet tab</strong> for full analysis.
             </div>
             """, unsafe_allow_html=True)
-    # "Left 🌱" (2026-10-07): the exit side. Only a scan with exit reasons shows it, on the same
+    # "Left 🌱" (2026-10-07): the exit side. Only a scan with measured exit reasons shows it, on the same
     # baseline and the same rule as 🆕 (members only while the record is current). The 🎯 sidebar scope
     # narrows it; the liquidity floor and the lens row do not (a stock does not leave by trading less). The 🚀
     # ladder's B and C carry no exit reasons (2026-10-30): they have no record, so nothing "left" them.

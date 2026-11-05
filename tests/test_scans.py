@@ -14,7 +14,7 @@ tab shows each list beside ITS OWN record. Three rules carry that promise, and e
 2. A RECORD NEVER OUTLIVES ITS RECIPE. ui/scan_records.json stores a fingerprint of the recipe it
    measured. If the recipe changes, the card shows no numbers until it is re-measured, and the
    committed file must match the current recipes or this suite fails.
-   (Every record starts fresh from 2026-11-05: tests/test_scan_records_fresh.py.)
+   (🚀's and 🌬️'s records start fresh from 2026-11-05 and 🌱 keeps its study: tests/test_scan_records_fresh.py.)
 3. NOTHING HIDDEN, NOTHING PROMISED. Flagged stocks stay in the list with their flags shown; no
    'buy' wording; a missing value never passes a condition (unverifiable is not passed).
 
@@ -341,7 +341,15 @@ def test_the_committed_records_match_the_current_recipes():
         assert r, f"no record for {scan['key']}"
         assert r["fingerprint"] == S.recipe_fingerprint(scan), (
             f"{scan['key']}: the recipe changed since its fingerprint was written — write the new one by hand")
-        assert "study" not in r and r["windows"] == [], f"{scan['key']}: the record starts fresh from 2026-11-05"
+        assert r["windows"] == [], f"{scan['key']}: a design-period window is back"
+        if scan["key"] in S.STUDY_SCANS:       # 🌱: a study, not saved windows (2026-10-07)
+            st_ = r["study"]
+            assert st_["n_match"] >= 30 and st_["n_rest"] >= 30
+            assert 0 < st_["match_doubled_pct"] < 100 and 0 < st_["rest_doubled_pct"] < 100
+            assert st_["caveats"] and st_["definition_note"] and st_["source"], (
+                "a study record states its caveats, how it differs from the live recipe, and its source")
+        else:
+            assert "study" not in r, f"{scan['key']}: the record starts fresh from 2026-11-05"
         if "designed_on" in r or "horizon_days" in r:         # 🌱 states them on file: the code's own
             assert r["designed_on"] == S.scan_designed_on(scan) and r["horizon_days"] == S.scan_horizon(scan)
         for w in r["out_of_sample"]:
@@ -635,12 +643,29 @@ def test_the_card_shows_the_net_record_and_what_was_left_out():
     assert "not measured for these windows yet" not in h
 
 
-def test_no_recipe_docstring_quotes_a_record():
-    """2026-11-05: the docstrings quoted the design-period record and 🌱's study, both now gone. 2026-10-07 had
-    already caught them drifting from scan_records.json. One definition covers the prose too: a card reads the
-    file, so a figure typed in a recipe's docstring could only go stale."""
+def test_the_recipe_docstrings_quote_the_committed_record():
+    """2026-10-07: the docstrings had drifted from scan_records.json (+10.7 for +10.3; the leaders'
+    +2.9 / +8.6 for +3.9 / +11.2). One definition covers the prose too: any figure a recipe's
+    docstring quotes is its record's. Since 2026-11-05 only a study is left to quote: 🌱's."""
+    import re
+    rec = S.load_records()
+    assert S.STUDY_SCANS, "the loop below reads every scan that keeps a study"
+    for key in S.STUDY_SCANS:
+        quoted = [float(x) for x in re.findall(r"[+-]\d+\.\d", _scan(key)["mask"].__doc__ or "")]
+        st_ = rec["scans"][key]["study"]        # a study's figures, in the order the docstring gives them
+        want = [st_["match_cagr_pct"], st_["rest_cagr_pct"]]
+        for y in st_.get("years", []):
+            want += [y["match_excess_pp"], y["rest_excess_pp"]]
+        assert quoted == want, (key, quoted, want)
+
+
+def test_no_other_recipe_docstring_quotes_a_record():
+    """2026-11-05: the docstrings of 🚀 and 🌬️ quoted the design-period record, now gone. A card reads the file, so a
+    figure typed in a recipe's docstring could only go stale."""
     import re
     for scan in S.SCANS:
+        if scan["key"] in S.STUDY_SCANS:
+            continue
         quoted = re.findall(r"[+-]\d+\.\d|\d+-\d+% of matches", scan["mask"].__doc__ or "")
         assert not quoted, (scan["key"], quoted)
 
@@ -786,34 +811,62 @@ def test_compounder_requires_revenue_led_and_ranks_the_market_first():
     assert not S.compounder_candidates(df).iloc[9], "profit must grow faster than sales"
 
 
-def _compounder_record():
-    """🌱's record on file, before any window (the job adds them from 2027)."""
+def _study_record():
+    """🌱's record on file, before any window (the first can be written about November 2027)."""
     return dict(json.loads(S.RECORDS_PATH.read_text(encoding="utf-8"))["scans"]["compounder"], out_of_sample=[])
 
 
-def test_the_compounder_card_says_it_has_no_record_and_when_its_first_window_starts():
+def _compounder_record():
+    """🌱's record with no study: what a card reads if the block is ever lost from the file."""
+    return {k: v for k, v in _study_record().items() if k != "study"}
+
+
+def test_the_compounder_card_shows_its_study_named_in_sample_with_its_caveats():
+    import html as _html
+    comp = _scan("compounder")
+    h = _html.unescape(S.card_html(comp, 320, "measured", _study_record(), selected=True))
+    for s in ("3-YEAR BACKTEST · IN-SAMPLE", "Oct 2023", "+20.4%/yr", "+4.4%/yr", "Doubled: 40.7% vs 20.8%",
+              "182 vs 1,325", "+31.2", "+13.5", "+23.6", "23→24", "24→25 ✦", "25→26",
+              "Ahead in all 3 years — inside every size group, against its own industry, with last year's "
+              "momentum held", "Beat the market: 71% / 64% / 68% of matches, against 44% / 46% / 47% of the rest",
+              "✦ Cleanest test: 24→25", "net margin",
+              "Better odds, not a promise: 59% of matches did not double",
+              "Survivors only", "before costs", "FY21 → FY23", "Out-of-sample: pending",
+              "one 1-year window a year, each starting at the end of October",
+              "31 Oct 2027"):
+        assert s in h, s
+    assert "DESIGN-PERIOD" not in h and "short windows" not in h, "a study is not saved windows"
+    assert h.index("+31.2") < h.index("+13.5") < h.index("+23.6"), "the years read in order"
+
+
+def test_a_compounder_record_with_no_study_says_it_has_no_record_and_when_its_first_window_starts():
     import html as _html
     comp = _scan("compounder")
     h = _html.unescape(S.card_html(comp, 320, "measured", _compounder_record(), selected=True))
-    for s in ("No record yet", "The first window starts on the 30 Nov copy",
-              "one 1-year window a year, each starting at the end of November"):
+    for s in ("No record yet", "The first window starts on the 31 Oct copy",
+              "one 1-year window a year, each starting at the end of October"):
         assert s in h, s
     for s in ("IN-SAMPLE", "BACKTEST", "+20.4", "Doubled", "Survivors only", "DESIGN-PERIOD", "short windows"):
         assert s not in h, s
 
 
 def test_the_compounder_card_shows_unseen_windows_once_they_exist():
-    rec = _compounder_record()
-    rec["out_of_sample"] = [dict(start="2026-11-30", end="2027-11-30", days=365, n=300,
+    rec = _study_record()
+    rec["out_of_sample"] = [dict(start="2026-10-31", end="2027-10-31", days=365, n=300,
                                  median_excess_pp=4.2, beat_pct=58)]
     h = S.card_html(_scan("compounder"), 320, "measured", rec, selected=False)
-    assert "NEVER SAW" in h and "+4.2" in h and "58%" in h and "No record yet" not in h
-    assert "IN-SAMPLE" not in h
+    assert "NEVER SAW" in h and "+4.2" in h and "58%" in h and "pending" not in h
+    assert h.index("IN-SAMPLE") < h.index("NEVER SAW")
+
+
+def test_a_stale_compounder_record_shows_no_study():
+    h = S.card_html(_scan("compounder"), 320, "stale", _study_record(), selected=False)
+    assert "changed since" in h and "+20.4" not in h
 
 
 def test_a_stale_compounder_record_shows_no_window():
-    rec = dict(_compounder_record(), out_of_sample=[dict(start="2026-11-30", end="2027-11-30", days=365, n=300,
-                                                         median_excess_pp=4.2, beat_pct=58)])
+    rec = dict(_study_record(), out_of_sample=[dict(start="2026-10-31", end="2027-10-31", days=365, n=300,
+                                                    median_excess_pp=4.2, beat_pct=58)])
     h = S.card_html(_scan("compounder"), 320, "stale", rec, selected=False)
     assert "changed since" in h and "+4.2" not in h and "No record yet" not in h
 
@@ -821,7 +874,8 @@ def test_a_stale_compounder_record_shows_no_window():
 def test_each_scan_is_judged_on_its_own_clock():
     from datetime import date
     assert S._first_unseen_start(_scan("playbook")) == date(2026, 11, 30)
-    assert S._first_unseen_start(_scan("compounder")) == date(2026, 11, 30)
+    assert S._first_unseen_start(_scan("compounder")) == date(2026, 10, 31)
+    assert S._first_unseen_due(_scan("compounder")) == "31 Oct 2027"
     assert S.scan_horizon(_scan("compounder")) == 365 and S.scan_horizon(_scan("playbook")) == 25
 
 
@@ -841,11 +895,73 @@ def test_no_scan_carries_an_optional_narrowing():
     assert "st.toggle" not in ast.unparse(block)
 
 
-# ── 8. 🌱's record is its windows, like every scan's (2026-11-05: the year-by-year study is gone) ─────────────
-def test_no_scan_on_file_holds_a_study_or_a_design_window():
+# ── 8. 🌱's year-by-year record (2026-10-07) ─────────────────────────────────────────────────────────
+def _years():
+    return _study_record()["study"]["years"]
+
+
+def test_the_yearly_record_is_three_separate_years_in_order():
+    ys = _years()
+    assert [y["label"] for y in ys] == ["23→24", "24→25", "25→26"]
+    assert [y["known"] for y in ys] == ["FY23", "FY24", "FY25"], "each year judged on the results public at its start"
+    for y in ys:
+        assert y["n_match"] >= 30 and y["n_rest"] >= 30
+        assert 0 <= y["match_beat_pct"] <= 100 and 0 <= y["rest_beat_pct"] <= 100
+        assert set(y["size_pp"]) == {"small", "mid", "large"}
+    assert ys[0]["momentum_held_pp"] is None, "the first window has no previous year to hold"
+    st_ = _study_record()["study"]
+    assert st_["cleanest"]["label"] in [y["label"] for y in ys] and st_["years_note"] and st_["years_source"]
+    assert "second" not in st_, "the yearly record replaces the profit-and-sales-only falling-year reading"
+
+
+def test_the_card_claims_only_what_every_year_measured():
+    """The 'ahead in all N years — controls' line is computed from the record, never written by hand:
+    flip one year and the card must say so, and drop each control that no longer holds every year."""
+    ys = _years()
+    assert S.year_claims(ys) == (3, 3, ["inside every size group", "against its own industry",
+                                       "with last year's momentum held"])
+    import copy
+    flipped = copy.deepcopy(ys)
+    flipped[1]["match_excess_pp"], flipped[1]["rest_excess_pp"] = -3.0, 1.0
+    flipped[1]["size_pp"]["mid"] = [-2.0, 1.0]
+    flipped[2]["momentum_held_pp"] = -0.5
+    assert S.year_claims(flipped) == (2, 3, ["against its own industry"])
+    rec = copy.deepcopy(_study_record())
+    rec["study"]["years"] = flipped
+    h = S.card_html(_scan("compounder"), 255, "measured", rec, selected=False)
+    assert "Ahead in 2 of 3 years — against its own industry." in h and "Ahead in all" not in h
+    assert "-3.0" in h, "a losing year shows as it is"
+
+
+def test_a_study_without_yearly_record_still_renders_its_two_bars():
+    import copy
+    rec = copy.deepcopy(_study_record())
+    for k in ("years", "cleanest", "years_note"):
+        rec["study"].pop(k, None)
+    h = S.card_html(_scan("compounder"), 255, "measured", rec, selected=False)
+    assert "Matches" in h and "Rest" in h and "+20.4%" in h and "Year by year" not in h and "✦" not in h
+
+
+def test_the_yearly_bars_compare_by_height():
+    import re
+    h = S._year_bars(_years(), "24→25", S.COLORS, __import__("html").escape)
+    heights = [int(x) for x in re.findall(r"width:14px;height:(\d+)px", h)]
+    assert heights == [34, 6 + round(28 * 13.5 / 31.2), 6 + round(28 * 23.6 / 31.2)], heights
+    assert heights[1] < heights[2] < heights[0], "the tallest bar is the largest year"
+
+
+# The windows beside it, read like every scan's; a study anywhere but on 🌱 is never read (2026-11-05).
+def test_only_the_compounder_holds_a_study_and_no_scan_a_design_window():
+    assert S.STUDY_SCANS == ("compounder",)
     recs = S.load_records()["scans"]
     for scan in S.SCANS:
-        assert "study" not in recs[scan["key"]] and recs[scan["key"]]["windows"] == [], scan["key"]
+        assert ("study" in recs[scan["key"]]) == (scan["key"] in S.STUDY_SCANS), scan["key"]
+        assert recs[scan["key"]]["windows"] == [], scan["key"]
+
+
+def test_record_state_gives_the_compounder_its_study():
+    state, rec = S.record_state(S.load_records(), _scan("compounder"))
+    assert state == "measured" and S.scan_study(_scan("compounder"), rec) == rec["study"] and rec["study"]["n_match"] == 182
 
 
 def test_the_cards_claim_only_what_each_window_measured():
@@ -860,11 +976,17 @@ def test_the_cards_claim_only_what_each_window_measured():
 
 
 def test_a_study_left_in_a_record_draws_nothing():
-    rec = dict(_compounder_record(), study=dict(title="3-year backtest", match_cagr_pct=20.4, rest_cagr_pct=4.4,
+    """Only 🌱's record keeps one (S.STUDY_SCANS): written on another scan's, by hand or by an old tool, it is never read."""
+    for key in ("playbook", "leaders"):
+        scan = _scan(key)
+        rec = dict(out_of_sample=[], study=dict(title="3-year backtest", match_cagr_pct=20.4, rest_cagr_pct=4.4,
                                                 match_doubled_pct=40.7, rest_doubled_pct=20.8, n_match=182, n_rest=1325))
-    h = S.card_html(_scan("compounder"), 255, "measured", rec, selected=False)
-    assert h == S.card_html(_scan("compounder"), 255, "measured", _compounder_record(), selected=False)
-    assert "Matches" not in h and "Rest" not in h and "+20.4%" not in h and "Year by year" not in h and "✦" not in h
+        assert S.scan_study(scan, rec) == {}, key
+        h = S.card_html(scan, 255, "measured", rec, selected=False)
+        assert h == S.card_html(scan, 255, "measured", {"out_of_sample": []}, selected=False), key
+        assert "Matches" not in h and "Rest" not in h and "+20.4%" not in h and "Year by year" not in h and "✦" not in h
+        assert (S.card_summary_html(scan, 255, "measured", rec, False)
+                == S.card_summary_html(scan, 255, "measured", {"out_of_sample": []}, False)), key
 
 
 def test_the_window_bars_compare_by_height():
@@ -935,9 +1057,18 @@ def test_the_compounder_table_marks_its_cycle_rows():
         "G06's cycle shortened but sales grew only 12%; G09's shortened with sales +18%")
 
 
+def test_the_first_due_date_follows_the_start_month():
+    assert S._first_unseen_due(_scan("compounder")) == "31 Oct 2027"
+    assert S._first_unseen_due({"designed_on": "2026-03-15", "horizon_days": 365, "start_month": 10}) == "31 Oct 2027", (
+        "designed in March: the first start is that October's month-end, a year later the first result")
+    assert S._first_unseen_due({"designed_on": "2026-11-02", "horizon_days": 365, "start_month": 10}) == "30 Oct 2028", (
+        "designed after October: the first start is next October (31 Oct 2027 + 365 days; 2028 is a leap year)")
+    assert S._first_unseen_due(_scan("playbook")) == "25 Dec", "no start month: its first month-end after 5 Nov, plus 25 days"
+
+
 def test_the_first_start_follows_the_start_month():
     from datetime import date
-    assert S._first_unseen_start(_scan("compounder")) == date(2026, 11, 30), "dated 5 Nov, starting each November: this month's"
+    assert S._first_unseen_start(_scan("compounder")) == date(2026, 10, 31), "dated 7 Oct, starting each October: that month's"
     assert S._first_unseen_start({"designed_on": "2026-03-15", "start_month": 10}) == date(2026, 10, 31), (
         "dated in March: that October's month-end")
     assert S._first_unseen_start({"designed_on": "2026-11-02", "start_month": 10}) == date(2027, 10, 31), (
@@ -1021,13 +1152,19 @@ def test_the_exit_reasons_are_not_part_of_the_recipe_fingerprint():
     assert S.recipe_fingerprint(_SEEDLING) == S.recipe_fingerprint(bare)
 
 
-def test_the_legend_says_what_each_reason_means_and_quotes_no_old_result():
+def test_the_legend_says_which_reasons_are_measured():
     lines = S.left_legend().splitlines()
     assert len(lines) == len(S.EXIT_REASONS)
+    measured = [ln for ln in lines if "— measured:" in ln]
+    assert [ln.split("**")[1] for ln in measured] == ["profit fell", "no longer revenue-led"]
+    assert all("not measured" in ln for ln in lines if ln not in measured)
+    assert "8 to 11 points" in lines[0] and "+9.8 and +26.6" in lines[1]
+
+
+def test_the_legend_lists_every_reason_worst_news_first():
+    lines = S.left_legend().splitlines()
     assert [ln.split("**")[1] for ln in lines] == ["profit fell", "no longer revenue-led", "others grew faster",
                                                    "a figure is missing", "not in today's data"]
-    assert "below the year before" in lines[0] and "no longer up 10%+" in lines[1]
-    assert not any("measured" in ln or "points" in ln for ln in lines)
 
 
 # ── The summary card you choose from (2026-10-08) ────────────────────────────────────────────────────
@@ -1059,11 +1196,23 @@ def test_the_summary_counts_a_losing_window_and_says_when_costs_are_partial():
     assert "after costs" not in h, "no net record, no after-costs claim"
 
 
+def test_the_summary_of_a_study_says_how_many_did_not_double():
+    seed = next(s for s in S.SCANS if s["key"] == "compounder")
+    state, rec = S.record_state({"scans": {"compounder": _study_record()}}, seed)
+    h = S.card_summary_html(seed, 255, state, rec, False)
+    st_ = rec["study"]
+    ahead, total, _ = S.year_claims(st_["years"])
+    for s in ("IN-SAMPLE", st_["title"].upper(), "BEFORE COSTS", f'{st_["match_cagr_pct"]:+.1f}%/yr',
+              f"Ahead in {ahead} of {total} years", f'{100 - st_["match_doubled_pct"]:.0f}% of matches did not double',
+              S._first_unseen_due(seed)):
+        assert s in h, s
+
+
 def test_the_summary_of_a_scan_with_no_record_says_so():
     seed = next(s for s in S.SCANS if s["key"] == "compounder")
     state, rec = S.record_state({"scans": {"compounder": _compounder_record()}}, seed)
     h = S.card_summary_html(seed, 255, state, rec, False)
-    assert state == "measured" and "No record yet. The first window starts on the 30 Nov copy." in h
+    assert state == "measured" and "No record yet. The first window starts on the 31 Oct copy." in h
     for s in ("IN-SAMPLE", "BEFORE COSTS", "%/yr", "did not double", "Not yet measured"):
         assert s not in h, s
 
@@ -1218,8 +1367,8 @@ def test_the_summary_reports_the_index_comparison_once_it_exists():
 def test_the_compounder_is_set_against_its_own_index_on_both_cards():
     import html as _html
     comp = _scan("compounder")
-    rec = _compounder_record()
-    rec["out_of_sample"] = [dict(start="2026-11-30", end="2027-11-30", days=365, n=300, median_excess_pp=4.2,
+    rec = _study_record()
+    rec["out_of_sample"] = [dict(start="2026-10-31", end="2027-10-31", days=365, n=300, median_excess_pp=4.2,
                                  beat_pct=58, vs_index=_vs(9.0, 6.5, code="NSE:NS250MQ100"))]
     full = _html.unescape(S.card_html(comp, 320, "measured", rec, selected=False))
     summ = _html.unescape(S.card_summary_html(comp, 320, "measured", rec, False))
@@ -1311,6 +1460,9 @@ def test_the_card_says_what_an_earlier_recipe_left_on_file():
     rec = {**_record(), "out_of_sample": [], "out_of_sample_earlier": earlier}
     full = S.card_html(S.SCANS[0], 235, "measured", rec, selected=False)
     assert "2 unseen windows measured with an earlier recipe" in full and "not counted" in full
+    study = {**_study_record(), "out_of_sample": [], "out_of_sample_earlier": earlier[:1]}
+    full = S.card_html(_scan("compounder"), 320, "measured", study, selected=False)
+    assert "1 unseen window measured with an earlier recipe" in full
     fresh = {**_compounder_record(), "out_of_sample_earlier": earlier[:1]}
     full = S.card_html(_scan("compounder"), 320, "measured", fresh, selected=False)
     assert "1 unseen window measured with an earlier recipe" in full

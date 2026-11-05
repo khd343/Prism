@@ -920,11 +920,11 @@ def test_no_word_of_action_and_no_rule_or_person_anywhere_on_screen():
 
 
 def test_the_guides_stamps_are_mains():
-    """A view explains nothing in a guide's stamp, and RAM moved no scan setting, so no prose went stale. 🌱's stamp moved once
-    since, on purpose: its record date and its recipe's words, re-read and re-stamped on 2026-11-05."""
+    """A view explains nothing in a guide's stamp, and RAM moved no scan setting, so no prose went stale. 🌱's stamp moved for
+    a few hours on 2026-11-05, with its record date and its recipe's words, and came back with them the same evening."""
     from ui import scan_guide as G
     assert {s["key"]: G.guide_stamp(s) for s in S.SCANS} == {
-        "playbook": "135cfc40d93df721", "leaders": "c5b0c3512a06fdd2", "compounder": "258e4becfe15cef0"}
+        "playbook": "135cfc40d93df721", "leaders": "c5b0c3512a06fdd2", "compounder": "63ba93225ce77da7"}
 
 
 def test_the_guide_says_how_every_list_opens_and_what_the_order_check_reads():

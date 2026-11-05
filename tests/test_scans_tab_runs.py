@@ -229,27 +229,34 @@ def test_the_view_switch_reaches_the_table(tab):
 
 def test_the_full_record_panel_follows_the_chosen_scan(tab):
     """RUN: the one 'Full record' panel under the cards names the selected scan and holds its record —
-    before any window, its own first date (2026-11-05): the 30 Nov copy for 🚀 and for 🌱."""
+    before any window, 🚀's own first date (2026-11-05); the study for 🌱 (2026-10-08), which its label names."""
     from ui import ui_scans as S
     panels = [e for e in tab.expander if e.label.startswith("📊 Full record")]
     assert len(panels) == 1 and S.SCANS[0]["name"] in panels[0].label
+    assert panels[0].label.endswith(": every window, after costs, and what was left out")
     assert "No record yet. The first window starts on the 30 Nov copy." in "".join(m.value for m in panels[0].markdown)
     tab.button(key="scan_open_compounder").click().run()
     assert not tab.exception, [e.value for e in tab.exception]
     panels = [e for e in tab.expander if e.label.startswith("📊 Full record")]
     seed = next(s for s in S.SCANS if s["key"] == "compounder")
     assert len(panels) == 1 and seed["name"] in panels[0].label
-    assert "The first window starts on the 30 Nov copy." in "".join(m.value for m in panels[0].markdown)
+    assert panels[0].label.endswith(": every window or year, after costs, what was left out and the caveats")
+    assert "BACKTEST · IN-SAMPLE" in "".join(m.value for m in panels[0].markdown)
 
 
-def test_every_card_says_no_record_yet_and_no_old_heading_shows(tab):
-    """RUN (2026-11-05): each of the three cards says it has no record and when its first window starts, and nothing on the
-    tab calls a record in-sample, leaks a blank as nan or draws an empty record table."""
+def test_the_short_lists_say_no_record_yet_and_only_the_compounder_names_an_old_record(tab):
+    """RUN (2026-11-05): 🚀's and 🌬️'s cards say they have no record and when their first window starts, and only 🌱's
+    calls a record in-sample, its study; nothing leaks a blank as nan or draws an empty record table. The line above the
+    cards says what in-sample means, and no longer that every record is of windows nobody saw."""
     from ui import ui_scans as S
     page = "".join(m.value for m in tab.markdown)
     for scan in S.SCANS:
-        assert S.no_record_words(scan) in page, scan["key"]
-    for word in ("IN-SAMPLE", "in-sample", "In-sample", "DESIGN-PERIOD", "BACKTEST", "backtest"):
+        if scan["key"] not in S.STUDY_SCANS:
+            assert S.no_record_words(scan) in page, scan["key"]
+    assert "No record yet" in page and S.no_record_words(next(s for s in S.SCANS if s["key"] == "compounder")) not in page
+    assert page.count("IN-SAMPLE · 3-YEAR BACKTEST · BEFORE COSTS") == 1 and page.count("IN-SAMPLE") == 1, "🌱's summary alone"
+    assert "in-sample means studied while choosing the recipe" in page and "of windows nobody saw" not in page
+    for word in ("In-sample", "DESIGN-PERIOD", "backtest"):
         assert word not in page, word
     assert not re.search(r"\bnan\b", page, re.I)
     record = "".join(m.value for e in tab.expander if e.label.startswith("📊") for m in e.markdown)
@@ -308,7 +315,8 @@ def test_the_first_window_on_file_reaches_the_tab(tmp_path):
     at = _scans_tab(tmp_path, records)
     page = html.unescape("".join(m.value for m in at.markdown))
     assert "ahead in 1 of 1 unseen window: +1.4 pts before costs" in page and "NEVER SAW" in page
-    assert page.count(S.no_record_words(S.SCANS[1])) == 2, "🌬️'s and 🌱's cards still have no record, in the same words; 🚀's has one now"
+    assert page.count(S.no_record_words(S.SCANS[1])) == 1, "🌬️'s card still has no record; 🚀's has one now"
+    assert page.count(S.no_record_words(S.SCANS[2])) == 1, "and 🌱's, in this file with no study, says the same on its own date"
 
 
 def test_how_it_works_follows_the_chosen_scan(tab):
