@@ -353,6 +353,36 @@ def test_the_job_refuses_a_stale_fingerprint():
     stale = {"scans": {s["key"]: {"fingerprint": "0" * 16} for s in S.SCANS}}
     with pytest.raises(SystemExit):
         J.check_fresh(stale)
+
+
+def _current_file():
+    """Every scan's record as check_fresh reads it, each at its current fingerprint, holding nothing it should not."""
+    return {"scans": {s["key"]: {"fingerprint": S.recipe_fingerprint(s), "windows": [], "out_of_sample": []} for s in S.SCANS}}
+
+
+def test_the_job_allows_a_study_on_the_compounder():
+    current = _current_file()
+    J.check_fresh(current)
+    current["scans"]["compounder"]["study"] = {"title": "3-year backtest"}
+    J.check_fresh(current)
+
+
+@pytest.mark.parametrize("key", ["playbook", "leaders"])
+def test_the_job_refuses_a_study_on_any_other_scan(key):
+    """Nothing draws it there, so something other than this job wrote it: stop, and say where."""
+    current = _current_file()
+    current["scans"][key]["study"] = {"title": "3-year backtest"}
+    with pytest.raises(SystemExit, match=rf"{key}: {S.RECORDS_PATH.name} holds a study"):
+        J.check_fresh(current)
+
+
+@pytest.mark.parametrize("key", ["playbook", "leaders", "compounder"])
+def test_the_job_refuses_a_design_window_on_every_scan(key):
+    """The design-period windows went on 2026-11-05: the old local tool or a hand edit would be what wrote one back."""
+    current = _current_file()
+    current["scans"][key]["windows"] = [{"start": "2026-06-17", "end": "2026-08-22"}]
+    with pytest.raises(SystemExit, match=rf"{key}: {S.RECORDS_PATH.name} holds a design-period window"):
+        J.check_fresh(current)
     J.check_fresh(S.load_records())          # the committed records match today's recipes
 
 
@@ -522,37 +552,36 @@ def test_the_workflows_run_on_a_pinned_runner_and_current_actions(name, text):
 def test_the_compounder_is_only_ever_recorded_on_a_year_or_more():
     comp = next(s for s in S.SCANS if s["key"] == "compounder")
     play = next(s for s in S.SCANS if s["key"] == "playbook")
-    dates = ["2026-09-30", "2026-10-31", "2026-11-30", "2026-12-31", "2027-11-30", "2028-04-28", "2028-11-27", "2028-11-30",
-             "2028-12-04"]
-    # 2026's October copy is before the record date; only November starts a 🌱 window (the operator, 5 Nov), and it runs to the
-    # first copy a year later only — not also to the latest copy, which would overlap it.
-    assert J.scan_windows(dates, comp) == [("2026-11-30", "2027-11-30"), ("2027-11-30", "2028-11-30")], (
-        "one window a year: starts in November after the record date, ends at the first copy 365+ days on")
+    dates = ["2026-09-30", "2026-10-31", "2026-11-30", "2027-04-30", "2027-10-29", "2027-10-31", "2027-11-05"]
+    # 2026-09-30 is before the design date; only October starts a 🌱 window, and it runs to the first
+    # copy a year later only — not also to the latest copy, which would overlap it.
+    assert J.scan_windows(dates, comp) == [("2026-10-31", "2027-10-31")], (
+        "one window a year: starts in October after its design date, ends at the first copy 365+ days on")
     assert all(J._days(a, b) >= 365 for a, b in J.scan_windows(dates, comp))
-    assert ("2026-11-30", "2026-12-31") in J.scan_windows(dates, play), "the short lists keep their 25 days"
+    assert ("2026-11-30", "2027-04-30") in J.scan_windows(dates, play), "the short lists keep their 25 days, from their own 5 Nov date"
     assert J.scan_windows(dates[:4], comp) == [], "no year has passed yet: nothing to record"
 
 
 def test_the_compounder_gets_one_window_a_year_never_overlapping():
     """2026-10-07: a window from every month-end copy would show ~12 bars by 2028 that overlap by 11
-    months — one year of evidence that looks like twelve. 🌱 starts one window each November."""
+    months — one year of evidence that looks like twelve. 🌱 starts one window each October."""
     import pandas as _pd
     comp = next(s for s in S.SCANS if s["key"] == "compounder")
-    months = [d.strftime("%Y-%m-%d") for d in _pd.date_range("2026-09-30", "2030-01-31", freq="ME")] + ["2030-02-04"]
+    months = [d.strftime("%Y-%m-%d") for d in _pd.date_range("2026-09-30", "2029-01-31", freq="ME")] + ["2029-02-04"]
     w = J.scan_windows(months, comp)
-    assert w == [("2026-11-30", "2027-11-30"), ("2027-11-30", "2028-11-30"), ("2028-11-30", "2029-11-30")], w
+    assert w == [("2026-10-31", "2027-10-31"), ("2027-10-31", "2028-10-31")], w
     for (a, b), (c, _) in zip(w, w[1:]):
         assert b <= c, "a window ends before the next one starts"
-    assert all(a[5:7] == "11" for a, _ in w), "every start is a November month-end"
+    assert all(a[5:7] == "10" for a, _ in w), "every start is an October month-end"
     play = next(s for s in S.SCANS if s["key"] == "playbook")
     assert len(J.scan_windows(months, play)) > 20, "the short lists keep a window from every month-end"
 
 
-def test_a_missing_november_copy_costs_that_year_not_a_wrong_window():
+def test_a_missing_october_copy_costs_that_year_not_a_wrong_window():
     comp = next(s for s in S.SCANS if s["key"] == "compounder")
-    dates = ["2027-11-30", "2027-12-31", "2028-10-31", "2028-12-29", "2029-01-31", "2029-12-31", "2030-01-03"]
-    assert J.scan_windows(dates, comp) == [("2027-11-30", "2028-12-29")], (
-        "no November 2028 copy: no 2028 window, and no window starting in another month instead")
+    dates = ["2026-10-31", "2026-11-30", "2027-09-30", "2027-11-30", "2027-12-31", "2028-11-30", "2028-12-05"]
+    assert J.scan_windows(dates, comp) == [("2026-10-31", "2027-11-30")], (
+        "no October 2027 copy: no 2027 window, and no window starting in another month instead")
 
 
 # ── 8. The out-of-sample record cannot see the future, and its arithmetic is checked twice (2026-10-07)

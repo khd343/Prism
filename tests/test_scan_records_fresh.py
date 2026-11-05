@@ -1,9 +1,12 @@
 """
-test_scan_records_fresh.py — the scan records start fresh from 5 Nov 2026.
+test_scan_records_fresh.py — the records of 🚀 and 🌬️ start fresh from 5 Nov 2026, and 🌱 keeps its study.
 
 The operator, 2026-11-05: "Remove old record of scan record completely, and from today is the fresh." So the design-period
-windows and 🌱's study are gone from ui/scan_records.json (they stay in git's history, at b19d485), and no card, guide or
-download quotes them. Each scan's fingerprint, the 🆕 baseline, the hand checks' file and the job's alarms all stay.
+windows are gone from ui/scan_records.json (they stay in git's history, at b19d485), and no card, guide or download quotes
+them. The same evening, on seeing 🌱's 3-year study gone with them: "PREVIOUS HOW IT WAS WRITTEN BEFORE RAM IN 🌱 Compounder
+Candidates ... KEEP THAN ONLY". So 🌱 keeps its study, its "How the backtest was run", its own date (7 Oct) and its October
+windows, exactly as they read at bee8641. Each scan's fingerprint, the 🆕 baseline, the hand checks' file and the job's alarms
+all stay.
 
 These tests hold what could break quietly with nobody around:
 1. the file, and the weekly job on it, its Archive alarm above all;
@@ -58,8 +61,10 @@ def test_the_file_holds_only_what_stays():
         "latest_snapshot described the old record only")
     assert sorted(rec["scans"]) == sorted(_KEYS)
     for key, r in rec["scans"].items():
-        assert set(r) <= {"fingerprint", "designed_on", "horizon_days", "windows", "out_of_sample", "members_at_latest"}, key
+        study = {"study"} if key in S.STUDY_SCANS else set()
+        assert set(r) <= {"fingerprint", "designed_on", "horizon_days", "windows", "out_of_sample", "members_at_latest", *study}, key
         assert r["windows"] == [], f"{key}: a design-period window is back"
+        assert set(r) >= study, f"{key}: its study is gone"
 
 
 def test_the_method_words_describe_only_the_record_that_is_left():
@@ -74,6 +79,21 @@ def test_the_file_carries_the_date_every_scan_counts_from():
     assert rec["designed_on"] == S.DESIGNED_ON == "2026-11-05"
     comp = rec["scans"]["compounder"]
     assert comp["designed_on"] == S.scan_designed_on(_SCANS["compounder"]) and comp["horizon_days"] == 365
+
+
+def test_the_compounder_keeps_its_own_date_and_its_study_on_file():
+    """7 Oct, as the recipe's own comment says, and the study of bee8641 to the last number: its method is stamped with it."""
+    comp = _file()["scans"]["compounder"]
+    assert comp["designed_on"] == "2026-10-07" == S.scan_designed_on(_SCANS["compounder"]) != S.DESIGNED_ON
+    assert S.scan_start_month(_SCANS["compounder"]) == 10
+    assert G.study_stamp(comp["study"]) == "b49a4a17fde1607a" == G.GUIDES["compounder"]["backtest"]["written_for"]
+    assert G.guide_stamp(_SCANS["compounder"]) == "63ba93225ce77da7" == G.GUIDES["compounder"]["written_for"]
+
+
+def test_a_rewrite_by_the_job_leaves_the_study_to_the_byte():
+    """The file on disk is what json.dumps writes, so a run that changes a baseline moves no byte of the study."""
+    text = S.RECORDS_PATH.read_text(encoding="utf-8")
+    assert json.dumps(json.loads(text), ensure_ascii=False, indent=1) + "\n" == text
 
 
 def test_the_baseline_is_kept_so_its_stocks_are_not_new():
@@ -164,17 +184,24 @@ _LATER_COPIES = ["2026-11-30", "2026-12-31", "2027-01-29", "2027-04-30", "2027-1
 
 
 @pytest.mark.parametrize("october", ["2026-10-30", "2026-10-31"])
-@pytest.mark.parametrize("key", _KEYS)
+@pytest.mark.parametrize("key", _SHORT)
 def test_no_copy_from_before_today_ever_starts_a_window(key, october):
-    """October's month-end copy is dated by its last trading day or by the month's end: neither starts one, on any scan."""
+    """October's month-end copy is dated by its last trading day or by the month's end: neither starts one on 🚀 or 🌬️."""
     windows = J.scan_windows(["2026-09-30", october, *_LATER_COPIES], _SCANS[key])
     assert windows, "the archive runs long enough to hold a window on every scan"
     assert min(a for a, _ in windows) > "2026-11-05", windows
 
 
-@pytest.mark.parametrize("key,first", [("playbook", "2026-11-30"), ("leaders", "2026-11-30"), ("compounder", "2026-11-30")])
+@pytest.mark.parametrize("october", ["2026-10-30", "2026-10-31"])
+def test_the_compounders_first_window_starts_on_the_october_copy(october):
+    """Its own clock: one window a year from the October copy after its 7 Oct date, as it was before the fresh start."""
+    windows = J.scan_windows(["2026-09-30", october, *_LATER_COPIES], _SCANS["compounder"])
+    assert windows[0][0] == october and all(a[5:7] == "10" for a, _ in windows), windows
+
+
+@pytest.mark.parametrize("key,first", [("playbook", "2026-11-30"), ("leaders", "2026-11-30"), ("compounder", "2026-10-30")])
 def test_each_scans_first_window_starts_where_its_card_says(key, first):
-    """🌱's one window a year starts each November (`start_month`; the operator, 5 Nov), so its first starts on the short lists' copy."""
+    """🌱's one window a year starts each October (`start_month`), so its first starts a month before the short lists'."""
     windows = J.scan_windows(["2026-09-30", "2026-10-30", *_LATER_COPIES], _SCANS[key])
     assert windows[0][0] == first
     assert S._first_unseen_start(_SCANS[key]).strftime("%Y-%m") == first[:7]
@@ -206,12 +233,15 @@ def test_what_each_monday_can_measure(key, monday, dates, windows):
 
 def test_the_next_monday_measures_nothing_and_moves_only_the_baseline(monkeypatch):
     written, measured = _job(monkeypatch, [*_BEFORE, "2026-11-06"], date(2026, 11, 9))
-    assert measured == [], "the 30 Oct copy is the baseline, never a start"
+    assert measured == [], "the 30 Oct copy is the baseline: on 🚀 and 🌬️ never a start, and 🌱's window from it needs a year"
     assert written["members_date"] == "2026-10-30" and written["designed_on"] == "2026-11-05"
+    on_file = _file()["scans"]
     for key in _KEYS:
         r = written["scans"][key]
-        assert r["out_of_sample"] == [] and r["windows"] == [] and "study" not in r, key
+        assert r["out_of_sample"] == [] and r["windows"] == [] and r.get("study") == on_file[key].get("study"), key
         assert r["members_at_latest"] == J.members(_market(), _SCANS[key]), key
+    assert written["scans"]["compounder"]["study"]["n_match"] == 182, "🌱's study, untouched by the run"
+    assert written["scans"]["compounder"]["designed_on"] == "2026-10-07", "and its own date"
 
 
 @pytest.mark.parametrize("monday,newest", [(date(2026, 12, 7), ["2026-12-04"]), (date(2026, 12, 14), ["2026-12-11"]),
@@ -250,6 +280,7 @@ def test_the_first_windows_are_written_on_the_first_monday_of_2027_and_reach_the
     written, measured = _job(monkeypatch, _JAN_4, date(2027, 1, 4), frames=_first_month_frames())
     assert measured == [(k, "2026-11-30", end) for k in _SHORT for end in ("2026-12-31", "2027-01-01")]
     assert written["scans"]["compounder"]["out_of_sample"] == []
+    assert written["scans"]["compounder"]["study"] == _file()["scans"]["compounder"]["study"]
     for key in _SHORT:
         scan = _SCANS[key]
         month, running = written["scans"][key]["out_of_sample"]
@@ -261,6 +292,24 @@ def test_the_first_windows_are_written_on_the_first_monday_of_2027_and_reach_the
         assert state == "measured" and "NEVER SAW" in full and "so far" in full, key
         assert re.search(r"ahead in \d of 2 unseen windows", summ) and "1 of them still running" in summ, key
         assert "No record yet" not in full + summ and "Not yet measured" not in full + summ, key
+
+
+def test_the_compounders_first_window_is_written_a_year_on_beside_its_study(monkeypatch):
+    """The whole path on the real scans: 🌱's first window runs from the October copy to the first copy a year later, and the
+    card then reads it under the study, which the run left as it was. The first copy 365+ days on from 30 Oct 2026 is 1 Nov 2027."""
+    dates = [*_BEFORE, "2026-11-30", "2027-10-29", "2027-11-01"]
+    early = _market()
+    late = early.assign(close_price=early["close_price"] * 1.1)
+    written, measured = _job(monkeypatch, dates, date(2027, 11, 2),
+                             frames={"2026-10-30": early, "2027-10-29": late, "2027-11-01": late})
+    assert [m for m in measured if m[0] == "compounder"] == [("compounder", "2026-10-30", "2027-11-01")]
+    comp = written["scans"]["compounder"]
+    assert comp["study"] == _file()["scans"]["compounder"]["study"] and comp["designed_on"] == "2026-10-07"
+    [window] = comp["out_of_sample"]
+    assert (window["start"], window["end"], window["final"]) == ("2026-10-30", "2027-11-01", False)
+    state, rec = S.record_state(written, _SCANS["compounder"])
+    full = _text(S.card_html(_SCANS["compounder"], 9, state, rec, True))
+    assert state == "measured" and full.index("3-YEAR BACKTEST · IN-SAMPLE") < full.index("NEVER SAW") and "pending" not in full
 
 
 def _month_chain(reading, through="2027-04-30"):
@@ -286,7 +335,7 @@ def test_the_order_checks_first_window_is_30_nov_and_its_fourth_ends_on_31_mar()
 
 
 # ── 3. What a person sees ─────────────────────────────────────────────────────────────────────────────────────────────
-_FIRST = {"playbook": "30 Nov", "leaders": "30 Nov", "compounder": "30 Nov"}
+_FIRST = {"playbook": "30 Nov", "leaders": "30 Nov"}
 _NEVER_ON_A_FRESH_CARD = ("IN-SAMPLE", "In-sample", "in-sample", "DESIGN-PERIOD", "BACKTEST", "backtest", "Not yet measured",
                           "NEVER SAW", "<table", "provisional", "Doubled", "better odds")
 
@@ -296,7 +345,7 @@ def _cards(scan, state, rec):
 
 
 @pytest.mark.parametrize("card", ["summary", "full"])
-@pytest.mark.parametrize("key", _KEYS)
+@pytest.mark.parametrize("key", _SHORT)
 def test_a_card_with_no_record_says_so_plainly(key, card):
     state, rec = S.record_state({"scans": {key: _fresh(key)}}, _SCANS[key])
     assert state == "measured", "a current recipe with no window is not a stale or missing record"
@@ -308,12 +357,28 @@ def test_a_card_with_no_record_says_so_plainly(key, card):
         assert word not in h, word
 
 
-def test_the_compounder_card_says_its_windows_run_a_year_and_start_each_november():
+def test_the_compounder_card_says_its_windows_run_a_year_and_start_each_october():
     state, rec = S.record_state({"scans": {"compounder": _fresh("compounder")}}, _SCANS["compounder"])
-    assert "one 1-year window a year, each starting at the end of November" in _text(
+    assert "one 1-year window a year, each starting at the end of October" in _text(
         S.card_html(_SCANS["compounder"], 7, state, rec, True))
     state, rec = S.record_state({"scans": {"playbook": _fresh("playbook")}}, _SCANS["playbook"])
     assert "a year" not in _text(S.card_html(_SCANS["playbook"], 7, state, rec, True))
+
+
+@pytest.mark.parametrize("card", ["summary", "full"])
+def test_the_compounder_card_reads_its_study_and_never_no_record(card):
+    state, rec = S.record_state({"scans": {"compounder": _fresh("compounder")}}, _SCANS["compounder"])
+    t = _text(_cards(_SCANS["compounder"], state, rec)[card])
+    assert "IN-SAMPLE" in t and "+20.4%/yr vs +4.4%/yr for the rest" in t and "31 Oct 2027" in t and "did not double" in t
+    assert "No record yet" not in t and "Not yet measured" not in t
+
+
+def test_a_compounder_file_that_lost_its_study_says_no_record_on_its_own_date():
+    """Never a crash and never a blank: the card reads like the short lists', on 🌱's date."""
+    rec = {k: v for k, v in _fresh("compounder").items() if k != "study"}
+    state, got = S.record_state({"scans": {"compounder": rec}}, _SCANS["compounder"])
+    for t in map(_text, _cards(_SCANS["compounder"], state, got).values()):
+        assert "No record yet. The first window starts on the 31 Oct copy." in t and "IN-SAMPLE" not in t
 
 
 @pytest.mark.parametrize("key", _KEYS)
@@ -378,25 +443,35 @@ _LEFT_IN_A_FILE = ("+7.1", "+6.1", "+20.4", "+4.4", "40.7", "20.8", "3-YEAR", "3
                    "IN-SAMPLE", "DESIGN-PERIOD", "Design period", "in-sample")
 
 
-@pytest.mark.parametrize("key", _KEYS)
+def _surfaces(scan, records) -> dict:
+    """Every place a scan's record is read, its Reference block and download taken alone (the others' prose has its own words)."""
+    state, got = S.record_state(records, scan)
+    return {**_cards(scan, state, got), "guide": G.guide_html(scan, got, state),
+            "reference": G.reference_html(records, scans=[scan]), "download": G.guide_markdown(records, scans=[scan])}
+
+
+@pytest.mark.parametrize("key", _SHORT)
 def test_a_record_left_in_a_file_reaches_no_surface(key):
     """A local tools/scan_records.py or a hand edit could write these back: no card, guide or download may read them."""
-    scan = _SCANS[key]
     rec = dict(_fresh(key), windows=[_OLD_WINDOW], study=_OLD_STUDY)
-    state, got = S.record_state({"scans": {key: rec}}, scan)
     records = {**_kept_only(), "scans": {**_kept_only()["scans"], key: rec}}
-    surfaces = {**_cards(scan, state, got), "guide": G.guide_html(scan, got, state), "reference": G.reference_html(records),
-                "download": G.guide_markdown(records)}
-    for name, h in surfaces.items():
+    for name, h in _surfaces(_SCANS[key], records).items():
         t = _text(h)
         for word in _LEFT_IN_A_FILE:
             assert word not in t, (name, word)
 
 
-# The record's headline figures, those quoted beside it and the words that went with them.
-_OLD_FIGURES = ("+7.1", "+10.7", "+3.3", "+3.1", "+3.9", "+11.2", "+2.4 /", "+3.4", "+20.4", "+4.4", "+31.2", "-6.8", "+13.5",
-                "-2.6", "+23.6", "-2.2", "40.7", "20.8%", "+24 to", "+54", "+9.8", "+26.6", "8 to 11 points", "+4.7", "+29%",
-                "38/33/73", "93/63/83", "+2.0 / +0.3", "+9.4", "+15.9", "+32.0", "62-70%", "58-67%", "358 vs 1,102")
+def test_a_design_window_left_in_the_compounders_record_reaches_no_surface():
+    """🌱's study is read; a design-period window beside it never is."""
+    key = "compounder"
+    clean = {**_kept_only(), "scans": {**_kept_only()["scans"], key: _fresh(key)}}
+    left = {**_kept_only(), "scans": {**_kept_only()["scans"], key: dict(_fresh(key), windows=[_OLD_WINDOW])}}
+    assert _surfaces(_SCANS[key], left) == _surfaces(_SCANS[key], clean)
+
+
+# The headline figures of 🚀's and 🌬️'s old record, those quoted beside it and the words that went with them. 🌱's are back.
+_OLD_FIGURES = ("+7.1", "+10.7", "+3.3", "+3.1", "+3.9", "+11.2", "+3.4", "+4.7", "+29%", "38/33/73", "93/63/83", "+2.0 / +0.3",
+                "62-70%", "58-67%")
 
 
 @pytest.mark.parametrize("rel,figures", [("ui/ui_scans.py", _OLD_FIGURES), ("ui/scan_guide.py", _OLD_FIGURES),
@@ -410,26 +485,34 @@ def test_no_source_quotes_an_old_figure(rel, figures):
 
 
 def test_no_screen_word_quotes_an_old_result():
-    """The Rank and Cycle tips and the Left 🌱 legend read as they do on the Scans tab; each still says what it is for."""
-    tips = [S.table_config("30 Oct", s)["rank"]["help"] for s in S.SCANS]
-    words = " ".join([*tips, S.table_config("30 Oct", _SCANS["compounder"])["_cycle"]["help"], S.left_legend()])
+    """🚀's and 🌬️'s Rank tips, as they read on the Scans tab, each still saying what it is for."""
+    words = " ".join(S.table_config("30 Oct", _SCANS[key])["rank"]["help"] for key in _SHORT)
     for said in ("in-sample", "beat the market by", "points", "2026-10-06 test", "measured:"):
         assert said not in words, said
+    assert "order check" in words and "Every match is the scan" in words
+
+
+def test_the_compounders_tips_and_the_left_legend_keep_their_figures():
+    """The Rank and Cycle tips and the Left 🌱 legend are 🌱's own, and read as they did before the fresh start."""
+    tips = S.table_config("30 Oct", _SCANS["compounder"])
+    assert "inside this scan the top of the Rank did not beat the rest in the 2026-10-06 test" in tips["rank"]["help"]
+    cycle = tips["_cycle"]["help"]
+    assert "beat the market by +24 to +54 points in each of three years" in cycle and "(in-sample)" in cycle
+    assert "same year" in cycle and "A year-old improvement did not help" in cycle
     legend = S.left_legend()
     for key, (mark, label, why) in S.EXIT_REASONS.items():
         assert f"- {mark} **{label}** — {why}" in legend and why, key
-    assert "same year" in S.table_config("30 Oct", _SCANS["compounder"])["_cycle"]["help"]
+    assert "measured:" in legend and "8 to 11 points" in legend
 
 
-_GUIDE_FIRST = {"playbook": ("30 Nov 2026", "25+ days"), "leaders": ("30 Nov 2026", "25+ days"),
-                "compounder": ("30 Nov 2026", "12 months")}
+_GUIDE_FIRST = {"playbook": ("30 Nov 2026", "25+ days"), "leaders": ("30 Nov 2026", "25+ days")}
 
 
 def _guide(key) -> str:
     return _text(G.guide_html(_SCANS[key], _fresh(key), "measured"))
 
 
-@pytest.mark.parametrize("key", _KEYS)
+@pytest.mark.parametrize("key", _SHORT)
 def test_the_guide_says_when_the_record_starts_and_its_first_window(key):
     start, runs = _GUIDE_FIRST[key]
     t = _guide(key)
@@ -438,7 +521,15 @@ def test_the_guide_says_when_the_record_starts_and_its_first_window(key):
     assert "windows that start on a month-end copy after 5 Nov 2026" in t
 
 
-@pytest.mark.parametrize("key", _KEYS)
+def test_the_compounders_guide_says_when_its_recipe_was_fixed_and_when_its_first_window_is_due():
+    t = _guide("compounder")
+    assert "Recipe fixed on: 7 Oct 2026 — every window that starts later is unseen." in t
+    assert "None has finished yet; the first is due around 31 Oct 2027." in t
+    assert "windows that start on a month-end copy after 7 Oct 2026" in t
+    assert "Record starts" not in t and "copy and runs" not in t
+
+
+@pytest.mark.parametrize("key", _SHORT)
 def test_the_guide_has_no_old_record_left_in_it(key):
     t = _guide(key)
     for word in ("in-sample", "In-sample", "Design period", "design-period", "backtest", "Backtest", "Recipe fixed on",
@@ -448,12 +539,16 @@ def test_the_guide_has_no_old_record_left_in_it(key):
 
 def test_how_every_scan_is_measured_has_no_old_record_left_in_it():
     t = " ".join(map(str, dict(G.general_sections())["How every scan is measured"]))
-    for word in ("**In-sample:**", "design-period", "+4.7", "On June–October 2026 data"):
+    for word in ("design-period", "+4.7", "On June–October 2026 data"):
         assert word not in t, word
-    assert "after 5 Nov 2026 is out of sample" in t and '"still in the list" figures were measured on them' in t
+    assert "after 5 Nov 2026 (🌱: after 7 Oct 2026) is out of sample" in t and '"still in the list" figures were measured on them' in t
+    assert "**In-sample:** the months studied while a recipe was chosen." in t, "the word on 🌱's card"
 
 
-def test_the_compounders_prose_keeps_its_recipe_without_the_old_result():
+def test_the_compounders_prose_keeps_its_recipe_and_its_backtest():
     g = G.GUIDES["compounder"]
-    assert "part of the recipe, not an option" in " ".join(g["recipe"])
-    assert "backtest" not in g and "reading aid" in " ".join(g["limits"])
+    recipe, limits = " ".join(g["recipe"]), " ".join(g["limits"])
+    assert "In the backtest the edge all but vanished without this condition" in recipe
+    assert "part of the recipe, not an option" in recipe
+    assert "**The backtest is in-sample.**" in limits and "It did well inside this list in the backtest" in limits
+    assert "reading aid" in limits and g["backtest"]["items"]
