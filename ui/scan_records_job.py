@@ -10,7 +10,7 @@ every scan with the SAME recipe function the tab runs (ui/ui_scans.py — one de
 - UNSEEN windows: from each month-end copy dated after the scan's design date whose month is over
   (frozen), to the first copy at least the scan's horizon later (MIN_HORIZON_DAYS, or 365 days for
   🌱 Compounder Candidates) and to the latest copy. These are windows the
-  recipes were never chosen on, and they are the record a card shows.
+  recipes were never chosen on — the most trustworthy record a card shows.
 - 🆕 baseline: the scan's members on the latest frozen month-end copy, and its date.
 - Against the index fund you could hold instead (2026-10-08, December plan rule 23): each unseen window
   also records the scan's liquid matches as one equal-weight portfolio after a round trip, and every
@@ -47,8 +47,10 @@ window as `order`), and hold_reading no longer reads momentum. On a copy with no
 simply does not count: it never stops the run.
 
 Since 2026-11-05 (the operator's call: "Remove old record of scan record completely, and from today is the fresh"): the file holds
-no design-period windows and no study, and every record starts after S.DESIGNED_ON. So the first window starts on the 30 Nov 2026
-copy (🌱's too: its one window a year starts each November), and the 🆕 baseline, the fingerprints and every alarm here go on as before.
+no design-period windows, and 🚀's and 🌬️'s records start after S.DESIGNED_ON, so their first window starts on the 30 Nov 2026 copy.
+The 🆕 baseline, the fingerprints and every alarm here go on as before. 🌱 stays on its own clock, as it was (the operator, the same
+evening): its one window a year starts each October, after its own 7 Oct date, so on the October 2026 copy, and this job never
+writes its study, a field no run touches. check_fresh stops the run on a design-period window, or on a study outside S.STUDY_SCANS.
 
 The file is rewritten only when a measured value changed, so a quiet week makes no commit.
 """
@@ -518,13 +520,21 @@ def members(frame: pd.DataFrame, scan: dict) -> list:
 
 def check_fresh(existing: dict) -> None:
     """Refuse to add unseen evidence while the file's fingerprint names a different recipe: its cards would read "stale".
-    Writing the new fingerprint by hand is the decision that the change was meant; check_recipe_dates then guards its windows."""
+    Writing the new fingerprint by hand is the decision that the change was meant; check_recipe_dates then guards its windows.
+    Refuse too what no card reads and this job never writes, so something else put it there: a design-period window on any
+    scan, a study on a scan outside S.STUDY_SCANS."""
     for scan in S.SCANS:
         rec = (existing.get("scans") or {}).get(scan["key"])
         current = S.recipe_fingerprint(scan)
         if not rec or rec.get("fingerprint") != current:
             raise SystemExit(f"{scan['key']}: the recipe changed since its fingerprint in {S.RECORDS_PATH.name} was written. "
                              f"If the change is meant, write its new fingerprint there by hand: {current}.")
+        if rec.get("windows"):
+            raise SystemExit(f"{scan['key']}: {S.RECORDS_PATH.name} holds a design-period window, which no scan keeps since "
+                             f"2026-11-05. Take it out by hand; nothing was measured.")
+        if rec.get("study") and scan["key"] not in S.STUDY_SCANS:
+            raise SystemExit(f"{scan['key']}: {S.RECORDS_PATH.name} holds a study, which only {', '.join(S.STUDY_SCANS)} keeps. "
+                             f"Take it out by hand; nothing was measured.")
 
 
 def check_recipe_dates(existing: dict, fingerprints: dict) -> None:
