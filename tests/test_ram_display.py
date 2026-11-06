@@ -12,7 +12,7 @@ shows them, and only the records job's order check reads one, RAM Rank. Pinned h
   4. The 🔢 RAM view, first and default on every list (the 🚀 Playbook, B and C, then 🌬️ and 🌱): the table the operator reads,
      by RAM Rank with blanks last. 🏆 Core, on every list, is exactly main's; 📈 Technical gains RAM Rank and Improvement.
   5. The Deep Scanner: main's views, and RAM Rank in its sort dropdown, low numbers first, blanks last, on screen when sorted.
-  6. The Tear-Sheet: its own RAM RANK row under the ⏱️ strip, in the strip's look, never a chip on it, and no nan.
+  6. The Tear-Sheet: its own 🔢 RAM row under the ⏱️ strip, in the strip's look with the RS chip's colours, never a chip on it, and no nan.
   7. Nothing scores on them: every score, tier, rank, verdict and flag identical with and without RAM values; every recipe's
      fingerprint unmoved; only the loader, the Data check, the three screens and the records job's order check, which reads
      RAM Rank and decides nothing (tests/test_scan_order_reading.py), name the columns at all.
@@ -695,26 +695,26 @@ def test_the_sort_on_a_list_with_no_ram_runs_and_shows_no_number(tmp_path, case)
 _BLANK = {"ram_score": np.nan, "ram_rank": np.nan, "ram_pct": np.nan, "ram_date": np.nan}
 _RANKED = {"ram_score": 2.5, "ram_rank": 4.0, "ram_pct": 99.84, "ram_date": "2026-11-04"}
 _LINES = [
-    ("ranked", _RANKED, "#4 · 99.8% · 4 Nov"),
-    ("the_top_of_the_list", {**_RANKED, "ram_rank": 1.0, "ram_pct": 100.0}, "#1 · 100.0% · 4 Nov"),
-    ("a_date_cell_timestamp", {**_RANKED, "ram_date": pd.Timestamp("2026-11-04")}, "#4 · 99.8% · 4 Nov"),
-    ("a_date_cell_datetime", {**_RANKED, "ram_date": datetime(2026, 11, 4)}, "#4 · 99.8% · 4 Nov"),
-    ("another_month", {**_RANKED, "ram_date": "2026-12-01"}, "#4 · 99.8% · 1 Dec"),
-    ("a_zoned_date", {**_RANKED, "ram_date": "2026-11-04T01:00+05:30"}, "#4 · 99.8% · 4 Nov"),
-    ("a_rank_without_a_date", {**_RANKED, "ram_date": np.nan}, "#4 · 99.8%"),
-    ("a_day_first_date", {**_RANKED, "ram_date": "03/11/2026"}, "#4 · 99.8%"),
-    ("a_year_for_a_date", {**_RANKED, "ram_date": "2026"}, "#4 · 99.8%"),
-    ("a_year_and_month_for_a_date", {**_RANKED, "ram_date": "2026-11"}, "#4 · 99.8%"),
-    ("a_serial_for_a_date", {**_RANKED, "ram_date": 46329.0}, "#4 · 99.8%"),
-    ("an_impossible_date", {**_RANKED, "ram_date": "2026-13-45"}, "#4 · 99.8%"),
-    ("not_ranked_on_a_malformed_date", {**_BLANK, "ram_date": "03/11/2026"}, "—"),
-    ("a_rank_without_a_percentile", {**_RANKED, "ram_pct": np.nan}, "#4 · 4 Nov"),
-    ("not_ranked", {**_BLANK, "ram_date": "2026-11-04"}, "— · not ranked on 4 Nov"),
-    ("not_ranked_on_a_date_cell", {**_BLANK, "ram_date": datetime(2026, 11, 4)}, "— · not ranked on 4 Nov"),
-    ("all_four_blank", _BLANK, "—"),
-    ("blank_date_as_nat", {**_BLANK, "ram_date": pd.NaT}, "—"),
-    ("blank_date_as_none", {**_BLANK, "ram_date": None}, "—"),
-    ("an_old_copy_without_the_columns", {}, "—"),
+    ("ranked", _RANKED, "Rank ? #4 RAM % ? 99.8 RAM of 4 Nov"),
+    ("the_top_of_the_list", {**_RANKED, "ram_rank": 1.0, "ram_pct": 100.0}, "Rank ? #1 RAM % ? 100.0 RAM of 4 Nov"),
+    ("a_date_cell_timestamp", {**_RANKED, "ram_date": pd.Timestamp("2026-11-04")}, "Rank ? #4 RAM % ? 99.8 RAM of 4 Nov"),
+    ("a_date_cell_datetime", {**_RANKED, "ram_date": datetime(2026, 11, 4)}, "Rank ? #4 RAM % ? 99.8 RAM of 4 Nov"),
+    ("another_month", {**_RANKED, "ram_date": "2026-12-01"}, "Rank ? #4 RAM % ? 99.8 RAM of 1 Dec"),
+    ("a_zoned_date", {**_RANKED, "ram_date": "2026-11-04T01:00+05:30"}, "Rank ? #4 RAM % ? 99.8 RAM of 4 Nov"),
+    ("a_rank_without_a_date", {**_RANKED, "ram_date": np.nan}, "Rank ? #4 RAM % ? 99.8"),
+    ("a_day_first_date", {**_RANKED, "ram_date": "03/11/2026"}, "Rank ? #4 RAM % ? 99.8"),
+    ("a_year_for_a_date", {**_RANKED, "ram_date": "2026"}, "Rank ? #4 RAM % ? 99.8"),
+    ("a_year_and_month_for_a_date", {**_RANKED, "ram_date": "2026-11"}, "Rank ? #4 RAM % ? 99.8"),
+    ("a_serial_for_a_date", {**_RANKED, "ram_date": 46329.0}, "Rank ? #4 RAM % ? 99.8"),
+    ("an_impossible_date", {**_RANKED, "ram_date": "2026-13-45"}, "Rank ? #4 RAM % ? 99.8"),
+    ("not_ranked_on_a_malformed_date", {**_BLANK, "ram_date": "03/11/2026"}, "Rank ? —"),
+    ("a_rank_without_a_percentile", {**_RANKED, "ram_pct": np.nan}, "Rank ? #4 RAM of 4 Nov"),
+    ("not_ranked", {**_BLANK, "ram_date": "2026-11-04"}, "Rank ? not ranked RAM of 4 Nov"),
+    ("not_ranked_on_a_date_cell", {**_BLANK, "ram_date": datetime(2026, 11, 4)}, "Rank ? not ranked RAM of 4 Nov"),
+    ("all_four_blank", _BLANK, "Rank ? —"),
+    ("blank_date_as_nat", {**_BLANK, "ram_date": pd.NaT}, "Rank ? —"),
+    ("blank_date_as_none", {**_BLANK, "ram_date": None}, "Rank ? —"),
+    ("an_old_copy_without_the_columns", {}, "Rank ? —"),
 ]
 
 
@@ -738,14 +738,14 @@ def _visible(block: str) -> str:
 
 
 def _ram_blocks(blocks: list) -> list:
-    return [b for b in blocks if _visible(b).startswith("RAM RANK")]
+    return [b for b in blocks if _visible(b).startswith("🔢 RAM")]
 
 
 @pytest.mark.parametrize("cells,want", [c[1:] for c in _LINES], ids=[c[0] for c in _LINES])
 def test_the_tear_sheet_reads_its_row_in_each_form(cells, want):
     found = _ram_blocks(_scorecard_blocks(pd.Series({"rs_score": 85.0, **cells})))
     assert len(found) == 1, "one row"
-    assert _visible(found[0]) == f"RAM RANK ? {want}"
+    assert _visible(found[0]) == f"🔢 RAM {want}"
 
 
 @pytest.mark.parametrize("cells", [_RANKED, _BLANK, {}], ids=["ranked", "blank", "absent"])
@@ -762,16 +762,37 @@ def test_it_is_a_row_of_its_own_in_the_strips_look_not_a_chip_on_the_entry_timin
     timing, row = next(b for b in blocks if "ENTRY TIMING" in b), _ram_blocks(blocks)[0]
     assert "RAM" not in timing and "#4" not in timing
     assert blocks.index(row) == blocks.index(timing) + 1, "right under the strip"
-    label = 'font-size:0.6rem;font-weight:800;color:' + COLORS["text_muted"] + ';letter-spacing:0.5px;">'
-    assert label + "RAM RANK<" in row and label + "⏱️ ENTRY TIMING<" in timing, "the strip's own small label"
+    deep = next(b for b in blocks if "DEEP SIGNALS" in b)
+    label = 'font-size:0.6rem;font-weight:800;color:' + COLORS["text_muted"] + ';letter-spacing:0.5px;min-width:90px;">'
+    assert label + "🔢 RAM<" in row and label + "⏱️ ENTRY TIMING<" in timing and label + "🔬 DEEP SIGNALS<" in deep, "one label, one width, so the chips line up"
     chip = "font-size:0.62rem;font-weight:700;padding:2px 8px;border-radius:10px;"
-    assert chip in row and chip in timing, "one pill in the strip's own chip style"
-    assert f'color:{COLORS["text_secondary"]};white-space:nowrap;' in row, "neutral: nothing here grades the stock"
+    assert row.count(chip) == 2 and chip in timing, "two chips in the strip's own style"
+    assert "· 99.8" not in row and "99.8%" not in row, "RAM % is named by its label, so it cannot read as a gain of 99.8%"
+    assert f'<span style="font-size:0.6rem;color:{COLORS["text_muted"]};">RAM of 4 Nov</span>' in row, "the date is quiet text, in the scans' own words"
 
 
-def test_the_row_carries_the_one_tip_on_its_question_mark():
+@pytest.mark.parametrize("pct,colour", [(99.8, "green"), (70.0, "green"), (69.9, "text_secondary"), (50.0, "text_secondary"),
+                                        (30.1, "text_secondary"), (30.0, "red"), (0.0, "red")])
+def test_the_rows_colours_are_the_rs_chips_own(pct, colour):
+    """In this block grey means a middling reading, so a row always grey made #2 and #731 look alike."""
+    want = f'color:{COLORS[colour]};white-space:nowrap;'
+    blocks = _scorecard_blocks(pd.Series({**_RANKED, "ram_pct": pct, "rs_score": pct}))
+    assert _ram_blocks(blocks)[0].count(want) == 2, "both chips say the same"
+    assert want + '">RS' in next(b for b in blocks if "ENTRY TIMING" in b), "the same lines as the RS chip beside it"
+
+
+@pytest.mark.parametrize("cells", [{**_BLANK, "ram_date": "2026-11-04"}, {**_BLANK, "ram_date": "2026-11-04", "ram_pct": 99.0}, {**_RANKED, "ram_pct": np.nan}, _BLANK, {}],
+                         ids=["not_ranked", "a_percentile_with_no_rank", "a_rank_with_no_percentile", "blank", "absent"])
+def test_a_row_with_nothing_to_read_stays_grey(cells):
+    row = _ram_blocks(_scorecard_blocks(pd.Series(cells)))[0]
+    assert row.count(f'color:{COLORS["text_secondary"]};white-space:nowrap;') == 1 and "RAM %" not in _visible(row), "one grey chip, the rank's"
+    assert COLORS["green"] not in row and COLORS["red"] not in row
+
+
+def test_each_chip_carries_its_own_tip_on_its_question_mark():
     block = _ram_blocks(_scorecard_blocks(pd.Series(_RANKED)))[0]
     assert html.escape(TIP_RANK) in block, "the same words as the table"
+    assert html.escape(_RAW_GLOSSARY["RAM %"]) in block, "the same words as the table"
 
 
 # ── 7. Nothing scores on them ────────────────────────────────────────────────────────────────────────────────────────────
@@ -920,13 +941,13 @@ _ACTION_WORDS = re.compile(r"\b(buy|buys|buying|sell|sells|selling|hold|avoid|ki
 
 
 def test_no_word_of_action_and_no_rule_or_person_anywhere_on_screen():
-    from ui.ui_tearsheet import ram_line
+    from ui.ui_tearsheet import ram_reading
     cfg = S.table_config("03 Oct", _PLAY)
     words = [_RAW_GLOSSARY["RAM Rank"], _RAW_GLOSSARY["RAM %"], _RAW_GLOSSARY["RAM"], S.RAM_VIEW,
              S.ram_view_order_words(pd.DataFrame({"ram_rank": [1.0], "ram_date": ["2026-11-04"]}), "x", _order_market()),
              S.ram_view_order_words(pd.DataFrame({"ram_rank": [np.nan], "ram_date": [np.nan]}), "x", _order_market()),
              *(cfg[c][k] for c in ("#", "ram_rank", "symbol", "ram_pct", "ram_score") for k in ("label", "help")),
-             *(ram_line(pd.Series(line[1])) for line in _LINES)]
+             *(" ".join(map(str, ram_reading(pd.Series(line[1]))[:3])) for line in _LINES)]
     assert all(words)
     for text in words:
         assert not _ACTION_WORDS.search(text), text
