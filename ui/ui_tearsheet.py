@@ -2095,16 +2095,20 @@ def render_financial_insights(stock: pd.Series):
 # VERDICT SCORECARD — the 6-axis evidence grid (Layer 2 of the verdict)
 # ═══════════════════════════════════════════════════════════════
 
-def ram_line(stock: pd.Series) -> str:
-    """The RAM RANK row's pill, in words (2026-11-05): '#4 · 99.8% · 4 Nov'; '— · not ranked on 4 Nov' when RAM ran for
-    that session and did not rank this stock; '—' when the sheet holds no RAM for it (blank columns, an old copy).
-    No 'of N': the sheet holds only this app's stocks, so N cannot be read from it. RAM comes from the sheet, and no
-    score or list reads it; of the records, only the order check does."""
+def ram_reading(stock: pd.Series) -> tuple:
+    """The 🔢 RAM row's reading (2026-11-06): the rank, '#4'; 'not ranked' when RAM ran for that session and did not rank this
+    stock; '—' when the sheet holds no RAM for it (blank columns, an old copy). Then RAM %, '99.8' or ''; its date, 'RAM of 4 Nov'
+    or ''; and the chips' colour, on the RS chip's own lines: True at RAM % 70 or above, False at 30 or below, None between or with
+    nothing to read. No 'of N': the sheet holds only this app's stocks, so N cannot be read from it, and RAM % gives the scale. RAM
+    comes from the sheet, and no score or list reads it or its colour; of the records, only the order check reads it."""
     rank, pct = _finite(stock.get("ram_rank")), _finite(stock.get("ram_pct"))
     day = ram_day(stock.get("ram_date"))
+    when = f"RAM of {day}" if day else ""
     if np.isnan(rank):
-        return f"— · not ranked on {day}" if day else "—"
-    return " · ".join(part for part in (f"#{rank:.0f}", "" if np.isnan(pct) else f"{pct:.1f}%", day) if part)
+        return ("not ranked" if day else "—"), "", when, None
+    if np.isnan(pct):
+        return f"#{rank:.0f}", "", when, None
+    return f"#{rank:.0f}", f"{pct:.1f}", when, (True if pct >= 70 else False if pct <= 30 else None)
 
 
 def render_verdict_scorecard(stock: pd.Series):
@@ -2217,6 +2221,12 @@ def render_verdict_scorecard(stock: pd.Series):
     _wcs, _ep = _v("wcs_score"), _v("economic_profit")
     _vcr, _tot, _cash = _v("value_creation_ratio"), _v("terms_of_trade_spread"), _v("cash_machine_score")
     _ep_str = (f"₹{_ep:,.0f}cr" if _ep == _ep else "—")
+
+    # The three rows' label, one width, so their chips start in one column (2026-11-06).
+    def _strip_label(text):
+        return (f'<span style="font-size:0.6rem;font-weight:800;color:{COLORS["text_muted"]};'
+                f'letter-spacing:0.5px;min-width:90px;">{text}</span>')
+
     deep = "".join([
         _ds("WCS",            (f"{_wcs:.0f}/10" if _wcs  == _wcs  else "—"), (_wcs  >= 5)   if _wcs  == _wcs  else None),
         _ds("Econ-Profit",    _ep_str,                                       (_ep   > 0)    if _ep   == _ep   else None),
@@ -2234,8 +2244,7 @@ def render_verdict_scorecard(stock: pd.Series):
     ])
     st.markdown(
         f'<div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:0 0 6px 0;">'
-        f'<span style="font-size:0.6rem;font-weight:800;color:{COLORS["text_muted"]};'
-        f'letter-spacing:0.5px;">🔬 DEEP SIGNALS</span>{deep}</div>',
+        f'{_strip_label("🔬 DEEP SIGNALS")}{deep}</div>',
         unsafe_allow_html=True,
     )
 
@@ -2288,16 +2297,19 @@ def render_verdict_scorecard(stock: pd.Series):
     ])
     st.markdown(
         f'<div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:0 0 6px 0;">'
-        f'<span style="font-size:0.6rem;font-weight:800;color:{COLORS["text_muted"]};'
-        f'letter-spacing:0.5px;">⏱️ ENTRY TIMING</span>{timing}</div>',
+        f'{_strip_label("⏱️ ENTRY TIMING")}{timing}</div>',
         unsafe_allow_html=True,
     )
-    # RAM RANK (2026-11-05): a row of its own under the strip, in the strip's look, not a chip on it (that strip's admission
-    # is closed by a live rule, tests/test_deep_signal_chips.py). Neutral: nothing here grades the stock.
+    # 🔢 RAM (2026-11-05): a row of its own under the strip, in the strip's look, not a chip on it (that strip's admission is
+    # closed by a live rule, tests/test_deep_signal_chips.py). Its colours are the RS chip's (2026-11-06, the operator's OK): in
+    # this block grey means a middling reading, so a row always grey made #2 and #731 look alike, and #2 look ordinary.
+    _ram_rank, _ram_pct, _ram_when, _ram_ok = ram_reading(stock)
+    ram = _ds("Rank", _ram_rank, _ram_ok, help_label="RAM Rank") + (_ds("RAM %", _ram_pct, _ram_ok) if _ram_pct else "")
+    if _ram_when:
+        ram += f'<span style="font-size:0.6rem;color:{COLORS["text_muted"]};">{_ram_when}</span>'
     st.markdown(
         f'<div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:0 0 12px 0;">'
-        f'<span style="font-size:0.6rem;font-weight:800;color:{COLORS["text_muted"]};'
-        f'letter-spacing:0.5px;">RAM RANK</span>{_ds("", ram_line(stock), None, help_label="RAM Rank")}</div>',
+        f'{_strip_label("🔢 RAM")}{ram}</div>',
         unsafe_allow_html=True,
     )
 

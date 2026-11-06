@@ -136,3 +136,7 @@ def test_the_tab_passes_the_page_to_the_download_and_runs_it_in_both_modes():
     tree = ast.parse(APP)
     fn = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "_show_ram")
     assert "ram_reference_html(q)" in ast.unparse(fn)
+
+
+def test_the_page_says_what_the_tear_sheets_row_shows():
+    assert "its own 🔢 RAM row: RAM Rank, RAM % and the date. Green at RAM % 70 or above and red at 30 or below, as the RS chip beside it." in R.markdown()

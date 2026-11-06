@@ -84,7 +84,8 @@ SECTIONS = [
         "RAM Rank beside the technical readings.",
         f"- **🔍 Deep Scanner** — a {S.RAM_VIEW} view of the whole market, RAM Rank in 📈 Technical, and a RAM Rank ↑ sort in the other "
         "views.",
-        "- **🔬 The Tear-Sheet** — its own RAM RANK row, with RAM % and the date.",
+        "- **🔬 The Tear-Sheet** — its own 🔢 RAM row: RAM Rank, RAM % and the date. Green at RAM % 70 or above and red at 30 or below, "
+        "as the RS chip beside it.",
         "- **📥 The downloads** — the Deep Scanner's CSV and the full download carry the numbers.",
     ]),
     ("What it does not do", [
